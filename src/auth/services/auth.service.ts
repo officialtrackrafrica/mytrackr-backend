@@ -5,17 +5,27 @@ import { JwtService } from '@nestjs/jwt';
 import { v4 as uuidv4 } from 'uuid';
 import { User } from '../entities';
 import { SessionService } from './session.service';
+import { RolesService } from './roles.service';
+import { MfaService } from './mfa.service';
 import { EncryptionService } from '../../security/encryption.service';
 import { AuthError } from '../../common/errors';
 import {
   UnifiedLoginDto,
+  EmailLoginDto,
+  PhoneLoginDto,
   RefreshDto,
   LoginResponseDto,
   RefreshResponseDto,
   UserResponseDto,
   RegisterDto,
   RegisterResponseDto,
+  ChangePasswordDto,
+  ForgotPasswordDto,
+  ResetPasswordDto,
 } from '../dto';
+import { RegisterWithEmailDto } from '../dto/register-email.dto';
+import { RegisterWithPhoneDto } from '../dto/register-phone.dto';
+import { RegisterWithGoogleDto } from '../dto/register-google.dto';
 
 interface TokenResult {
   accessToken: string;
@@ -40,27 +50,49 @@ export class AuthService {
     private jwtService: JwtService,
     private sessionService: SessionService,
     private encryptionService: EncryptionService,
+    private rolesService: RolesService,
+    private mfaService: MfaService,
   ) {}
 
+  async loginWithEmail(
+    loginDto: EmailLoginDto,
+    deviceInfo?: any,
+  ): Promise<LoginResponseDto> {
+    const { email, password } = loginDto;
+    const user = await this.usersRepository.findOne({
+      where: { email },
+      relations: ['roles'],
+    });
+    return this.validateAndLoginUser(user, password, deviceInfo);
+  }
+
+  async loginWithPhone(
+    loginDto: PhoneLoginDto,
+    deviceInfo?: any,
+  ): Promise<LoginResponseDto> {
+    const { phone, password } = loginDto;
+    const user = await this.usersRepository.findOne({
+      where: { phone },
+      relations: ['roles'],
+    });
+    return this.validateAndLoginUser(user, password, deviceInfo);
+  }
+
+  // @deprecated Use loginWithEmail or loginWithPhone instead
   async login(loginDto: UnifiedLoginDto): Promise<LoginResponseDto> {
-    const { method, identifier, credential, deviceInfo } = loginDto;
+    const { method, email, phone, password, deviceInfo } = loginDto;
 
     let user: User | null = null;
 
     switch (method) {
       case 'email':
         user = await this.usersRepository.findOne({
-          where: { email: identifier },
+          where: { email },
         });
         break;
       case 'phone':
         user = await this.usersRepository.findOne({
-          where: { phone: identifier },
-        });
-        break;
-      case 'google':
-        user = await this.usersRepository.findOne({
-          where: { googleId: identifier },
+          where: { phone },
         });
         break;
       default:
@@ -70,6 +102,14 @@ export class AuthService {
         );
     }
 
+    return this.validateAndLoginUser(user, password, deviceInfo);
+  }
+
+  private async validateAndLoginUser(
+    user: User | null,
+    password?: string,
+    deviceInfo?: any,
+  ): Promise<LoginResponseDto> {
     if (!user) {
       throw new AuthError('INVALID_CREDENTIALS', 'Invalid credentials');
     }
@@ -82,22 +122,43 @@ export class AuthService {
       }
     }
 
-    // Verify password for email/phone auth
-    if (method === 'email' || method === 'phone') {
-      if (!user.passwordHash) {
-        throw new AuthError('INVALID_CREDENTIALS', 'Invalid credentials');
-      }
+    // Verify password
+    if (!user.passwordHash) {
+      throw new AuthError('INVALID_CREDENTIALS', 'Invalid credentials');
+    }
 
-      const isValidPassword = await this.encryptionService.verifyPassword(
-        credential,
-        user.passwordHash,
+    // Check verification status
+    if (!user.isVerified) {
+      throw new AuthError(
+        'NOT_VERIFIED',
+        'Account is not verified. Please verify your email/phone.',
+        403,
       );
+    }
 
-      if (!isValidPassword) {
-        // Increment failed attempts
-        await this.incrementFailedAttempts(user);
-        throw new AuthError('INVALID_CREDENTIALS', 'Invalid credentials');
+    // Self-healing: Ensure verified user has 'User' role
+    if (user.roles && !user.roles.some((role) => role.name === 'User')) {
+      await this.rolesService.assignRoleToUser(user.id, 'User');
+      // Reload user with new roles to ensure token/session has correct info if needed
+      // (though roles aren't in the token payload usually, they are in the session-user object returned)
+      const updatedUser = await this.usersRepository.findOne({
+        where: { id: user.id },
+        relations: ['roles'],
+      });
+      if (updatedUser) {
+        user = updatedUser;
       }
+    }
+
+    const isValidPassword = await this.encryptionService.verifyPassword(
+      password!,
+      user.passwordHash,
+    );
+
+    if (!isValidPassword) {
+      // Increment failed attempts
+      await this.incrementFailedAttempts(user);
+      throw new AuthError('INVALID_CREDENTIALS', 'Invalid credentials');
     }
 
     // Reset failed attempts on successful login
@@ -322,6 +383,8 @@ export class AuthService {
       });
 
       const savedUser = await this.usersRepository.save(newUser);
+      // Auto-assign default User role
+      await this.rolesService.assignRoleToUser(savedUser.id, 'User');
       const session = await this.sessionService.createSession(savedUser.id);
       const tokens = await this.generateTokens(savedUser.id, session.id);
 
@@ -402,6 +465,9 @@ export class AuthService {
       verificationCodeExpiresAt: null as any,
     });
 
+    // Auto-assign default User role
+    await this.rolesService.assignRoleToUser(user.id, 'User');
+
     // Create session and return tokens
     const session = await this.sessionService.createSession(user.id);
     const tokens = await this.generateTokens(user.id, session.id);
@@ -415,8 +481,331 @@ export class AuthService {
     };
   }
 
+  async resendVerification(emailOrPhone: string): Promise<{ message: string }> {
+    const user = await this.usersRepository.findOne({
+      where: [{ email: emailOrPhone }, { phone: emailOrPhone }],
+    });
+
+    if (!user) {
+      throw new AuthError('USER_NOT_FOUND', 'User not found', 404);
+    }
+
+    if (user.isVerified) {
+      throw new AuthError('ALREADY_VERIFIED', 'User is already verified', 400);
+    }
+
+    const verificationCode = this.generateOTP();
+    const verificationCodeExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    await this.usersRepository.update(user.id, {
+      verificationCode,
+      verificationCodeExpiresAt,
+    });
+
+    // Mock sending OTP
+    if (user.email) {
+      console.log(
+        `[OTP] Resending verification code to ${user.email}: ${verificationCode}`,
+      );
+    } else if (user.phone) {
+      console.log(
+        `[OTP] Resending verification code to ${user.phone}: ${verificationCode}`,
+      );
+    }
+
+    return {
+      message: `Verification code sent to ${user.email || user.phone}`,
+    };
+  }
+
+  async changePassword(
+    userId: string,
+    dto: ChangePasswordDto,
+  ): Promise<{ message: string }> {
+    const { oldPassword, newPassword } = dto;
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+
+    if (!user || !user.passwordHash) {
+      throw new AuthError('USER_NOT_FOUND', 'User not found', 404);
+    }
+
+    const isMatch = await this.encryptionService.verifyPassword(
+      oldPassword,
+      user.passwordHash,
+    );
+
+    if (!isMatch) {
+      throw new AuthError('INVALID_CREDENTIALS', 'Invalid current password');
+    }
+
+    const passwordHash = await this.encryptionService.hashPassword(newPassword);
+
+    await this.usersRepository.update(user.id, {
+      passwordHash,
+      securitySettings: {
+        ...user.securitySettings,
+        lastPasswordChange: new Date(),
+        mfaEnabled: user.securitySettings?.mfaEnabled ?? false, // Ensure we don't lose other settings (partial update)
+      },
+    });
+
+    // Revoke all sessions except current one? Or all?
+    // For security, usually good to revoke all other sessions.
+    // For now, let's just update the password.
+    // The JwtStrategy checks lastPasswordChange, so old tokens will be invalidated automatically.
+
+    return { message: 'Password changed successfully' };
+  }
+
+  async forgotPassword(dto: ForgotPasswordDto): Promise<{ message: string }> {
+    const { email } = dto;
+    const user = await this.usersRepository.findOne({ where: { email } });
+
+    if (!user) {
+      // Don't reveal if user exists
+      return { message: 'If email exists, a reset link has been sent' };
+    }
+
+    const resetToken = uuidv4();
+    const resetExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await this.usersRepository.update(user.id, {
+      resetPasswordToken: resetToken,
+      resetPasswordExpires: resetExpires,
+    });
+
+    // Mock Email Sending
+    console.log(
+      `[Email] Password reset link for ${email}: https://mytrackr.com/reset-password?token=${resetToken}`,
+    );
+
+    return { message: 'If email exists, a reset link has been sent' };
+  }
+
+  async resetPassword(dto: ResetPasswordDto): Promise<{ message: string }> {
+    const { token, newPassword } = dto;
+
+    const user = await this.usersRepository.findOne({
+      where: { resetPasswordToken: token },
+    });
+
+    if (
+      !user ||
+      !user.resetPasswordExpires ||
+      new Date() > user.resetPasswordExpires
+    ) {
+      throw new AuthError(
+        'INVALID_TOKEN',
+        'Invalid or expired reset token',
+        400,
+      );
+    }
+
+    const passwordHash = await this.encryptionService.hashPassword(newPassword);
+
+    await this.usersRepository.update(user.id, {
+      passwordHash,
+      resetPasswordToken: null as any,
+      resetPasswordExpires: null as any,
+      securitySettings: {
+        ...user.securitySettings,
+        lastPasswordChange: new Date(),
+        mfaEnabled: user.securitySettings?.mfaEnabled ?? false,
+      },
+    });
+
+    // Tokens issued before this time will be invalid due to lastPasswordChange check in JwtStrategy
+    await this.sessionService.revokeAllUserSessions(user.id);
+
+    return { message: 'Password reset successfully' };
+  }
+
   private generateOTP(): string {
     return Math.floor(100000 + Math.random() * 900000).toString();
+  }
+
+  // ─── Split Registration Methods ──────────────────────────────────
+
+  async registerWithEmail(
+    dto: RegisterWithEmailDto,
+  ): Promise<RegisterResponseDto> {
+    const { email, password, firstName, lastName } = dto;
+
+    const existing = await this.usersRepository.findOne({ where: { email } });
+    if (existing) {
+      throw new AuthError(
+        'USER_EXISTS',
+        'User with this email already exists',
+        400,
+      );
+    }
+
+    const passwordHash = await this.encryptionService.hashPassword(password);
+    const verificationCode = this.generateOTP();
+    const verificationCodeExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    const newUser = this.usersRepository.create({
+      email,
+      passwordHash,
+      firstName,
+      lastName,
+      isVerified: false,
+      isActive: false,
+      verificationCode,
+      verificationCodeExpiresAt,
+      securitySettings: { mfaEnabled: false },
+    });
+
+    await this.usersRepository.save(newUser);
+    console.log(
+      `[OTP] Sending verification code to ${email}: ${verificationCode}`,
+    );
+
+    return {
+      success: true,
+      message: `Verification code sent to ${email}`,
+      requiresVerification: true,
+    };
+  }
+
+  async registerWithPhone(
+    dto: RegisterWithPhoneDto,
+  ): Promise<RegisterResponseDto> {
+    const { phone, password, firstName, lastName } = dto;
+
+    const existing = await this.usersRepository.findOne({ where: { phone } });
+    if (existing) {
+      throw new AuthError(
+        'USER_EXISTS',
+        'User with this phone already exists',
+        400,
+      );
+    }
+
+    const passwordHash = await this.encryptionService.hashPassword(password);
+    const verificationCode = this.generateOTP();
+    const verificationCodeExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    const newUser = this.usersRepository.create({
+      phone,
+      passwordHash,
+      firstName,
+      lastName,
+      isVerified: false,
+      isActive: false,
+      verificationCode,
+      verificationCodeExpiresAt,
+      securitySettings: { mfaEnabled: false },
+    });
+
+    await this.usersRepository.save(newUser);
+    console.log(
+      `[OTP] Sending verification code to ${phone}: ${verificationCode}`,
+    );
+
+    return {
+      success: true,
+      message: `Verification code sent to ${phone}`,
+      requiresVerification: true,
+    };
+  }
+
+  async registerWithGoogle(
+    dto: RegisterWithGoogleDto,
+  ): Promise<RegisterResponseDto> {
+    const { googleIdToken, firstName, lastName } = dto;
+
+    // In production, verify googleIdToken with Google API
+    const googleId = googleIdToken || `google_${Date.now()}`;
+
+    const existing = await this.usersRepository.findOne({
+      where: { googleId },
+    });
+    if (existing) {
+      throw new AuthError(
+        'USER_EXISTS',
+        'User with this Google account already exists',
+        400,
+      );
+    }
+
+    const newUser = this.usersRepository.create({
+      googleId,
+      firstName,
+      lastName,
+      isVerified: true,
+      isActive: true,
+      securitySettings: { mfaEnabled: false },
+    });
+
+    const savedUser = await this.usersRepository.save(newUser);
+    await this.rolesService.assignRoleToUser(savedUser.id, 'User');
+    const session = await this.sessionService.createSession(savedUser.id);
+    const tokens = await this.generateTokens(savedUser.id, session.id);
+
+    return {
+      success: true,
+      message: 'Registration successful',
+      requiresVerification: false,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresIn: tokens.expiresIn,
+    };
+  }
+
+  async googleLogin(user: User): Promise<LoginResponseDto> {
+    if (!user) {
+      throw new AuthError('GOOGLE_AUTH_FAILED', 'Google authentication failed');
+    }
+
+    const session = await this.sessionService.createSession(user.id);
+    const tokens = await this.generateTokens(user.id, session.id);
+
+    return {
+      requiresMFA: false,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      user: this.sanitizeUser(user),
+      expiresIn: tokens.expiresIn,
+    };
+  }
+
+  // ─── MFA Login Verification ──────────────────────────────────────
+
+  async verifyMfaLogin(
+    sessionId: string,
+    token: string,
+  ): Promise<LoginResponseDto> {
+    // Find the session to get the user
+    const session = await this.sessionService.getSession(sessionId);
+    if (!session) {
+      throw new AuthError('INVALID_SESSION', 'Invalid MFA session', 400);
+    }
+
+    // Verify TOTP or backup code
+    const isValid = await this.mfaService.verifyToken(session.userId, token);
+    if (!isValid) {
+      throw new AuthError(
+        'INVALID_MFA_TOKEN',
+        'Invalid verification code',
+        401,
+      );
+    }
+
+    // Generate tokens
+    const tokens = await this.generateTokens(session.userId, session.id);
+
+    const user = await this.usersRepository.findOne({
+      where: { id: session.userId },
+    });
+
+    return {
+      requiresMFA: false,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      user: user ? this.sanitizeUser(user) : undefined,
+      expiresIn: tokens.expiresIn,
+    };
   }
 
   sanitizeUser(user: User): UserResponseDto {

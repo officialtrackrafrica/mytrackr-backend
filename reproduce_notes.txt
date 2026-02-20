@@ -1,0 +1,17 @@
+
+# Register a new user
+curl -X POST http://localhost:3000/auth/register/email \
+  -H "Content-Type: application/json" \
+  -d '{"email": "testuser_policy@example.com", "password": "Password123!", "firstName": "Test", "lastName": "User"}'
+
+# Verify the user (assuming verification code is logged or we can skip verification for test if possible, 
+# but auth service requires verification. I'll check if I can just login if I use a specific email or if I can extract the code from logs.
+# Actually, the register response returns "requiresVerification": true. 
+# I will try to login with a user that might already exist or just use the "verify" endpoint with a hardcoded code if I can find one.
+# Wait, I can see the server logs if I run the app.
+# Better approach: Create a standalone node script that connects to the DB, creates a verified user, generates a token, and then makes the request.
+# But that's complex.
+# Simpler: The user said "if i add ...". They probably have a way to make requests (Postman, Frontend).
+# I'll just ask the user to make the request again while I watch the logs.
+# BUT I cannot ask the user to do that in non-interactive mode.
+# I will try to run the existing e2e test `app.e2e-spec.ts` which likely has a login flow.

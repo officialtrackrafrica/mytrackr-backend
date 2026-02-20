@@ -2,7 +2,8 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
-import { AuthErrorFilter } from './common/filters';
+import { AuthErrorFilter, AllExceptionsFilter } from './common/filters';
+import { HttpAdapterHost } from '@nestjs/core';
 import { SWAGGER_TAGS } from './common/docs';
 
 async function bootstrap() {
@@ -18,7 +19,11 @@ async function bootstrap() {
   );
 
   // Global auth error filter
-  app.useGlobalFilters(new AuthErrorFilter());
+  const httpAdapter = app.get(HttpAdapterHost);
+  app.useGlobalFilters(
+    new AuthErrorFilter(),
+    new AllExceptionsFilter(httpAdapter),
+  );
 
   // CORS configuration
   app.enableCors({

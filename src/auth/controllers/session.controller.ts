@@ -17,25 +17,29 @@ import {
 } from '@nestjs/swagger';
 import { SessionService } from '../services';
 import { JwtAuthGuard } from '../guards';
+import { PoliciesGuard } from '../../casl/guards/policies.guard';
+import { CheckPolicies } from '../../casl/decorators/check-policies.decorator';
+import { AppAbility } from '../../casl/casl-ability.factory';
+import { Action } from '../../casl/action.enum';
 import { SessionListDto } from '../dto';
-
 import { SWAGGER_TAGS } from '../../common/docs';
 
 interface AuthenticatedRequest {
   user: {
-    sub: string;
+    id: string;
     sessionId: string;
   };
 }
 
 @ApiTags(SWAGGER_TAGS[2].name)
 @Controller('auth/sessions')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PoliciesGuard)
 @ApiBearerAuth()
 export class SessionController {
   constructor(private sessionService: SessionService) {}
 
   @Get()
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Read, 'Session'))
   @ApiOperation({ summary: 'Get all active sessions' })
   @ApiResponse({
     status: 200,
@@ -45,7 +49,7 @@ export class SessionController {
   async getActiveSessions(
     @Request() req: AuthenticatedRequest,
   ): Promise<SessionListDto> {
-    const userId = req.user.sub;
+    const userId = req.user.id;
     const sessions = await this.sessionService.getUserSessions(userId);
 
     return {
@@ -63,6 +67,7 @@ export class SessionController {
   }
 
   @Delete(':id')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Delete, 'Session'))
   @ApiOperation({ summary: 'Revoke a specific session' })
   @ApiResponse({ status: 200, description: 'Session revoked' })
   @ApiResponse({ status: 404, description: 'Session not found' })
@@ -70,7 +75,7 @@ export class SessionController {
     @Param('id') sessionId: string,
     @Request() req: AuthenticatedRequest,
   ): Promise<{ success: boolean }> {
-    const userId = req.user.sub;
+    const userId = req.user.id;
 
     // Verify user owns the session
     const session = await this.sessionService.getSession(sessionId);
@@ -87,12 +92,13 @@ export class SessionController {
   }
 
   @Post('logout-all')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Delete, 'Session'))
   @ApiOperation({ summary: 'Logout from all devices' })
   @ApiResponse({ status: 200, description: 'All sessions revoked' })
   async logoutAll(
     @Request() req: AuthenticatedRequest,
   ): Promise<{ success: boolean }> {
-    const userId = req.user.sub;
+    const userId = req.user.id;
 
     await this.sessionService.revokeAllUserSessions(userId);
 

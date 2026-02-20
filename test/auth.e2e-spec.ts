@@ -29,42 +29,72 @@ describe('AuthController (e2e)', () => {
     await app.close();
   });
 
-  describe('/auth/login (POST)', () => {
-    it('should reject invalid login method', async () => {
+  describe('/auth/login/email (POST)', () => {
+    it('should login successfully with valid email credentials', async () => {
+      // Assuming seed data: admin@mytrackr.com / SuperSecretAdmin123!
       const response = await request(app.getHttpServer())
-        .post('/auth/login')
+        .post('/auth/login/email')
         .send({
-          method: 'invalid',
-          identifier: 'test@example.com',
-          credential: 'password123',
+          email: 'admin@mytrackr.com',
+          password: 'SuperSecretAdmin123!',
         })
-        .expect(400);
+        .expect(201); // NestJS default for POST is 201
 
-      expect(response.body).toHaveProperty('message');
+      expect(response.body).toHaveProperty('accessToken');
+      expect(response.body).toHaveProperty('user');
+      expect(response.body.user.email).toBe('admin@mytrackr.com');
     });
 
     it('should reject missing credentials', async () => {
-      const response = await request(app.getHttpServer())
-        .post('/auth/login')
+      await request(app.getHttpServer())
+        .post('/auth/login/email')
         .send({
-          method: 'email',
+          email: 'admin@mytrackr.com',
         })
-        .expect(400);
-
-      expect(response.body).toHaveProperty('message');
+        .expect(400); // Validation error
     });
 
     it('should return 401 for non-existent user', async () => {
       const response = await request(app.getHttpServer())
-        .post('/auth/login')
+        .post('/auth/login/email')
         .send({
-          method: 'email',
-          identifier: 'nonexistent@example.com',
-          credential: 'password123',
+          email: 'nonexistent@example.com',
+          password: 'password123',
         })
         .expect(401);
 
       expect(response.body).toHaveProperty('error', 'INVALID_CREDENTIALS');
+    });
+
+    it('should return 401 for wrong password', async () => {
+      await request(app.getHttpServer())
+        .post('/auth/login/email')
+        .send({
+          email: 'admin@mytrackr.com',
+          password: 'wrongpassword',
+        })
+        .expect(401);
+    });
+  });
+
+  describe('/auth/login/phone (POST)', () => {
+    it('should reject missing credentials', async () => {
+      await request(app.getHttpServer())
+        .post('/auth/login/phone')
+        .send({
+          phone: '+1234567890',
+        })
+        .expect(400);
+    });
+
+    it('should return 401 for non-existent user', async () => {
+      await request(app.getHttpServer())
+        .post('/auth/login/phone')
+        .send({
+          phone: '+1000000000',
+          password: 'password123',
+        })
+        .expect(401);
     });
   });
 

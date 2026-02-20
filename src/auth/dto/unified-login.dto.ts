@@ -1,8 +1,11 @@
 import {
   IsString,
+  IsEmail,
   IsEnum,
   IsOptional,
   IsObject,
+  MinLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -44,30 +47,48 @@ export class DeviceInfoDto {
   @IsOptional()
   @IsString()
   ipAddress?: string;
+
+  @IsOptional()
+  @IsString()
+  deviceName?: string;
 }
 
 export class UnifiedLoginDto {
   @ApiProperty({
-    enum: ['email', 'phone', 'google'],
+    enum: ['email', 'phone'],
     description: 'Login method',
     example: 'email',
   })
-  @IsEnum(['email', 'phone', 'google'])
-  method: 'email' | 'phone' | 'google';
+  @IsEnum(['email', 'phone'])
+  method: 'email' | 'phone';
 
   @ApiProperty({
-    description: 'Identifier (email or phone)',
+    description: 'Email address (required if method is email)',
     example: 'user@example.com',
+    required: false,
   })
-  @IsString()
-  identifier: string;
+  @ValidateIf((o) => o.method === 'email')
+  @IsEmail()
+  email?: string;
 
   @ApiProperty({
-    description: 'Credential (password or Google ID token)',
-    example: 'Password123!',
+    description: 'Phone number (required if method is phone)',
+    example: '+1234567890',
+    required: false,
   })
+  @ValidateIf((o) => o.method === 'phone')
   @IsString()
-  credential: string;
+  phone?: string;
+
+  @ApiProperty({
+    description: 'Password (required for email/phone login)',
+    example: 'Password123!',
+    required: false,
+  })
+  @ValidateIf((o) => o.method === 'email' || o.method === 'phone')
+  @IsString()
+  @MinLength(8)
+  password?: string;
 
   @ApiProperty({ type: DeviceInfoDto, required: false })
   @IsOptional()

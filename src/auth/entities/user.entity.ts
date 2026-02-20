@@ -5,8 +5,11 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
+  ManyToMany,
+  JoinTable,
 } from 'typeorm';
 import { Session } from './session.entity';
+import { Role } from './role.entity';
 
 @Entity('users')
 export class User {
@@ -40,6 +43,12 @@ export class User {
   @Column({ type: 'timestamp', nullable: true })
   verificationCodeExpiresAt: Date;
 
+  @Column({ nullable: true })
+  resetPasswordToken: string;
+
+  @Column({ type: 'timestamp', nullable: true })
+  resetPasswordExpires: Date;
+
   @Column({ default: false })
   isActive: boolean;
 
@@ -48,6 +57,7 @@ export class User {
     mfaEnabled: boolean;
     mfaMethod?: 'totp' | 'sms' | 'email';
     mfaSecret?: string;
+    mfaBackupCodes?: string[];
     lastPasswordChange?: Date;
     failedLoginAttempts?: number;
     lockoutUntil?: Date;
@@ -55,6 +65,10 @@ export class User {
 
   @OneToMany(() => Session, (session) => session.user)
   sessions: Session[];
+
+  @ManyToMany(() => Role)
+  @JoinTable()
+  roles: Role[];
 
   @CreateDateColumn()
   createdAt: Date;

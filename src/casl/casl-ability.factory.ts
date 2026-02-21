@@ -14,6 +14,40 @@ type Subjects = InferSubjects<any> | 'all';
 
 export type AppAbility = MongoAbility<[Action, Subjects]>;
 
+/**
+ * Defines hardcoded base permissions per role name.
+ * These serve as the source of truth — DB `role.permissions` are applied on top as overrides.
+ */
+const ROLE_PERMISSIONS: Record<
+  string,
+  Array<{
+    action: Action | Action[];
+    subject: string;
+    conditions?: Record<string, any>;
+    inverted?: boolean;
+  }>
+> = {
+  'Super Admin': [{ action: Action.Manage, subject: 'all' }],
+
+  Admin: [{ action: Action.Manage, subject: 'all' }],
+
+  Staff: [
+    { action: Action.Read, subject: 'all' },
+    { action: Action.Update, subject: 'User' },
+  ],
+
+  User: [
+    { action: Action.Read, subject: 'User' },
+    { action: Action.Update, subject: 'User' },
+    { action: Action.Read, subject: 'Session' },
+    { action: Action.Delete, subject: 'Session' },
+    { action: Action.Read, subject: 'Mfa' },
+    { action: Action.Create, subject: 'Mfa' },
+    { action: Action.Update, subject: 'Mfa' },
+    { action: Action.Delete, subject: 'Mfa' },
+  ],
+};
+
 @Injectable()
 export class CaslAbilityFactory {
   createForUser(user: User) {
@@ -23,10 +57,21 @@ export class CaslAbilityFactory {
 
     if (user.roles && user.roles.length > 0) {
       user.roles.forEach((role) => {
-        if (role.permissions) {
+        // 1. Apply hardcoded base permissions for this role
+        const basePermissions = ROLE_PERMISSIONS[role.name];
+        if (basePermissions) {
+          basePermissions.forEach((perm) => {
+            if (perm.inverted) {
+              cannot(perm.action as Action, perm.subject, perm.conditions);
+            } else {
+              can(perm.action as Action, perm.subject, perm.conditions);
+            }
+          });
+        }
+
+        // 2. Apply DB-stored permission overrides on top (if any)
+        if (role.permissions && role.permissions.length > 0) {
           role.permissions.forEach((permission) => {
-            // permission is a RawRule object like { action: 'read', subject: 'Article' }
-            // checking if inverted (cannot)
             if (permission.inverted) {
               cannot(
                 permission.action,
@@ -40,14 +85,10 @@ export class CaslAbilityFactory {
         }
       });
     } else {
-      // Default permissions for users without roles
-      can(Action.Read, User, { id: user.id });
-      can(Action.Update, User, { id: user.id });
+      // Fallback: users without any roles get minimal self-access
+      can(Action.Read, 'User', { id: user.id });
+      can(Action.Update, 'User', { id: user.id });
     }
-
-    // Always allow users to read/update their own profile regardless of roles
-    can(Action.Read, User, { id: user.id });
-    can(Action.Update, User, { id: user.id });
 
     return build({
       detectSubjectType: (item) =>

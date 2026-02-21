@@ -19,12 +19,15 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtAuthGuard } from '../guards';
 import { PoliciesGuard } from '../../casl/guards/policies.guard';
+import { CheckPolicies } from '../../casl/decorators/check-policies.decorator';
 import { User } from '../entities';
 import { UpdateProfileDto, UserResponseDto, ChangePasswordDto } from '../dto';
 import { SWAGGER_TAGS } from '../../common/docs';
 import { AuthService } from '../services/auth.service';
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { AuthError } from '../../common/errors';
+import { Action } from '../../casl/action.enum';
+import { AppAbility } from '../../casl/casl-ability.factory';
 
 interface AuthenticatedRequest {
   user: {
@@ -50,6 +53,7 @@ export class UserController {
     description: 'Current user profile',
     type: UserResponseDto,
   })
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Read, 'User'))
   async getProfile(
     @Request() req: AuthenticatedRequest,
   ): Promise<UserResponseDto> {
@@ -71,15 +75,14 @@ export class UserController {
     description: 'Profile updated',
     type: UserResponseDto,
   })
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Update, 'User'))
   async updateProfile(
     @Request() req: AuthenticatedRequest,
     @Body() updateDto: UpdateProfileDto,
   ): Promise<UserResponseDto> {
-    // Explicitly strip sensitive fields that must not be updated via this endpoint
     const { firstName, lastName, phone, avatarUrl } = updateDto;
     const safeUpdate = { firstName, lastName, phone, avatarUrl };
 
-    // Remove undefined values so we don't overwrite with null
     Object.keys(safeUpdate).forEach(
       (key) =>
         safeUpdate[key as keyof typeof safeUpdate] === undefined &&
@@ -104,6 +107,7 @@ export class UserController {
   @ApiBody({ type: ChangePasswordDto })
   @ApiResponse({ status: 200, description: 'Password changed successfully' })
   @ApiResponse({ status: 400, description: 'Invalid current password' })
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Update, 'User'))
   async changePassword(
     @Request() req: AuthenticatedRequest,
     @Body() dto: ChangePasswordDto,

@@ -32,6 +32,7 @@ import { JwtAuthGuard } from './guards';
 
 // Security Module
 import { SecurityModule } from '../security/security.module';
+import { CaslModule } from '../casl/casl.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { SecurityModule } from '../security/security.module';
       signOptions: { expiresIn: '15m' },
     }),
     SecurityModule,
+    CaslModule,
   ],
   controllers: [
     AuthController,

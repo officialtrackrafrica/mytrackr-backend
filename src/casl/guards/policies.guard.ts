@@ -1,12 +1,18 @@
-import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AppAbility, CaslAbilityFactory } from '../casl-ability.factory';
 import { CHECK_POLICIES_KEY } from '../decorators/check-policies.decorator';
 import { PolicyHandler } from '../interfaces/policy-handler.interface';
-// import { User } from '../../auth/entities/user.entity';
 
 @Injectable()
 export class PoliciesGuard implements CanActivate {
+  private readonly logger = new Logger(PoliciesGuard.name);
+
   constructor(
     private reflector: Reflector,
     private caslAbilityFactory: CaslAbilityFactory,
@@ -22,23 +28,19 @@ export class PoliciesGuard implements CanActivate {
     const { user } = context.switchToHttp().getRequest();
 
     if (!user) {
-      console.log('PoliciesGuard: No user found in request');
+      this.logger.warn('No user found in request');
       return false;
     }
-
-    console.log('PoliciesGuard: User found', {
-      id: user.id,
-      roles: user.roles?.map((r) => ({
-        name: r.name,
-        permissions: r.permissions,
-      })),
-    });
 
     const ability = this.caslAbilityFactory.createForUser(user);
 
     return policyHandlers.every((handler) => {
       const result = this.execPolicyHandler(handler, ability);
-      console.log('PoliciesGuard: Policy check result', result);
+      if (!result) {
+        this.logger.warn(
+          `Policy denied for user ${user.id} on ${context.getHandler().name}`,
+        );
+      }
       return result;
     });
   }

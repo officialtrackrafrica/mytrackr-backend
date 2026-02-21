@@ -9,7 +9,6 @@ import { SWAGGER_TAGS } from './common/docs';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Global validation pipe
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -18,27 +17,21 @@ async function bootstrap() {
     }),
   );
 
-  // Global auth error filter
   const httpAdapter = app.get(HttpAdapterHost);
   app.useGlobalFilters(
     new AuthErrorFilter(),
     new AllExceptionsFilter(httpAdapter),
   );
-
-  // CORS configuration
   app.enableCors({
     origin: process.env.CORS_ORIGIN || '*',
     credentials: true,
   });
-
-  // Swagger documentation
   const config = new DocumentBuilder()
     .setTitle('MyTrackr API')
     .setDescription('MyTrackr Authentication Platform API')
     .setVersion('1.0')
     .addBearerAuth();
 
-  // Apply tags order
   SWAGGER_TAGS.forEach((tag) => {
     config.addTag(tag.name, tag.description);
   });

@@ -1,9 +1,10 @@
-import { IsString, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class RefreshDto {
   @ApiProperty({ description: 'Refresh token', example: 'def50200...' })
   @IsString()
+  @IsNotEmpty({ message: 'Refresh token is required' })
   refreshToken: string;
 
   @ApiProperty({
@@ -11,7 +12,7 @@ export class RefreshDto {
     example: 'device-123',
     required: false,
   })
-  @IsOptional()
   @IsString()
+  @IsOptional()
   deviceId?: string;
 }

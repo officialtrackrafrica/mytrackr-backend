@@ -15,6 +15,10 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../guards';
+import { PoliciesGuard } from '../../casl/guards/policies.guard';
+import { CheckPolicies } from '../../casl/decorators/check-policies.decorator';
+import { AppAbility } from '../../casl/casl-ability.factory';
+import { Action } from '../../casl/action.enum';
 import { MfaService } from '../services/mfa.service';
 import {
   EnableMfaResponseDto,
@@ -30,7 +34,7 @@ import { AuthError } from '../../common/errors';
 @ApiTags('MFA (Two-Factor Authentication)')
 @ApiBearerAuth()
 @Controller('auth/mfa')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PoliciesGuard)
 export class MfaController {
   constructor(private readonly mfaService: MfaService) {}
 
@@ -44,6 +48,7 @@ export class MfaController {
     type: EnableMfaResponseDto,
   })
   @ApiResponse({ status: 400, description: 'MFA already enabled' })
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Create, 'Mfa'))
   async enableMfa(@Req() req: any): Promise<EnableMfaResponseDto> {
     try {
       return await this.mfaService.generateSecret(req.user.id);
@@ -78,6 +83,7 @@ export class MfaController {
     status: 400,
     description: 'Invalid code or MFA not initiated',
   })
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Update, 'Mfa'))
   async verifySetup(
     @Req() req: any,
     @Body() dto: VerifyMfaSetupDto,
@@ -113,6 +119,7 @@ export class MfaController {
   })
   @ApiResponse({ status: 400, description: 'Invalid code or MFA not enabled' })
   @ApiResponse({ status: 401, description: 'Invalid password' })
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Delete, 'Mfa'))
   async disableMfa(
     @Req() req: any,
     @Body() dto: DisableMfaDto,
@@ -151,6 +158,7 @@ export class MfaController {
     type: BackupCodesResponseDto,
   })
   @ApiResponse({ status: 400, description: 'Invalid code or MFA not enabled' })
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Update, 'Mfa'))
   async regenerateBackupCodes(
     @Req() req: any,
     @Body() dto: RegenerateBackupCodesDto,

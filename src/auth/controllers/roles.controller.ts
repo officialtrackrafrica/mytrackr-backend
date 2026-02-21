@@ -17,7 +17,6 @@ import { PoliciesGuard } from '../../casl/guards/policies.guard';
 import { CheckPolicies } from '../../casl/decorators/check-policies.decorator';
 import { AppAbility } from '../../casl/casl-ability.factory';
 import { Action } from '../../casl/action.enum';
-import { Role } from '../entities/role.entity';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 
 @ApiTags('roles')
@@ -28,37 +27,37 @@ export class RolesController {
   constructor(private readonly rolesService: RolesService) {}
 
   @Post()
-  @CheckPolicies((ability: AppAbility) => ability.can(Action.Create, Role))
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
   create(@Body() createRoleDto: CreateRoleDto) {
     return this.rolesService.create(createRoleDto);
   }
 
   @Get()
-  @CheckPolicies((ability: AppAbility) => ability.can(Action.Read, Role))
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
   findAll() {
     return this.rolesService.findAll();
   }
 
   @Get(':id')
-  @CheckPolicies((ability: AppAbility) => ability.can(Action.Read, Role))
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
   findOne(@Param('id') id: string) {
     return this.rolesService.findOne(id);
   }
 
   @Patch(':id')
-  @CheckPolicies((ability: AppAbility) => ability.can(Action.Update, Role))
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
   update(@Param('id') id: string, @Body() updateRoleDto: UpdateRoleDto) {
     return this.rolesService.update(id, updateRoleDto);
   }
 
   @Delete(':id')
-  @CheckPolicies((ability: AppAbility) => ability.can(Action.Delete, Role))
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
   remove(@Param('id') id: string) {
     return this.rolesService.remove(id);
   }
 
   @Post('assign')
-  @CheckPolicies((ability: AppAbility) => ability.can(Action.Update, 'User'))
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
   assignRole(@Body() assignRoleDto: AssignRoleDto) {
     return this.rolesService.assignRoleToUser(
       assignRoleDto.userId,

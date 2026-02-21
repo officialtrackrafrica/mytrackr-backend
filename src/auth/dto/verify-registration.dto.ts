@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsString, IsNotEmpty, Length } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class VerifyRegistrationDto {
@@ -7,11 +7,12 @@ export class VerifyRegistrationDto {
     example: 'user@example.com',
   })
   @IsString()
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Email or phone is required' })
   emailOrPhone: string;
 
-  @ApiProperty({ description: 'Verification code', example: '123456' })
+  @ApiProperty({ description: '6-digit verification code', example: '123456' })
   @IsString()
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Verification code is required' })
+  @Length(6, 6, { message: 'Verification code must be exactly 6 digits' })
   code: string;
 }

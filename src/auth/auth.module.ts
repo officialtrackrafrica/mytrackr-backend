@@ -2,8 +2,6 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
-
-// Entities
 import {
   User,
   Session,
@@ -11,12 +9,8 @@ import {
   WebAuthnCredential,
   Role,
 } from './entities';
-
-// Services
 import { AuthService, SessionService, RolesService } from './services';
 import { MfaService } from './services/mfa.service';
-
-// Controllers
 import {
   AuthController,
   SessionController,
@@ -25,12 +19,8 @@ import {
   AdminController,
 } from './controllers';
 import { MfaController } from './controllers/mfa.controller';
-
-// Strategies & Guards
 import { JwtStrategy, GoogleStrategy } from './strategies';
 import { JwtAuthGuard } from './guards';
-
-// Security Module
 import { SecurityModule } from '../security/security.module';
 import { CaslModule } from '../casl/casl.module';
 

@@ -8,6 +8,7 @@ import { SecurityModule } from './security/security.module';
 import { CaslModule } from './casl/casl.module';
 import { SeedsModule } from './database/seeds/seeds.module';
 import { DatabaseConfigService } from './config/database.config';
+import { MonoModule } from './mono/mono.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { DatabaseConfigService } from './config/database.config';
     SecurityModule,
     CaslModule,
     SeedsModule,
+    MonoModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import { Session } from './session.entity';
 import { Role } from './role.entity';
+import { MonoAccount } from '../../mono/entities/mono-account.entity';
 
 @Entity('users')
 export class User {
@@ -69,6 +70,9 @@ export class User {
   @ManyToMany(() => Role)
   @JoinTable()
   roles: Role[];
+
+  @OneToMany(() => MonoAccount, (monoAccount) => monoAccount.user)
+  monoAccounts: MonoAccount[];
 
   @CreateDateColumn()
   createdAt: Date;

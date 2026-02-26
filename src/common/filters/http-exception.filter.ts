@@ -16,8 +16,6 @@ export class AllExceptionsFilter implements ExceptionFilter {
   constructor(private readonly httpAdapterHost: HttpAdapterHost) {}
 
   catch(exception: unknown, host: ArgumentsHost): void {
-    // In certain situations `httpAdapter` might not be available in the
-    // constructor method, thus we should resolve it here.
     const { httpAdapter } = this.httpAdapterHost;
 
     const ctx = host.switchToHttp();
@@ -62,14 +60,22 @@ export class AllExceptionsFilter implements ExceptionFilter {
     return HttpStatus.INTERNAL_SERVER_ERROR;
   }
 
-  private getErrorMessage(exception: unknown): string {
+  private getErrorMessage(exception: unknown): string | string[] {
     if (exception instanceof AuthError) {
       return exception.message;
     }
     if ((exception as any).code === '23505') {
+      const detail = (exception as any).detail;
+      if (typeof detail === 'string') {
+        const match = detail.match(/Key \((.*?)\)=/);
+        if (match && match[1]) {
+          const field = match[1];
+          return `${field.charAt(0).toUpperCase() + field.slice(1)} already exists`;
+        }
+      }
       return 'Unique constraint violation';
     }
-    if ((exception as any).name === 'EntityNotFoundError') {
+    if ((exception as Error).name === 'EntityNotFoundError') {
       return 'Entity not found';
     }
     return 'Internal server error';

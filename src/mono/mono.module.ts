@@ -5,9 +5,10 @@ import { MonoController } from './mono.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from '../auth/entities/user.entity';
 import { MonoAccount } from './entities/mono-account.entity';
+import { Transaction } from './entities/transaction.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, MonoAccount])],
+  imports: [TypeOrmModule.forFeature([User, MonoAccount, Transaction])],
   providers: [MonoService],
   controllers: [MonoController],
   exports: [MonoService],

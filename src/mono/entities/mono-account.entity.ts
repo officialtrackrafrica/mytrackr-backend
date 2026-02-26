@@ -5,8 +5,10 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
+  OneToMany,
 } from 'typeorm';
 import { User } from '../../auth/entities/user.entity';
+import { Transaction } from './transaction.entity';
 
 @Entity('mono_accounts')
 export class MonoAccount {
@@ -43,8 +45,17 @@ export class MonoAccount {
   @Column({ nullable: true })
   dataStatus: string;
 
+  @Column({ type: 'timestamptz', nullable: true })
+  earliestSyncedAt: Date;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  lastSyncedAt: Date;
+
   @ManyToOne(() => User, (user) => user.monoAccounts, { onDelete: 'CASCADE' })
   user: User;
+
+  @OneToMany(() => Transaction, (tx) => tx.monoAccount)
+  transactions: Transaction[];
 
   @CreateDateColumn()
   createdAt: Date;

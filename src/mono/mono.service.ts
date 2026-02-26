@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -11,8 +12,9 @@ import {
 } from './dto/initiate-account.dto';
 import { CreditworthinessDto } from './dto/creditworthiness.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, LessThanOrEqual, MoreThanOrEqual, Between } from 'typeorm';
 import { MonoAccount } from './entities/mono-account.entity';
+import { Transaction } from './entities/transaction.entity';
 import { User } from '../auth/entities/user.entity';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -25,6 +27,8 @@ export class MonoService {
     private configService: ConfigService,
     @InjectRepository(MonoAccount)
     private monoAccountRepository: Repository<MonoAccount>,
+    @InjectRepository(Transaction)
+    private transactionRepository: Repository<Transaction>,
   ) {}
 
   private getSecretKey(): string {
@@ -216,13 +220,216 @@ export class MonoService {
     return this.monoGet(url, headers);
   }
 
+  // ─── Transaction Delta Sync Engine ───────────────────────────────
+
+  /**
+   * On-demand: sync then serve from DB.
+   * If start/end are provided, backfills historical data if needed.
+   */
   async getAllUserTransactions(
     userId: string,
-    paginate?: boolean,
-    realtime?: boolean,
     start?: string,
     end?: string,
+    forceSync?: boolean,
   ) {
+    const now = new Date();
+
+    // Validate & clamp dates
+    const parsedStart = start ? this.parseDateParam(start) : undefined;
+    const parsedEnd = end ? this.parseDateParam(end) : undefined;
+
+    if (parsedStart && isNaN(parsedStart.getTime())) {
+      throw new BadRequestException(`Invalid start date: ${start}`);
+    }
+    if (parsedEnd && isNaN(parsedEnd.getTime())) {
+      throw new BadRequestException(`Invalid end date: ${end}`);
+    }
+    if (parsedStart && parsedStart > now) {
+      throw new BadRequestException('Start date cannot be in the future');
+    }
+    // Clamp end date to today if it's in the future
+    const effectiveEnd =
+      parsedEnd && parsedEnd > now ? this.formatDateForMono(now) : end;
+
+    if (parsedStart && parsedEnd && parsedStart > parsedEnd) {
+      throw new BadRequestException('Start date cannot be after end date');
+    }
+
+    const userAccounts = await this.monoAccountRepository.find({
+      where: { user: { id: userId } },
+    });
+
+    if (!userAccounts.length) {
+      return { message: 'No linked accounts found for this user', data: [] };
+    }
+
+    // Delta sync all accounts
+    await Promise.all(
+      userAccounts.map((acc) =>
+        this.syncTransactionsForAccount(acc, parsedStart, forceSync).catch(
+          (e) =>
+            this.logger.error(
+              `Sync failed for account ${acc.accountId}: ${e.message}`,
+            ),
+        ),
+      ),
+    );
+
+    // Serve from DB
+    return this.getTransactionsFromDb(userId, start, effectiveEnd);
+  }
+
+  /**
+   * Core sync engine for a single account.
+   * Handles forward delta sync + backward backfill.
+   */
+  async syncTransactionsForAccount(
+    account: MonoAccount,
+    requestedStart?: Date,
+    forceSync?: boolean,
+  ) {
+    const now = new Date();
+
+    // ── Forward sync ──────────────────────────────────
+    let forwardStart: Date;
+    if (!account.lastSyncedAt || forceSync) {
+      // First sync: Jan 1 of current year
+      forwardStart = new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
+    } else {
+      forwardStart = new Date(account.lastSyncedAt);
+    }
+
+    // Only forward-sync if there's a gap
+    if (forwardStart < now) {
+      this.logger.log(
+        `Forward sync for ${account.accountId}: ${forwardStart.toISOString()} → ${now.toISOString()}`,
+      );
+      await this.fetchAndStoreTransactions(account, forwardStart, now);
+    }
+
+    // ── Backward backfill ─────────────────────────────
+    if (
+      requestedStart &&
+      (!account.earliestSyncedAt || requestedStart < account.earliestSyncedAt)
+    ) {
+      const backfillEnd = account.earliestSyncedAt || forwardStart;
+      this.logger.log(
+        `Backfill sync for ${account.accountId}: ${requestedStart.toISOString()} → ${backfillEnd.toISOString()}`,
+      );
+      await this.fetchAndStoreTransactions(
+        account,
+        requestedStart,
+        backfillEnd,
+      );
+    }
+
+    // ── Update sync boundaries ────────────────────────
+    const newEarliest = requestedStart
+      ? account.earliestSyncedAt
+        ? new Date(
+            Math.min(
+              requestedStart.getTime(),
+              account.earliestSyncedAt.getTime(),
+            ),
+          )
+        : requestedStart
+      : account.earliestSyncedAt || forwardStart;
+
+    await this.monoAccountRepository.update(
+      { id: account.id },
+      {
+        lastSyncedAt: now,
+        earliestSyncedAt: newEarliest,
+      },
+    );
+
+    this.logger.log(
+      `Sync boundaries updated for ${account.accountId}: earliest=${newEarliest.toISOString()}, latest=${now.toISOString()}`,
+    );
+  }
+
+  /**
+   * Fetch all paginated transactions from Mono for a date range and upsert into DB.
+   */
+  private async fetchAndStoreTransactions(
+    account: MonoAccount,
+    startDate: Date,
+    endDate: Date,
+  ) {
+    const start = this.formatDateForMono(startDate);
+    const end = this.formatDateForMono(endDate);
+
+    let page = 1;
+    let hasMore = true;
+    let totalInserted = 0;
+
+    while (hasMore) {
+      const params = new URLSearchParams();
+      params.append('start', start);
+      params.append('end', end);
+      params.append('page', String(page));
+
+      const url = `/accounts/${account.accountId}/transactions?${params.toString()}`;
+
+      try {
+        const response = await this.monoGet<any>(url);
+        const transactions = response?.data || [];
+
+        if (transactions.length > 0) {
+          await this.upsertTransactions(account, transactions);
+          totalInserted += transactions.length;
+        }
+
+        // Check for next page
+        hasMore = !!response?.meta?.next;
+        page++;
+      } catch (error) {
+        this.logger.error(
+          `Error fetching transactions page ${page} for ${account.accountId}: ${error.message}`,
+        );
+        hasMore = false;
+      }
+    }
+
+    this.logger.log(
+      `Stored ${totalInserted} transactions for account ${account.accountId} (${start} → ${end})`,
+    );
+  }
+
+  /**
+   * Upsert transactions — skips duplicates via ON CONFLICT DO NOTHING.
+   */
+  private async upsertTransactions(
+    account: MonoAccount,
+    monoTransactions: any[],
+  ) {
+    const entities = monoTransactions.map((tx) =>
+      this.transactionRepository.create({
+        monoTransactionId: tx.id,
+        monoAccount: { id: account.id } as any,
+        narration: tx.narration || '',
+        amount: tx.amount,
+        type: tx.type,
+        category: tx.category || null,
+        currency: tx.currency || 'NGN',
+        balance: tx.balance,
+        date: new Date(tx.date),
+      }),
+    );
+
+    await this.transactionRepository
+      .createQueryBuilder()
+      .insert()
+      .into(Transaction)
+      .values(entities)
+      .orIgnore() // ON CONFLICT DO NOTHING
+      .execute();
+  }
+
+  /**
+   * Query cached transactions from DB with optional date filters.
+   */
+  async getTransactionsFromDb(userId: string, start?: string, end?: string) {
     const userAccounts = await this.monoAccountRepository.find({
       where: { user: { id: userId } },
     });
@@ -233,28 +440,36 @@ export class MonoService {
 
     const transactionsData = await Promise.all(
       userAccounts.map(async (acc) => {
-        try {
-          const txs = await this.getTransactions(
-            acc.accountId,
-            paginate,
-            realtime,
-            start,
-            end,
+        const where: any = { monoAccount: { id: acc.id } };
+
+        // Apply date filters
+        if (start && end) {
+          where.date = Between(
+            this.parseDateParam(start),
+            this.parseDateParam(end),
           );
-          return {
-            bankName: acc.institutionName,
-            accountId: acc.accountId,
-            accountNumber: acc.accountNumber,
-            data: txs,
-          };
-        } catch (error) {
-          return {
-            bankName: acc.institutionName,
-            accountId: acc.accountId,
-            accountNumber: acc.accountNumber,
-            error: error.message,
-          };
+        } else if (start) {
+          where.date = MoreThanOrEqual(this.parseDateParam(start));
+        } else if (end) {
+          where.date = LessThanOrEqual(this.parseDateParam(end));
         }
+
+        const transactions = await this.transactionRepository.find({
+          where,
+          order: { date: 'DESC' },
+        });
+
+        return {
+          bankName: acc.institutionName,
+          accountId: acc.accountId,
+          accountNumber: acc.accountNumber,
+          syncedRange: {
+            earliest: acc.earliestSyncedAt,
+            latest: acc.lastSyncedAt,
+          },
+          total: transactions.length,
+          data: transactions,
+        };
       }),
     );
 
@@ -264,22 +479,43 @@ export class MonoService {
     };
   }
 
-  async getTransactions(
+  // ─── Date Helpers ─────────────────────────────────────────────────
+
+  /**
+   * Parse DD-MM-YYYY or YYYY-MM-DD date string into Date.
+   */
+  private parseDateParam(dateStr: string): Date {
+    // Support both DD-MM-YYYY and YYYY-MM-DD
+    if (/^\d{2}-\d{2}-\d{4}$/.test(dateStr)) {
+      const [dd, mm, yyyy] = dateStr.split('-');
+      return new Date(Date.UTC(+yyyy, +mm - 1, +dd));
+    }
+    return new Date(dateStr);
+  }
+
+  /**
+   * Format Date to DD-MM-YYYY for Mono API.
+   */
+  private formatDateForMono(date: Date): string {
+    const dd = String(date.getUTCDate()).padStart(2, '0');
+    const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const yyyy = date.getUTCFullYear();
+    return `${dd}-${mm}-${yyyy}`;
+  }
+
+  // ─── Legacy Mono Direct Fetch (kept for internal use) ────────────
+
+  private async getTransactionsFromMono(
     accountId: string,
-    paginate?: boolean,
-    realtime?: boolean,
     start?: string,
     end?: string,
   ) {
     const params = new URLSearchParams();
-    if (paginate === false) params.append('paginate', 'false');
     if (start) params.append('start', start);
     if (end) params.append('end', end);
     const queryString = params.toString();
     const url = `/accounts/${accountId}/transactions${queryString ? `?${queryString}` : ''}`;
-
-    const headers = realtime ? { 'x-real-time': 'true' } : undefined;
-    return this.monoGet(url, headers);
+    return this.monoGet(url);
   }
 
   async categoriseAllUserTransactions(userId: string) {
@@ -484,7 +720,6 @@ export class MonoService {
 
     return { received: true };
   }
-
   private async handleAccountConnected(data: any) {
     const metaRef = data?.meta?.ref || '';
     const userId = metaRef.includes('|') ? metaRef.split('|')[1] : null;
@@ -550,6 +785,19 @@ export class MonoService {
         },
       );
       this.logger.log(`Updated MonoAccount: ${accountId}`);
+
+      // Trigger initial transaction sync (Jan 1 → today)
+      const account = await this.monoAccountRepository.findOne({
+        where: { accountId },
+      });
+      if (account && !account.lastSyncedAt) {
+        this.logger.log(`Triggering initial transaction sync for ${accountId}`);
+        this.syncTransactionsForAccount(account).catch((e) =>
+          this.logger.error(
+            `Initial sync failed for ${accountId}: ${e.message}`,
+          ),
+        );
+      }
     } catch (error) {
       this.logger.error(`Error updating account data: ${error.message}`);
     }

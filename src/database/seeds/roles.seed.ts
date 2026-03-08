@@ -56,7 +56,6 @@ export class RolesSeed {
         });
 
         if (existing) {
-          // Upsert: update permissions and description for existing roles
           existing.description = roleData.description;
           existing.permissions = roleData.permissions;
           await this.rolesRepository.save(existing);

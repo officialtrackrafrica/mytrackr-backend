@@ -16,7 +16,7 @@ export class MonoAccount {
   id: string;
 
   @Column({ unique: true })
-  accountId: string;
+  monoAccountId: string;
 
   @Column({ nullable: true })
   name: string;
@@ -50,6 +50,9 @@ export class MonoAccount {
 
   @Column({ type: 'timestamptz', nullable: true })
   lastSyncedAt: Date;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  lastCategorisedAt: Date;
 
   @ManyToOne(() => User, (user) => user.monoAccounts, { onDelete: 'CASCADE' })
   user: User;

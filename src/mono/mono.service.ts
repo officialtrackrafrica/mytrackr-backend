@@ -3,6 +3,7 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -184,20 +185,20 @@ export class MonoService {
       userAccounts.map(async (acc) => {
         try {
           const statement = await this.getStatements(
-            acc.accountId,
+            acc.monoAccountId,
             months,
             realtime,
           );
           return {
             bankName: acc.institutionName,
-            accountId: acc.accountId,
+            monoAccountId: acc.monoAccountId,
             accountNumber: acc.accountNumber,
             data: statement,
           };
         } catch (error) {
           return {
             bankName: acc.institutionName,
-            accountId: acc.accountId,
+            monoAccountId: acc.monoAccountId,
             accountNumber: acc.accountNumber,
             error: error.message,
           };
@@ -220,12 +221,6 @@ export class MonoService {
     return this.monoGet(url, headers);
   }
 
-  // ─── Transaction Delta Sync Engine ───────────────────────────────
-
-  /**
-   * On-demand: sync then serve from DB.
-   * If start/end are provided, backfills historical data if needed.
-   */
   async getAllUserTransactions(
     userId: string,
     start?: string,
@@ -234,7 +229,6 @@ export class MonoService {
   ) {
     const now = new Date();
 
-    // Validate & clamp dates
     const parsedStart = start ? this.parseDateParam(start) : undefined;
     const parsedEnd = end ? this.parseDateParam(end) : undefined;
 
@@ -269,7 +263,7 @@ export class MonoService {
         this.syncTransactionsForAccount(acc, parsedStart, forceSync).catch(
           (e) =>
             this.logger.error(
-              `Sync failed for account ${acc.accountId}: ${e.message}`,
+              `Sync failed for account ${acc.monoAccountId}: ${e.message}`,
             ),
         ),
       ),
@@ -279,10 +273,6 @@ export class MonoService {
     return this.getTransactionsFromDb(userId, start, effectiveEnd);
   }
 
-  /**
-   * Core sync engine for a single account.
-   * Handles forward delta sync + backward backfill.
-   */
   async syncTransactionsForAccount(
     account: MonoAccount,
     requestedStart?: Date,
@@ -290,31 +280,27 @@ export class MonoService {
   ) {
     const now = new Date();
 
-    // ── Forward sync ──────────────────────────────────
     let forwardStart: Date;
     if (!account.lastSyncedAt || forceSync) {
-      // First sync: Jan 1 of current year
       forwardStart = new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
     } else {
       forwardStart = new Date(account.lastSyncedAt);
     }
 
-    // Only forward-sync if there's a gap
     if (forwardStart < now) {
       this.logger.log(
-        `Forward sync for ${account.accountId}: ${forwardStart.toISOString()} → ${now.toISOString()}`,
+        `Forward sync for ${account.monoAccountId}: ${forwardStart.toISOString()} → ${now.toISOString()}`,
       );
       await this.fetchAndStoreTransactions(account, forwardStart, now);
     }
 
-    // ── Backward backfill ─────────────────────────────
     if (
       requestedStart &&
       (!account.earliestSyncedAt || requestedStart < account.earliestSyncedAt)
     ) {
       const backfillEnd = account.earliestSyncedAt || forwardStart;
       this.logger.log(
-        `Backfill sync for ${account.accountId}: ${requestedStart.toISOString()} → ${backfillEnd.toISOString()}`,
+        `Backfill sync for ${account.monoAccountId}: ${requestedStart.toISOString()} → ${backfillEnd.toISOString()}`,
       );
       await this.fetchAndStoreTransactions(
         account,
@@ -323,7 +309,6 @@ export class MonoService {
       );
     }
 
-    // ── Update sync boundaries ────────────────────────
     const newEarliest = requestedStart
       ? account.earliestSyncedAt
         ? new Date(
@@ -344,13 +329,10 @@ export class MonoService {
     );
 
     this.logger.log(
-      `Sync boundaries updated for ${account.accountId}: earliest=${newEarliest.toISOString()}, latest=${now.toISOString()}`,
+      `Sync boundaries updated for ${account.monoAccountId}: earliest=${newEarliest.toISOString()}, latest=${now.toISOString()}`,
     );
   }
 
-  /**
-   * Fetch all paginated transactions from Mono for a date range and upsert into DB.
-   */
   private async fetchAndStoreTransactions(
     account: MonoAccount,
     startDate: Date,
@@ -369,7 +351,7 @@ export class MonoService {
       params.append('end', end);
       params.append('page', String(page));
 
-      const url = `/accounts/${account.accountId}/transactions?${params.toString()}`;
+      const url = `/accounts/${account.monoAccountId}/transactions?${params.toString()}`;
 
       try {
         const response = await this.monoGet<any>(url);
@@ -385,20 +367,17 @@ export class MonoService {
         page++;
       } catch (error) {
         this.logger.error(
-          `Error fetching transactions page ${page} for ${account.accountId}: ${error.message}`,
+          `Error fetching transactions page ${page} for ${account.monoAccountId}: ${error.message}`,
         );
         hasMore = false;
       }
     }
 
     this.logger.log(
-      `Stored ${totalInserted} transactions for account ${account.accountId} (${start} → ${end})`,
+      `Stored ${totalInserted} transactions for account ${account.monoAccountId} (${start} → ${end})`,
     );
   }
 
-  /**
-   * Upsert transactions — skips duplicates via ON CONFLICT DO NOTHING.
-   */
   private async upsertTransactions(
     account: MonoAccount,
     monoTransactions: any[],
@@ -414,21 +393,32 @@ export class MonoService {
         currency: tx.currency || 'NGN',
         balance: tx.balance,
         date: new Date(tx.date),
+        metadata: tx.enrichment || tx.metadata || null,
       }),
     );
 
+    // Use ON CONFLICT to update Mono-sourced fields but preserve manual overrides
     await this.transactionRepository
       .createQueryBuilder()
       .insert()
       .into(Transaction)
       .values(entities)
-      .orIgnore() // ON CONFLICT DO NOTHING
+      .orUpdate(
+        [
+          'narration',
+          'amount',
+          'type',
+          'category',
+          'currency',
+          'balance',
+          'date',
+          'metadata',
+        ],
+        ['monoTransactionId', 'monoAccountId'],
+      )
       .execute();
   }
 
-  /**
-   * Query cached transactions from DB with optional date filters.
-   */
   async getTransactionsFromDb(userId: string, start?: string, end?: string) {
     const userAccounts = await this.monoAccountRepository.find({
       where: { user: { id: userId } },
@@ -461,7 +451,7 @@ export class MonoService {
 
         return {
           bankName: acc.institutionName,
-          accountId: acc.accountId,
+          monoAccountId: acc.monoAccountId,
           accountNumber: acc.accountNumber,
           syncedRange: {
             earliest: acc.earliestSyncedAt,
@@ -479,13 +469,7 @@ export class MonoService {
     };
   }
 
-  // ─── Date Helpers ─────────────────────────────────────────────────
-
-  /**
-   * Parse DD-MM-YYYY or YYYY-MM-DD date string into Date.
-   */
   private parseDateParam(dateStr: string): Date {
-    // Support both DD-MM-YYYY and YYYY-MM-DD
     if (/^\d{2}-\d{2}-\d{4}$/.test(dateStr)) {
       const [dd, mm, yyyy] = dateStr.split('-');
       return new Date(Date.UTC(+yyyy, +mm - 1, +dd));
@@ -493,17 +477,12 @@ export class MonoService {
     return new Date(dateStr);
   }
 
-  /**
-   * Format Date to DD-MM-YYYY for Mono API.
-   */
   private formatDateForMono(date: Date): string {
     const dd = String(date.getUTCDate()).padStart(2, '0');
     const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
     const yyyy = date.getUTCFullYear();
     return `${dd}-${mm}-${yyyy}`;
   }
-
-  // ─── Legacy Mono Direct Fetch (kept for internal use) ────────────
 
   private async getTransactionsFromMono(
     accountId: string,
@@ -526,16 +505,16 @@ export class MonoService {
     return Promise.all(
       userAccounts.map(async (acc) => {
         try {
-          const res = await this.categoriseTransactions(acc.accountId);
+          const res = await this.categoriseTransactions(acc.monoAccountId);
           return {
             bankName: acc.institutionName,
-            accountId: acc.accountId,
+            monoAccountId: acc.monoAccountId,
             data: res,
           };
         } catch (error) {
           return {
             bankName: acc.institutionName,
-            accountId: acc.accountId,
+            monoAccountId: acc.monoAccountId,
             error: error.message,
           };
         }
@@ -550,6 +529,81 @@ export class MonoService {
     );
   }
 
+  async enrichTransactionMetadata(accountId: string) {
+    return this.monoPost(`/accounts/${accountId}/transactions/metadata`, null);
+  }
+
+  // ─── Manual Category Override ───────────────────────────────────────
+
+  async updateTransactionCategory(
+    userId: string,
+    transactionId: string,
+    newCategory: string,
+  ) {
+    const transaction = await this.transactionRepository.findOne({
+      where: { id: transactionId },
+      relations: ['monoAccount', 'monoAccount.user'],
+    });
+
+    if (!transaction) {
+      throw new NotFoundException('Transaction not found');
+    }
+
+    if (transaction.monoAccount?.user?.id !== userId) {
+      throw new UnauthorizedException(
+        'You can only modify your own transactions',
+      );
+    }
+
+    transaction.manualCategory = newCategory;
+    transaction.categorySource = 'manual';
+    await this.transactionRepository.save(transaction);
+
+    return {
+      id: transaction.id,
+      category: transaction.manualCategory,
+      originalCategory: transaction.category,
+      categorySource: transaction.categorySource,
+    };
+  }
+
+  async resetTransactionCategory(userId: string, transactionId: string) {
+    const transaction = await this.transactionRepository.findOne({
+      where: { id: transactionId },
+      relations: ['monoAccount', 'monoAccount.user'],
+    });
+
+    if (!transaction) {
+      throw new NotFoundException('Transaction not found');
+    }
+
+    if (transaction.monoAccount?.user?.id !== userId) {
+      throw new UnauthorizedException(
+        'You can only modify your own transactions',
+      );
+    }
+
+    transaction.manualCategory = null;
+    transaction.categorySource = 'mono';
+    await this.transactionRepository.save(transaction);
+
+    return {
+      id: transaction.id,
+      category: transaction.category,
+      categorySource: transaction.categorySource,
+    };
+  }
+
+  // ─── Job Tracking ──────────────────────────────────────────────────
+
+  async getEnrichmentJobStatus(jobId: string) {
+    return this.monoGet(`/accounts/jobs/${jobId}`);
+  }
+
+  async getEnrichmentRecords(jobId: string) {
+    return this.monoGet(`/enrichments/record/${jobId}`);
+  }
+
   async getAllUserCredits(userId: string) {
     const userAccounts = await this.getUserLinkedAccounts(userId);
     if (!userAccounts.length)
@@ -558,16 +612,16 @@ export class MonoService {
     return Promise.all(
       userAccounts.map(async (acc) => {
         try {
-          const res = await this.getCredits(acc.accountId);
+          const res = await this.getCredits(acc.monoAccountId);
           return {
             bankName: acc.institutionName,
-            accountId: acc.accountId,
+            monoAccountId: acc.monoAccountId,
             data: res,
           };
         } catch (error) {
           return {
             bankName: acc.institutionName,
-            accountId: acc.accountId,
+            monoAccountId: acc.monoAccountId,
             error: error.message,
           };
         }
@@ -587,16 +641,16 @@ export class MonoService {
     return Promise.all(
       userAccounts.map(async (acc) => {
         try {
-          const res = await this.getDebits(acc.accountId);
+          const res = await this.getDebits(acc.monoAccountId);
           return {
             bankName: acc.institutionName,
-            accountId: acc.accountId,
+            monoAccountId: acc.monoAccountId,
             data: res,
           };
         } catch (error) {
           return {
             bankName: acc.institutionName,
-            accountId: acc.accountId,
+            monoAccountId: acc.monoAccountId,
             error: error.message,
           };
         }
@@ -616,16 +670,16 @@ export class MonoService {
     return Promise.all(
       userAccounts.map(async (acc) => {
         try {
-          const res = await this.getIncome(acc.accountId);
+          const res = await this.getIncome(acc.monoAccountId);
           return {
             bankName: acc.institutionName,
-            accountId: acc.accountId,
+            monoAccountId: acc.monoAccountId,
             data: res,
           };
         } catch (error) {
           return {
             bankName: acc.institutionName,
-            accountId: acc.accountId,
+            monoAccountId: acc.monoAccountId,
             error: error.message,
           };
         }
@@ -645,16 +699,16 @@ export class MonoService {
     return Promise.all(
       userAccounts.map(async (acc) => {
         try {
-          const res = await this.getCreditworthiness(acc.accountId, dto);
+          const res = await this.getCreditworthiness(acc.monoAccountId, dto);
           return {
             bankName: acc.institutionName,
-            accountId: acc.accountId,
+            monoAccountId: acc.monoAccountId,
             data: res,
           };
         } catch (error) {
           return {
             bankName: acc.institutionName,
-            accountId: acc.accountId,
+            monoAccountId: acc.monoAccountId,
             error: error.message,
           };
         }
@@ -690,7 +744,7 @@ export class MonoService {
     switch (event) {
       case 'mono.events.account_connected':
         this.logger.log(
-          `Account connected — account id: ${data?.id}, customer: ${data?.customer}`,
+          `Account connected — mono account id: ${data?.id}, customer: ${data?.customer}`,
         );
         await this.handleAccountConnected(data).catch((e) =>
           this.logger.error(e),
@@ -703,6 +757,26 @@ export class MonoService {
         );
         await this.handleAccountUpdated(data).catch((e) =>
           this.logger.error(e),
+        );
+        break;
+
+      case 'mono.events.transaction_categorisation':
+        this.logger.log(
+          `Transaction categorisation completed for account: ${data?.account}`,
+        );
+        await this.handleTransactionCategorisation(data).catch((e) =>
+          this.logger.error(
+            `Categorisation webhook handling failed: ${e.message}`,
+          ),
+        );
+        break;
+
+      case 'mono.events.transaction_metadata':
+        this.logger.log(
+          `Transaction metadata enrichment completed for account: ${data?.account}`,
+        );
+        await this.handleTransactionMetadata(data).catch((e) =>
+          this.logger.error(`Metadata webhook handling failed: ${e.message}`),
         );
         break;
 
@@ -723,37 +797,35 @@ export class MonoService {
   private async handleAccountConnected(data: any) {
     const metaRef = data?.meta?.ref || '';
     const userId = metaRef.includes('|') ? metaRef.split('|')[1] : null;
-    const accountId = data?.id;
+    const monoAccountId = data?.id;
 
-    if (!accountId) return;
+    if (!monoAccountId) return;
 
     try {
       let account = await this.monoAccountRepository.findOne({
-        where: { accountId },
+        where: { monoAccountId },
         relations: ['user'],
       });
 
       if (!account) {
         account = this.monoAccountRepository.create({
-          accountId,
+          monoAccountId,
           user: userId ? ({ id: userId } as any) : null,
           dataStatus: 'CONNECTED',
         });
         await this.monoAccountRepository.save(account);
-        this.logger.log(`Saved new MonoAccount: ${accountId}`);
+        this.logger.log(`Saved new MonoAccount: ${monoAccountId}`);
       } else {
         // Prevent stealing link if already linked to another user
         if (account.user && account.user.id !== userId) {
           this.logger.warn(
             `Security Warning: User ${userId} attempted to link an account already linked to ${account.user.id}`,
           );
-          // We optionally could unlink it from the old user, or throw an error to the dashboard (if we had websockets),
-          // but for security we simply reject the stealing attempt silently at the webhook level.
           return;
         }
 
         this.logger.log(
-          `Account ${accountId} already linked. Updating user reference.`,
+          `Account ${monoAccountId} already linked. Updating user reference.`,
         );
         if (userId) {
           account.user = { id: userId } as any;
@@ -766,12 +838,12 @@ export class MonoService {
   }
 
   private async handleAccountUpdated(data: any) {
-    const accountId = data?.account?._id || data?.id;
-    if (!accountId) return;
+    const monoAccountId = data?.account?._id || data?.id;
+    if (!monoAccountId) return;
 
     try {
       await this.monoAccountRepository.update(
-        { accountId },
+        { monoAccountId },
         {
           dataStatus: data?.meta?.data_status,
           name: data?.account?.name,
@@ -784,22 +856,115 @@ export class MonoService {
           institutionBankCode: data?.account?.institution?.bankCode,
         },
       );
-      this.logger.log(`Updated MonoAccount: ${accountId}`);
+      this.logger.log(`Updated MonoAccount: ${monoAccountId}`);
 
       // Trigger initial transaction sync (Jan 1 → today)
       const account = await this.monoAccountRepository.findOne({
-        where: { accountId },
+        where: { monoAccountId },
       });
       if (account && !account.lastSyncedAt) {
-        this.logger.log(`Triggering initial transaction sync for ${accountId}`);
-        this.syncTransactionsForAccount(account).catch((e) =>
-          this.logger.error(
-            `Initial sync failed for ${accountId}: ${e.message}`,
-          ),
+        this.logger.log(
+          `Triggering initial transaction sync for ${monoAccountId}`,
         );
+
+        // Sync transactions, then auto-trigger categorisation + metadata enrichment
+        this.syncTransactionsForAccount(account)
+          .then(async () => {
+            this.logger.log(
+              `Initial sync complete for ${monoAccountId}. Triggering enrichment...`,
+            );
+            await Promise.allSettled([
+              this.categoriseTransactions(monoAccountId),
+              this.enrichTransactionMetadata(monoAccountId),
+            ]);
+            await this.monoAccountRepository.update(
+              { id: account.id },
+              { lastCategorisedAt: new Date() },
+            );
+            this.logger.log(`Enrichment triggered for ${monoAccountId}`);
+          })
+          .catch((e) =>
+            this.logger.error(
+              `Initial sync/enrichment failed for ${monoAccountId}: ${e.message}`,
+            ),
+          );
       }
     } catch (error) {
       this.logger.error(`Error updating account data: ${error.message}`);
     }
+  }
+
+  /**
+   * Handles the transaction_categorisation webhook.
+   * Re-syncs transactions for the affected account to pull updated categories.
+   */
+  private async handleTransactionCategorisation(data: any) {
+    const monoAccountId = data?.account || data?.id;
+    if (!monoAccountId) {
+      this.logger.warn(
+        'Transaction categorisation webhook received without account ID',
+      );
+      return;
+    }
+
+    const account = await this.monoAccountRepository.findOne({
+      where: { monoAccountId },
+    });
+
+    if (!account) {
+      this.logger.warn(
+        `Received categorisation webhook for unknown account: ${monoAccountId}`,
+      );
+      return;
+    }
+
+    this.logger.log(
+      `Re-syncing transactions after categorisation for ${monoAccountId}`,
+    );
+
+    // Force a full re-sync to pull updated categories
+    await this.syncTransactionsForAccount(account, undefined, true);
+
+    // Update the categorisation timestamp
+    await this.monoAccountRepository.update(
+      { id: account.id },
+      { lastCategorisedAt: new Date() },
+    );
+
+    this.logger.log(`Transaction categories updated for ${monoAccountId}`);
+  }
+
+  /**
+   * Handles the transaction_metadata webhook.
+   * Re-syncs transactions for the affected account to pull updated metadata.
+   */
+  private async handleTransactionMetadata(data: any) {
+    const monoAccountId = data?.account || data?.id;
+    if (!monoAccountId) {
+      this.logger.warn(
+        'Transaction metadata webhook received without account ID',
+      );
+      return;
+    }
+
+    const account = await this.monoAccountRepository.findOne({
+      where: { monoAccountId },
+    });
+
+    if (!account) {
+      this.logger.warn(
+        `Received metadata webhook for unknown account: ${monoAccountId}`,
+      );
+      return;
+    }
+
+    this.logger.log(
+      `Re-syncing transactions after metadata enrichment for ${monoAccountId}`,
+    );
+
+    // Force a full re-sync to pull updated metadata
+    await this.syncTransactionsForAccount(account, undefined, true);
+
+    this.logger.log(`Transaction metadata updated for ${monoAccountId}`);
   }
 }

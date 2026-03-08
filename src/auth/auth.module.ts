@@ -23,6 +23,7 @@ import { JwtStrategy, GoogleStrategy } from './strategies';
 import { JwtAuthGuard } from './guards';
 import { SecurityModule } from '../security/security.module';
 import { CaslModule } from '../casl/casl.module';
+import { RedisModule, TokenBlacklistService } from '../common/redis';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { CaslModule } from '../casl/casl.module';
     }),
     SecurityModule,
     CaslModule,
+    RedisModule,
   ],
   controllers: [
     AuthController,
@@ -57,7 +59,14 @@ import { CaslModule } from '../casl/casl.module';
     JwtAuthGuard,
     RolesService,
     MfaService,
+    TokenBlacklistService,
   ],
-  exports: [AuthService, SessionService, JwtAuthGuard, RolesService],
+  exports: [
+    AuthService,
+    SessionService,
+    JwtAuthGuard,
+    RolesService,
+    TokenBlacklistService,
+  ],
 })
 export class AuthModule {}

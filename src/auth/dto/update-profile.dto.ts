@@ -1,12 +1,5 @@
-import {
-  IsString,
-  IsOptional,
-  IsUrl,
-  MaxLength,
-  Matches,
-} from 'class-validator';
+import { IsString, IsOptional, IsUrl, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { PHONE_REGEX, PHONE_MESSAGE } from './phone-login.dto';
 
 export class UpdateProfileDto {
   @ApiProperty({ description: 'First name', example: 'John', required: false })
@@ -22,21 +15,21 @@ export class UpdateProfileDto {
   lastName?: string;
 
   @ApiProperty({
-    description: 'Phone number in E.164 format',
-    example: '+2348012345678',
+    description: 'Business name',
+    example: 'Acme Corp',
     required: false,
   })
-  @IsOptional()
   @IsString()
-  @Matches(PHONE_REGEX, { message: PHONE_MESSAGE })
-  phone?: string;
+  @IsOptional()
+  @MaxLength(100, { message: 'Business name must be at most 100 characters' })
+  businessName?: string;
 
   @ApiProperty({
-    description: 'Avatar URL',
+    description: 'Profile picture URL',
     example: 'https://example.com/avatar.jpg',
     required: false,
   })
-  @IsUrl({}, { message: 'Avatar URL must be a valid URL' })
+  @IsUrl({}, { message: 'Profile picture must be a valid URL' })
   @IsOptional()
-  avatarUrl?: string;
+  profilePicture?: string;
 }

@@ -1,15 +1,18 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { Strategy, VerifyCallback, Profile } from 'passport-google-oauth20';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../entities';
+import { RolesService } from '../services';
 
 @Injectable()
 export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
+  private readonly logger = new Logger(GoogleStrategy.name);
   constructor(
     @InjectRepository(User)
     private usersRepository: Repository<User>,
+    private rolesService: RolesService,
   ) {
     super({
       clientID: process.env.GOOGLE_CLIENT_ID || '',
@@ -34,25 +37,46 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     const firstName = name?.givenName;
     const lastName = name?.familyName;
 
-    // Find existing user by googleId or email
+    // Find by googleId first
     let user = await this.usersRepository.findOne({
       where: { googleId: id },
+      relations: ['roles'],
     });
 
     if (!user && email) {
+      // Try to find by email — this handles account merge
       user = await this.usersRepository.findOne({
         where: { email },
+        relations: ['roles'],
       });
     }
 
     if (user) {
-      // Update googleId if user exists but hasn't linked Google yet
+      // Merge: link googleId if not linked yet; mark as verified + active
+      const updates: Partial<User> = {};
       if (!user.googleId) {
-        user.googleId = id;
-        await this.usersRepository.save(user);
+        // First time this email/password account is used with Google — log the merge
+        this.logger.warn(
+          `Account merge: Google identity linked to existing account [email=${email}, userId=${user.id}]`,
+        );
+        updates.googleId = id;
+      }
+      if (!user.isVerified) {
+        updates.isVerified = true;
+      }
+      if (!user.isActive) {
+        updates.isActive = true;
+      }
+      if (Object.keys(updates).length > 0) {
+        await this.usersRepository.update(user.id, updates);
+        Object.assign(user, updates);
+      }
+      // Ensure User role exists
+      if (!user.roles || !user.roles.some((r) => r.name === 'User')) {
+        await this.rolesService.assignRoleToUser(user.id, 'User');
       }
     } else {
-      // Create new user
+      // Create new user via Google
       user = this.usersRepository.create({
         googleId: id,
         email,
@@ -63,6 +87,12 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
         securitySettings: { mfaEnabled: false },
       });
       user = await this.usersRepository.save(user);
+      await this.rolesService.assignRoleToUser(user.id, 'User');
+      // Re-fetch with roles
+      user = (await this.usersRepository.findOne({
+        where: { id: user.id },
+        relations: ['roles'],
+      }))!;
     }
 
     done(null, user);

@@ -3,11 +3,14 @@ import {
   Post,
   Body,
   Get,
+  Patch,
+  Delete,
   UseGuards,
   Req,
   HttpCode,
   Headers,
   Query,
+  Param,
 } from '@nestjs/common';
 import { PoliciesGuard } from '../casl/guards/policies.guard';
 import { CheckPolicies } from '../casl/decorators/check-policies.decorator';
@@ -20,12 +23,14 @@ import {
   ApiResponse,
   ApiQuery,
   ApiHeader,
+  ApiParam,
 } from '@nestjs/swagger';
 import { MonoService } from './mono.service';
 import {
   InitiateAccountDto,
   CreditworthinessDto,
   ReauthAccountDto,
+  UpdateTransactionCategoryDto,
 } from './dto';
 import { JwtAuthGuard } from '../auth/guards';
 
@@ -168,6 +173,117 @@ export class MonoController {
     return this.monoService.categoriseAllUserTransactions(req.user.id);
   }
 
+  // ─── Manual Category Override ───────────────────────────────────────
+
+  @Patch('user/transactions/:id/category')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Override the category of a specific transaction',
+    description:
+      'Manually set a category for a transaction. This override takes precedence over the Mono-assigned category ' +
+      'and will persist through future syncs.',
+  })
+  @ApiParam({ name: 'id', description: 'Transaction ID (UUID)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Category updated successfully',
+  })
+  async updateTransactionCategory(
+    @Req() req: any,
+    @Param('id') transactionId: string,
+    @Body() dto: UpdateTransactionCategoryDto,
+  ) {
+    return this.monoService.updateTransactionCategory(
+      req.user.id,
+      transactionId,
+      dto.category,
+    );
+  }
+
+  @Delete('user/transactions/:id/category')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Reset a transaction category override',
+    description:
+      "Removes the manual category override and reverts to Mono's assigned category.",
+  })
+  @ApiParam({ name: 'id', description: 'Transaction ID (UUID)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Category override removed',
+  })
+  async resetTransactionCategory(
+    @Req() req: any,
+    @Param('id') transactionId: string,
+  ) {
+    return this.monoService.resetTransactionCategory(
+      req.user.id,
+      transactionId,
+    );
+  }
+
+  // ─── Enrichment ─────────────────────────────────────────────────────
+
+  @Post('user/transactions/metadata')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Enrich all user transactions with metadata',
+    description:
+      'Triggers metadata enrichment (merchant info, logos, etc.) for all linked accounts. ' +
+      'Results arrive asynchronously via webhook.',
+  })
+  async enrichMetadata(@Req() req: any) {
+    const accounts = await this.monoService.getUserLinkedAccounts(req.user.id);
+    if (!accounts.length) return { message: 'No linked accounts found' };
+
+    const results = await Promise.all(
+      accounts.map(async (acc) => {
+        try {
+          const res = await this.monoService.enrichTransactionMetadata(
+            acc.monoAccountId,
+          );
+          return { monoAccountId: acc.monoAccountId, data: res };
+        } catch (error) {
+          return { monoAccountId: acc.monoAccountId, error: error.message };
+        }
+      }),
+    );
+
+    return { totalAccounts: accounts.length, enrichment: results };
+  }
+
+  // ─── Job Tracking ──────────────────────────────────────────────────
+
+  @Get('enrichment/jobs/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Check the status of an enrichment job',
+    description: 'Returns the current/final status of a data enrichment job.',
+  })
+  @ApiParam({ name: 'id', description: 'Job ID returned by enrichment APIs' })
+  async getJobStatus(@Param('id') jobId: string) {
+    return this.monoService.getEnrichmentJobStatus(jobId);
+  }
+
+  @Get('enrichment/records/:jobId')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get enrichment records for a specific job',
+    description:
+      'Returns all data enrichment records produced by a particular job.',
+  })
+  @ApiParam({ name: 'jobId', description: 'Job ID' })
+  async getEnrichmentRecords(@Param('jobId') jobId: string) {
+    return this.monoService.getEnrichmentRecords(jobId);
+  }
+
+  // ─── Credits / Debits / Income / Creditworthiness ──────────────────
+
   @Get('user/credits')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
@@ -214,8 +330,6 @@ export class MonoController {
   async getCreditworthiness(@Req() req: any, @Body() dto: CreditworthinessDto) {
     return this.monoService.getAllUserCreditworthiness(req.user.id, dto);
   }
-
-  // ─── Webhook ───────────────────────────────────────────────────────
 
   @Post('webhook')
   @HttpCode(200)

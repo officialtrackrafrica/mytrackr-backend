@@ -3,10 +3,15 @@ import {
   CanActivate,
   ExecutionContext,
   SetMetadata,
+  Inject,
+  Logger,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
+import Redis from 'ioredis';
+import { RateLimiterRedis, RateLimiterRes } from 'rate-limiter-flexible';
 import { AuthError } from '../errors/auth.error';
+import { REDIS_CLIENT } from '../redis/redis.module';
 
 export const RATE_LIMIT_KEY = 'rateLimit';
 
@@ -20,48 +25,61 @@ export const RateLimit = (config: RateLimitConfig) =>
 
 @Injectable()
 export class RateLimitGuard implements CanActivate {
-  // In-memory rate limit store (for development)
-  // In production, use Redis
-  private rateLimitStore = new Map<
-    string,
-    { count: number; resetTime: number }
-  >();
+  private readonly logger = new Logger(RateLimitGuard.name);
+  /** Cache of RateLimiterRedis instances keyed by "windowMs:max" */
+  private readonly limiters = new Map<string, RateLimiterRedis>();
 
-  constructor(private reflector: Reflector) {}
+  constructor(
+    private reflector: Reflector,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
-    const rateLimitConfig = this.reflector.get<RateLimitConfig>(
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const config = this.reflector.get<RateLimitConfig>(
       RATE_LIMIT_KEY,
       context.getHandler(),
-    ) || {
-      windowMs: 15 * 60 * 1000, // 15 minutes
-      max: 100, // 100 requests
+    ) ?? {
+      windowMs: 15 * 60 * 1000,
+      max: 100,
     };
 
     const request = context.switchToHttp().getRequest<Request>();
-    const key = `${request.ip}:${request.path}`;
+    const ip = request.ip ?? 'unknown';
+    const key = `${ip}:${request.path}`;
 
-    const now = Date.now();
-    const record = this.rateLimitStore.get(key);
+    const limiter = this.getLimiter(config);
 
-    if (!record || now > record.resetTime) {
-      // New window
-      this.rateLimitStore.set(key, {
-        count: 1,
-        resetTime: now + rateLimitConfig.windowMs,
-      });
+    try {
+      await limiter.consume(key);
+      return true;
+    } catch (err) {
+      if (err instanceof RateLimiterRes) {
+        throw new AuthError(
+          'RATE_LIMITED',
+          'Too many requests, please try again later',
+          429,
+        );
+      }
+      // Redis connection error — fail-open to avoid blocking all users
+      this.logger.warn(`RateLimiter Redis error (fail-open): ${err}`);
       return true;
     }
+  }
 
-    if (record.count >= rateLimitConfig.max) {
-      throw new AuthError(
-        'RATE_LIMITED',
-        'Too many requests, please try again later',
-        429,
+  private getLimiter(config: RateLimitConfig): RateLimiterRedis {
+    const cacheKey = `${config.windowMs}:${config.max}`;
+    if (!this.limiters.has(cacheKey)) {
+      this.limiters.set(
+        cacheKey,
+        new RateLimiterRedis({
+          storeClient: this.redis,
+          keyPrefix: 'rl',
+          // rate-limiter-flexible uses duration in seconds
+          duration: Math.ceil(config.windowMs / 1000),
+          points: config.max,
+        }),
       );
     }
-
-    record.count++;
-    return true;
+    return this.limiters.get(cacheKey)!;
   }
 }

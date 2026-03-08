@@ -48,4 +48,13 @@ export class RegisterWithEmailDto {
   @IsOptional()
   @MaxLength(50, { message: 'Last name must be at most 50 characters' })
   lastName?: string;
+
+  @ApiPropertyOptional({
+    description: 'Business name',
+    example: 'Acme Corp',
+  })
+  @IsString()
+  @IsOptional()
+  @MaxLength(100, { message: 'Business name must be at most 100 characters' })
+  businessName?: string;
 }

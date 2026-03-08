@@ -8,7 +8,7 @@ export class VerifyRegistrationDto {
   })
   @IsString()
   @IsNotEmpty({ message: 'Email or phone is required' })
-  emailOrPhone: string;
+  email: string;
 
   @ApiProperty({ description: '6-digit verification code', example: '123456' })
   @IsString()

@@ -12,7 +12,6 @@ import { AuthError } from '../../common/errors';
 import {
   UnifiedLoginDto,
   EmailLoginDto,
-  PhoneLoginDto,
   RefreshDto,
   LoginResponseDto,
   RefreshResponseDto,
@@ -24,13 +23,13 @@ import {
   ResetPasswordDto,
 } from '../dto';
 import { RegisterWithEmailDto } from '../dto/register-email.dto';
-import { RegisterWithPhoneDto } from '../dto/register-phone.dto';
 import { RegisterWithGoogleDto } from '../dto/register-google.dto';
 
 interface TokenResult {
   accessToken: string;
   refreshToken: string;
   expiresIn: number;
+  accessJti: string;
 }
 
 interface TokenPayload {
@@ -66,41 +65,14 @@ export class AuthService {
     return this.validateAndLoginUser(user, password, deviceInfo);
   }
 
-  async loginWithPhone(
-    loginDto: PhoneLoginDto,
-    deviceInfo?: any,
-  ): Promise<LoginResponseDto> {
-    const { phone, password } = loginDto;
+  // @deprecated Use loginWithEmail instead
+  async login(loginDto: UnifiedLoginDto): Promise<LoginResponseDto> {
+    const { email, password, deviceInfo } = loginDto;
+
     const user = await this.usersRepository.findOne({
-      where: { phone },
+      where: { email },
       relations: ['roles'],
     });
-    return this.validateAndLoginUser(user, password, deviceInfo);
-  }
-
-  // @deprecated Use loginWithEmail or loginWithPhone instead
-  async login(loginDto: UnifiedLoginDto): Promise<LoginResponseDto> {
-    const { method, email, phone, password, deviceInfo } = loginDto;
-
-    let user: User | null = null;
-
-    switch (method) {
-      case 'email':
-        user = await this.usersRepository.findOne({
-          where: { email },
-        });
-        break;
-      case 'phone':
-        user = await this.usersRepository.findOne({
-          where: { phone },
-        });
-        break;
-      default:
-        throw new AuthError(
-          'INVALID_AUTH_METHOD',
-          'Invalid authentication method',
-        );
-    }
 
     return this.validateAndLoginUser(user, password, deviceInfo);
   }
@@ -124,6 +96,14 @@ export class AuthService {
 
     // Verify password
     if (!user.passwordHash) {
+      // Account was created via Google OAuth — guide user to the right method
+      if (user.googleId) {
+        throw new AuthError(
+          'GOOGLE_ACCOUNT',
+          'This account uses Google sign-in. Please sign in with Google.',
+          400,
+        );
+      }
       throw new AuthError('INVALID_CREDENTIALS', 'Invalid credentials');
     }
 
@@ -185,6 +165,9 @@ export class AuthService {
         mfaSessionId: session.id,
       };
     }
+
+    // Revoke all previous sessions and blacklist old tokens BEFORE issuing new ones
+    await this.sessionService.revokeAndBlacklistAllForUser(user.id);
 
     // Create session and generate tokens
     const session = await this.sessionService.createSession(
@@ -287,12 +270,14 @@ export class AuthService {
     sessionId: string,
     deviceId?: string,
   ): Promise<TokenResult> {
-    const jti = uuidv4();
+    const refreshJti = uuidv4();
+    const accessJti = uuidv4();
 
     const accessTokenPayload: TokenPayload = {
       sub: userId,
       sessionId,
       type: 'access',
+      jti: accessJti,
       deviceId,
     };
 
@@ -300,7 +285,7 @@ export class AuthService {
       sub: userId,
       sessionId,
       type: 'refresh',
-      jti,
+      jti: refreshJti,
       deviceId,
     };
 
@@ -314,13 +299,16 @@ export class AuthService {
       expiresIn: '7d',
     });
 
-    // Store token ID for revocation tracking
-    await this.sessionService.storeTokenId(jti, userId, sessionId);
+    // Track refresh token JTI for revocation
+    await this.sessionService.storeTokenId(refreshJti, userId, sessionId);
+    // Also track access token JTI so we can bulk-blacklist on password change
+    await this.sessionService.storeTokenId(accessJti, userId, sessionId);
 
     return {
       accessToken,
       refreshToken,
-      expiresIn: 15 * 60, // 15 minutes in seconds
+      expiresIn: 15 * 60,
+      accessJti,
     };
   }
 
@@ -545,14 +533,12 @@ export class AuthService {
       securitySettings: {
         ...user.securitySettings,
         lastPasswordChange: new Date(),
-        mfaEnabled: user.securitySettings?.mfaEnabled ?? false, // Ensure we don't lose other settings (partial update)
+        mfaEnabled: user.securitySettings?.mfaEnabled ?? false,
       },
     });
 
-    // Revoke all sessions except current one? Or all?
-    // For security, usually good to revoke all other sessions.
-    // For now, let's just update the password.
-    // The JwtStrategy checks lastPasswordChange, so old tokens will be invalidated automatically.
+    // Revoke all sessions AND instantly blacklist all active access tokens
+    await this.sessionService.revokeAndBlacklistAllForUser(userId);
 
     return { message: 'Password changed successfully' };
   }
@@ -614,8 +600,8 @@ export class AuthService {
       },
     });
 
-    // Tokens issued before this time will be invalid due to lastPasswordChange check in JwtStrategy
-    await this.sessionService.revokeAllUserSessions(user.id);
+    // Revoke all sessions AND instantly blacklist all active access tokens in Redis
+    await this.sessionService.revokeAndBlacklistAllForUser(user.id);
 
     return { message: 'Password reset successfully' };
   }
@@ -629,7 +615,7 @@ export class AuthService {
   async registerWithEmail(
     dto: RegisterWithEmailDto,
   ): Promise<RegisterResponseDto> {
-    const { email, password, firstName, lastName } = dto;
+    const { email, password, firstName, lastName, businessName } = dto;
 
     const existing = await this.usersRepository.findOne({ where: { email } });
     if (existing) {
@@ -649,6 +635,7 @@ export class AuthService {
       passwordHash,
       firstName,
       lastName,
+      businessName,
       isVerified: false,
       isActive: false,
       verificationCode,
@@ -664,48 +651,6 @@ export class AuthService {
     return {
       success: true,
       message: `Verification code sent to ${email}`,
-      requiresVerification: true,
-    };
-  }
-
-  async registerWithPhone(
-    dto: RegisterWithPhoneDto,
-  ): Promise<RegisterResponseDto> {
-    const { phone, password, firstName, lastName } = dto;
-
-    const existing = await this.usersRepository.findOne({ where: { phone } });
-    if (existing) {
-      throw new AuthError(
-        'USER_EXISTS',
-        'User with this phone already exists',
-        400,
-      );
-    }
-
-    const passwordHash = await this.encryptionService.hashPassword(password);
-    const verificationCode = this.generateOTP();
-    const verificationCodeExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
-
-    const newUser = this.usersRepository.create({
-      phone,
-      passwordHash,
-      firstName,
-      lastName,
-      isVerified: false,
-      isActive: false,
-      verificationCode,
-      verificationCodeExpiresAt,
-      securitySettings: { mfaEnabled: false },
-    });
-
-    await this.usersRepository.save(newUser);
-    console.log(
-      `[OTP] Sending verification code to ${phone}: ${verificationCode}`,
-    );
-
-    return {
-      success: true,
-      message: `Verification code sent to ${phone}`,
       requiresVerification: true,
     };
   }
@@ -753,20 +698,39 @@ export class AuthService {
     };
   }
 
-  async googleLogin(user: User): Promise<LoginResponseDto> {
+  async googleLogin(user: User): Promise<{
+    tokens: { accessToken: string; refreshToken: string; expiresIn: number };
+    loginResponse: LoginResponseDto;
+  }> {
     if (!user) {
       throw new AuthError('GOOGLE_AUTH_FAILED', 'Google authentication failed');
+    }
+
+    // Ensure merged accounts are fully active and verified
+    if (!user.isVerified || !user.isActive) {
+      await this.usersRepository.update(user.id, {
+        isVerified: true,
+        isActive: true,
+      });
+      user.isVerified = true;
+      user.isActive = true;
+    }
+
+    // Assign User role if not already set
+    if (!user.roles || !user.roles.some((role) => role.name === 'User')) {
+      await this.rolesService.assignRoleToUser(user.id, 'User');
     }
 
     const session = await this.sessionService.createSession(user.id);
     const tokens = await this.generateTokens(user.id, session.id);
 
     return {
-      requiresMFA: false,
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      user: this.sanitizeUser(user),
-      expiresIn: tokens.expiresIn,
+      tokens,
+      loginResponse: {
+        requiresMFA: false,
+        user: this.sanitizeUser(user),
+        expiresIn: tokens.expiresIn,
+      },
     };
   }
 
@@ -808,13 +772,22 @@ export class AuthService {
     };
   }
 
+  /**
+   * Blacklist a single access token JTI.
+   * Called by the logout endpoint to instantly invalidate the current token.
+   */
+  async blacklistToken(jti: string): Promise<void> {
+    await this.sessionService.revokeToken(jti);
+  }
+
   sanitizeUser(user: User): UserResponseDto {
     return {
       id: user.id,
       email: user.email,
-      phone: user.phone,
       firstName: user.firstName,
       lastName: user.lastName,
+      businessName: user.businessName,
+      profilePicture: user.profilePicture,
       isVerified: user.isVerified,
       createdAt: user.createdAt,
     };

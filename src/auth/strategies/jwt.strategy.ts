@@ -3,8 +3,10 @@ import { PassportStrategy } from '@nestjs/passport';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import { Request } from 'express';
 import { SessionService } from '../services';
 import { User } from '../entities';
+import { TokenBlacklistService } from '../../common/redis';
 
 interface JwtPayload {
   sub: string;
@@ -14,23 +16,45 @@ interface JwtPayload {
   deviceId?: string;
 }
 
+function cookieExtractor(req: Request): string | null {
+  if (req && req.cookies) {
+    return req.cookies['accessToken'] || null;
+  }
+  return null;
+}
+
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     private sessionService: SessionService,
+    private tokenBlacklist: TokenBlacklistService,
     @InjectRepository(User)
     private usersRepository: Repository<User>,
   ) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: (req: Request) => {
+        // Try cookie first, fall back to bearer header for backward-compat
+        const fromCookie = cookieExtractor(req);
+        if (fromCookie) return fromCookie;
+        return ExtractJwt.fromAuthHeaderAsBearerToken()(req);
+      },
       ignoreExpiration: false,
       secretOrKey: process.env.JWT_ACCESS_SECRET || 'dev_access_secret',
+      passReqToCallback: false,
     });
   }
 
   async validate(payload: JwtPayload) {
     if (payload.type !== 'access') {
       throw new UnauthorizedException('Invalid token type');
+    }
+
+    // Fast-path: check Redis blacklist (O(1)) before hitting the database
+    if (payload.jti) {
+      const blacklisted = await this.tokenBlacklist.isBlacklisted(payload.jti);
+      if (blacklisted) {
+        throw new UnauthorizedException('Token has been revoked');
+      }
     }
 
     // Check if session is still valid
@@ -57,6 +81,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       ...user,
       sessionId: payload.sessionId,
       deviceId: payload.deviceId,
+      accessJti: payload.jti, // expose so logout can blacklist it
     };
   }
 }

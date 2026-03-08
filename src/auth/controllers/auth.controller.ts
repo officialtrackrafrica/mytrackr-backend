@@ -4,21 +4,29 @@ import {
   Get,
   Body,
   Req,
+  Res,
   HttpException,
   HttpStatus,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
+
+interface ExpressResponse {
+  cookie(name: string, value: string, options: Record<string, unknown>): this;
+  clearCookie(name: string): this;
+  redirect(url: string): void;
+}
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBody,
+  ApiCookieAuth,
   ApiExcludeEndpoint,
 } from '@nestjs/swagger';
 import { AuthService } from '../services';
 import {
   EmailLoginDto,
-  PhoneLoginDto,
   RefreshDto,
   LoginResponseDto,
   RefreshResponseDto,
@@ -30,12 +38,45 @@ import {
   ResetPasswordDto,
 } from '../dto';
 import { RegisterWithEmailDto } from '../dto/register-email.dto';
-import { RegisterWithPhoneDto } from '../dto/register-phone.dto';
-import { RegisterWithGoogleDto } from '../dto/register-google.dto';
 import { RateLimitGuard, RateLimit } from '../../common/guards';
 import { AuthError } from '../../common/errors';
 import { SWAGGER_TAGS } from '../../common/docs';
-import { GoogleAuthGuard } from '../guards';
+import { GoogleAuthGuard, JwtAuthGuard } from '../guards';
+
+const COOKIE_OPTS_ACCESS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax' as const,
+  maxAge: 15 * 60 * 1000, // 15 minutes
+};
+
+const COOKIE_OPTS_REFRESH = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax' as const,
+  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+};
+
+function setCookies(
+  res: ExpressResponse,
+  tokens: { accessToken: string; refreshToken: string },
+) {
+  res.cookie(
+    'accessToken',
+    tokens.accessToken,
+    COOKIE_OPTS_ACCESS as Record<string, unknown>,
+  );
+  res.cookie(
+    'refreshToken',
+    tokens.refreshToken,
+    COOKIE_OPTS_REFRESH as Record<string, unknown>,
+  );
+}
+
+function clearCookies(res: ExpressResponse) {
+  res.clearCookie('accessToken');
+  res.clearCookie('refreshToken');
+}
 
 @ApiTags(SWAGGER_TAGS[1].name)
 @Controller('auth')
@@ -45,6 +86,7 @@ export class AuthController {
   @Post('register/email')
   @UseGuards(RateLimitGuard)
   @RateLimit({ windowMs: 60 * 60 * 1000, max: 5 })
+  @Throttle({ default: { ttl: 60 * 60 * 1000, limit: 5 } })
   @ApiOperation({ summary: 'Register with email and password' })
   @ApiBody({ type: RegisterWithEmailDto })
   @ApiResponse({
@@ -79,98 +121,38 @@ export class AuthController {
     }
   }
 
-  @ApiExcludeEndpoint()
-  @Post('register/phone')
-  @UseGuards(RateLimitGuard)
-  @RateLimit({ windowMs: 60 * 60 * 1000, max: 5 })
-  @ApiOperation({ summary: 'Register with phone number and password' })
-  @ApiBody({ type: RegisterWithPhoneDto })
-  @ApiResponse({
-    status: 201,
-    description: 'Verification code sent to phone',
-    type: RegisterResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'User already exists or validation error',
-  })
-  @ApiResponse({ status: 429, description: 'Rate limited' })
-  async registerWithPhone(
-    @Body() dto: RegisterWithPhoneDto,
-  ): Promise<RegisterResponseDto> {
-    try {
-      return await this.authService.registerWithPhone(dto);
-    } catch (error) {
-      if (error instanceof AuthError) {
-        throw new HttpException(
-          { error: error.code, message: error.message },
-          error.status,
-        );
-      }
-      throw new HttpException(
-        {
-          error: 'REGISTRATION_FAILED',
-          message: error instanceof Error ? error.message : 'Unknown error',
-        },
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-  }
-
-  @ApiExcludeEndpoint()
-  @Post('register/google')
-  @UseGuards(RateLimitGuard)
-  @RateLimit({ windowMs: 60 * 60 * 1000, max: 5 })
-  @ApiOperation({ summary: 'Register with Google OAuth' })
-  @ApiBody({ type: RegisterWithGoogleDto })
-  @ApiResponse({
-    status: 201,
-    description: 'Registration successful, tokens returned',
-    type: RegisterResponseDto,
-  })
-  @ApiResponse({ status: 400, description: 'User already exists' })
-  @ApiResponse({ status: 429, description: 'Rate limited' })
-  async registerWithGoogle(
-    @Body() dto: RegisterWithGoogleDto,
-  ): Promise<RegisterResponseDto> {
-    try {
-      return await this.authService.registerWithGoogle(dto);
-    } catch (error) {
-      if (error instanceof AuthError) {
-        throw new HttpException(
-          { error: error.code, message: error.message },
-          error.status,
-        );
-      }
-      throw new HttpException(
-        {
-          error: 'REGISTRATION_FAILED',
-          message: error instanceof Error ? error.message : 'Unknown error',
-        },
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-  }
-
   @Post('verify-otp')
   @UseGuards(RateLimitGuard)
   @RateLimit({ windowMs: 15 * 60 * 1000, max: 5 })
+  @Throttle({ default: { ttl: 15 * 60 * 1000, limit: 5 } })
   @ApiOperation({ summary: 'Verify registration with OTP code' })
   @ApiBody({ type: VerifyRegistrationDto })
   @ApiResponse({
     status: 200,
-    description: 'Verification successful, user logged in',
+    description: 'Verification successful — access/refresh cookies set',
     type: LoginResponseDto,
   })
   @ApiResponse({ status: 400, description: 'Invalid or expired code' })
   async verifyRegistration(
     @Body() verifyDto: VerifyRegistrationDto,
+    @Res({ passthrough: true }) res: ExpressResponse,
   ): Promise<LoginResponseDto> {
     try {
-      return await this.authService.verifyRegistration(
-        verifyDto.emailOrPhone,
+      const result = await this.authService.verifyRegistration(
+        verifyDto.email,
         verifyDto.code,
       );
+      if (result.accessToken && result.refreshToken) {
+        setCookies(res, {
+          accessToken: result.accessToken,
+          refreshToken: result.refreshToken,
+        });
+        // Strip tokens from response body before returning
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { accessToken: _at1, refreshToken: _rt1, ...safeResult } = result;
+        return safeResult as LoginResponseDto;
+      }
+      return result;
     } catch (error) {
       if (error instanceof AuthError) {
         throw new HttpException(
@@ -191,12 +173,10 @@ export class AuthController {
   @Post('resend-otp')
   @UseGuards(RateLimitGuard)
   @RateLimit({ windowMs: 15 * 60 * 1000, max: 3 })
+  @Throttle({ default: { ttl: 15 * 60 * 1000, limit: 3 } })
   @ApiOperation({ summary: 'Resend verification code' })
   @ApiBody({ type: ResendVerificationDto })
-  @ApiResponse({
-    status: 200,
-    description: 'Verification code resent',
-  })
+  @ApiResponse({ status: 200, description: 'Verification code resent' })
   @ApiResponse({
     status: 400,
     description: 'User already verified or not found',
@@ -226,12 +206,14 @@ export class AuthController {
   @Post('forgot-password')
   @UseGuards(RateLimitGuard)
   @RateLimit({ windowMs: 15 * 60 * 1000, max: 3 })
-  @ApiOperation({ summary: 'Request password reset' })
-  @ApiBody({ type: ForgotPasswordDto })
-  @ApiResponse({
-    status: 200,
-    description: 'Reset link sent if email exists',
+  @Throttle({ default: { ttl: 15 * 60 * 1000, limit: 3 } })
+  @ApiOperation({
+    summary: 'Request password reset — magic link sent to email',
+    description:
+      'Sends a magic link to the provided email. The link contains a `token` query param to use with `POST /auth/reset-password`.',
   })
+  @ApiBody({ type: ForgotPasswordDto })
+  @ApiResponse({ status: 200, description: 'Reset link sent if email exists' })
   async forgotPassword(
     @Body() dto: ForgotPasswordDto,
   ): Promise<{ message: string }> {
@@ -241,7 +223,12 @@ export class AuthController {
   @Post('reset-password')
   @UseGuards(RateLimitGuard)
   @RateLimit({ windowMs: 15 * 60 * 1000, max: 3 })
-  @ApiOperation({ summary: 'Reset password with token' })
+  @Throttle({ default: { ttl: 15 * 60 * 1000, limit: 3 } })
+  @ApiOperation({
+    summary: 'Reset password using magic link token',
+    description:
+      'Pass the `token` from the magic link email plus the new password. All existing sessions are revoked after reset.',
+  })
   @ApiBody({ type: ResetPasswordDto })
   @ApiResponse({ status: 200, description: 'Password reset successfully' })
   @ApiResponse({ status: 400, description: 'Invalid or expired token' })
@@ -269,12 +256,13 @@ export class AuthController {
 
   @Post('login/email')
   @UseGuards(RateLimitGuard)
-  @RateLimit({ windowMs: 15 * 60 * 1000, max: 5 })
+  @RateLimit({ windowMs: 15 * 60 * 1000, max: 10 })
+  @Throttle({ default: { ttl: 15 * 60 * 1000, limit: 10 } })
   @ApiOperation({ summary: 'Login with email and password' })
   @ApiBody({ type: EmailLoginDto })
   @ApiResponse({
     status: 200,
-    description: 'Login successful',
+    description: 'Login successful — access/refresh cookies set',
     type: LoginResponseDto,
   })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
@@ -282,63 +270,32 @@ export class AuthController {
   async loginWithEmail(
     @Body() loginDto: EmailLoginDto,
     @Req() req: any,
+    @Res({ passthrough: true }) res: ExpressResponse,
   ): Promise<LoginResponseDto> {
     try {
       const deviceInfo = {
         ipAddress: req.ip,
         userAgent: req.headers['user-agent'],
       };
-      return await this.authService.loginWithEmail(loginDto, deviceInfo);
-    } catch (error) {
-      if (error instanceof AuthError) {
-        throw new HttpException(
-          {
-            error: error.code,
-            message: error.message,
-          },
-          error.status,
-        );
-      }
-      throw new HttpException(
-        {
-          error: 'LOGIN_FAILED',
-          message: error instanceof Error ? error.message : 'Unknown error',
-        },
-        HttpStatus.UNAUTHORIZED,
+      const result = await this.authService.loginWithEmail(
+        loginDto,
+        deviceInfo,
       );
-    }
-  }
 
-  @ApiExcludeEndpoint()
-  @Post('login/phone')
-  @UseGuards(RateLimitGuard)
-  @RateLimit({ windowMs: 15 * 60 * 1000, max: 5 })
-  @ApiOperation({ summary: 'Login with phone number and password' })
-  @ApiBody({ type: PhoneLoginDto })
-  @ApiResponse({
-    status: 200,
-    description: 'Login successful',
-    type: LoginResponseDto,
-  })
-  @ApiResponse({ status: 401, description: 'Invalid credentials' })
-  @ApiResponse({ status: 429, description: 'Rate limited' })
-  async loginWithPhone(
-    @Body() loginDto: PhoneLoginDto,
-    @Req() req: any,
-  ): Promise<LoginResponseDto> {
-    try {
-      const deviceInfo = {
-        ipAddress: req.ip,
-        userAgent: req.headers['user-agent'],
-      };
-      return await this.authService.loginWithPhone(loginDto, deviceInfo);
+      if (result.accessToken && result.refreshToken) {
+        setCookies(res, {
+          accessToken: result.accessToken,
+          refreshToken: result.refreshToken,
+        });
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { accessToken: _at2, refreshToken: _rt2, ...safeResult } = result;
+        return safeResult as LoginResponseDto;
+      }
+      return result;
     } catch (error) {
       if (error instanceof AuthError) {
         throw new HttpException(
-          {
-            error: error.code,
-            message: error.message,
-          },
+          { error: error.code, message: error.message },
           error.status,
         );
       }
@@ -355,22 +312,34 @@ export class AuthController {
   @Post('verify-mfa')
   @UseGuards(RateLimitGuard)
   @RateLimit({ windowMs: 15 * 60 * 1000, max: 5 })
+  @Throttle({ default: { ttl: 15 * 60 * 1000, limit: 5 } })
   @ApiOperation({ summary: 'Verify MFA code to complete login' })
   @ApiBody({ type: VerifyMfaDto })
   @ApiResponse({
     status: 200,
-    description: 'MFA verification successful, tokens returned',
+    description: 'MFA verification successful — access/refresh cookies set',
     type: LoginResponseDto,
   })
   @ApiResponse({ status: 401, description: 'Invalid MFA token' })
   async verifyMfa(
     @Body() verifyMfaDto: VerifyMfaDto,
+    @Res({ passthrough: true }) res: ExpressResponse,
   ): Promise<LoginResponseDto> {
     try {
-      return await this.authService.verifyMfaLogin(
+      const result = await this.authService.verifyMfaLogin(
         verifyMfaDto.sessionId,
         verifyMfaDto.token,
       );
+      if (result.accessToken && result.refreshToken) {
+        setCookies(res, {
+          accessToken: result.accessToken,
+          refreshToken: result.refreshToken,
+        });
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { accessToken: _at3, refreshToken: _rt3, ...safeResult } = result;
+        return safeResult as LoginResponseDto;
+      }
+      return result;
     } catch (error) {
       if (error instanceof AuthError) {
         throw new HttpException(
@@ -389,24 +358,38 @@ export class AuthController {
   }
 
   @Post('refresh')
-  @ApiOperation({ summary: 'Refresh access token using refresh token' })
-  @ApiBody({ type: RefreshDto })
+  @ApiOperation({ summary: 'Refresh access token using refresh token cookie' })
+  @ApiCookieAuth('refreshToken')
   @ApiResponse({
     status: 200,
-    description: 'Token refreshed',
+    description: 'Token refreshed — new cookies set',
     type: RefreshResponseDto,
   })
   @ApiResponse({ status: 401, description: 'Invalid refresh token' })
-  async refresh(@Body() refreshDto: RefreshDto): Promise<RefreshResponseDto> {
+  async refresh(
+    @Req() req: any,
+    @Res({ passthrough: true }) res: ExpressResponse,
+    @Body() body: Partial<RefreshDto>,
+  ): Promise<RefreshResponseDto> {
     try {
-      return await this.authService.refreshToken(refreshDto);
+      // Read from cookie first, fall back to body for backward-compat
+      const refreshToken = req.cookies?.refreshToken || body.refreshToken;
+      if (!refreshToken) {
+        throw new AuthError('TOKEN_MISSING', 'Refresh token is required', 401);
+      }
+      const result = await this.authService.refreshToken({
+        refreshToken,
+        deviceId: body.deviceId,
+      });
+      setCookies(res, {
+        accessToken: result.accessToken!,
+        refreshToken: result.refreshToken!,
+      });
+      return { expiresIn: result.expiresIn };
     } catch (error) {
       if (error instanceof AuthError) {
         throw new HttpException(
-          {
-            error: error.code,
-            message: error.message,
-          },
+          { error: error.code, message: error.message },
           error.status,
         );
       }
@@ -420,6 +403,24 @@ export class AuthController {
     }
   }
 
+  @Post('logout')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Logout — clear auth cookies and blacklist token' })
+  @ApiCookieAuth('accessToken')
+  @ApiResponse({ status: 200, description: 'Logged out successfully' })
+  async logout(
+    @Req() req: any,
+    @Res({ passthrough: true }) res: ExpressResponse,
+  ): Promise<{ message: string }> {
+    // Blacklist the current access token's JTI so it cannot be reused
+    const jti: string | undefined = req.user?.accessJti;
+    if (jti) {
+      await this.authService.blacklistToken(jti);
+    }
+    clearCookies(res);
+    return { message: 'Logged out successfully' };
+  }
+
   @ApiExcludeEndpoint()
   @Get('google')
   @UseGuards(GoogleAuthGuard)
@@ -430,13 +431,19 @@ export class AuthController {
   @ApiExcludeEndpoint()
   @Get('google/callback')
   @UseGuards(GoogleAuthGuard)
-  @ApiOperation({ summary: 'Google OAuth callback' })
+  @ApiOperation({ summary: 'Google OAuth callback — sets auth cookies' })
   @ApiResponse({
     status: 200,
-    description: 'Google login successful',
+    description: 'Google login successful — cookies set',
     type: LoginResponseDto,
   })
-  async googleAuthRedirect(@Req() req: any): Promise<LoginResponseDto> {
-    return await this.authService.googleLogin(req.user);
+  async googleAuthRedirect(
+    @Req() req: any,
+    @Res() res: ExpressResponse,
+  ): Promise<void> {
+    const { tokens } = await this.authService.googleLogin(req.user);
+    setCookies(res, tokens);
+    const redirectUrl = process.env.REDIRECT_URL || '/';
+    res.redirect(redirectUrl);
   }
 }

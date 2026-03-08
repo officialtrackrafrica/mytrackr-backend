@@ -7,12 +7,14 @@ import {
   Request,
   NotFoundException,
   Post,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
-  ApiBearerAuth,
+  ApiCookieAuth,
   ApiBody,
 } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -24,7 +26,6 @@ import { User } from '../entities';
 import { UpdateProfileDto, UserResponseDto, ChangePasswordDto } from '../dto';
 import { SWAGGER_TAGS } from '../../common/docs';
 import { AuthService } from '../services/auth.service';
-import { HttpException, HttpStatus } from '@nestjs/common';
 import { AuthError } from '../../common/errors';
 import { Action } from '../../casl/action.enum';
 import { AppAbility } from '../../casl/casl-ability.factory';
@@ -38,7 +39,7 @@ interface AuthenticatedRequest {
 @ApiTags(SWAGGER_TAGS[3].name)
 @Controller('users')
 @UseGuards(JwtAuthGuard, PoliciesGuard)
-@ApiBearerAuth()
+@ApiCookieAuth('accessToken')
 export class UserController {
   constructor(
     @InjectRepository(User)
@@ -80,8 +81,8 @@ export class UserController {
     @Request() req: AuthenticatedRequest,
     @Body() updateDto: UpdateProfileDto,
   ): Promise<UserResponseDto> {
-    const { firstName, lastName, phone, avatarUrl } = updateDto;
-    const safeUpdate = { firstName, lastName, phone, avatarUrl };
+    const { firstName, lastName, businessName, profilePicture } = updateDto;
+    const safeUpdate = { firstName, lastName, businessName, profilePicture };
 
     Object.keys(safeUpdate).forEach(
       (key) =>
@@ -103,7 +104,7 @@ export class UserController {
   }
 
   @Post('change-password')
-  @ApiOperation({ summary: 'Change password' })
+  @ApiOperation({ summary: 'Change password (requires current password)' })
   @ApiBody({ type: ChangePasswordDto })
   @ApiResponse({ status: 200, description: 'Password changed successfully' })
   @ApiResponse({ status: 400, description: 'Invalid current password' })
@@ -135,9 +136,10 @@ export class UserController {
     return {
       id: user.id,
       email: user.email,
-      phone: user.phone,
       firstName: user.firstName,
       lastName: user.lastName,
+      businessName: user.businessName,
+      profilePicture: user.profilePicture,
       isVerified: user.isVerified,
       createdAt: user.createdAt,
     };

@@ -7,26 +7,38 @@ export class UserResponseDto {
   @ApiProperty({ description: 'User email', example: 'user@example.com' })
   email: string;
 
-  @ApiProperty({
-    description: 'User phone',
-    example: '+1234567890',
-    required: false,
-  })
-  phone?: string;
-
   @ApiProperty({ description: 'First name', example: 'John', required: false })
   firstName?: string;
 
   @ApiProperty({ description: 'Last name', example: 'Doe', required: false })
   lastName?: string;
 
-  @ApiProperty({ description: 'Is email/phone verified', example: true })
+  @ApiProperty({
+    description: 'Business name',
+    example: 'Acme Corp',
+    required: false,
+  })
+  businessName?: string;
+
+  @ApiProperty({
+    description: 'Profile picture URL',
+    example: 'https://example.com/photo.jpg',
+    required: false,
+  })
+  profilePicture?: string;
+
+  @ApiProperty({ description: 'Is email verified', example: true })
   isVerified: boolean;
 
   @ApiProperty({ description: 'Account creation date' })
   createdAt: Date;
 }
 
+/**
+ * Internal shape returned by AuthService login methods.
+ * The controller reads accessToken/refreshToken to set httpOnly cookies
+ * and strips them from the response body before sending to the client.
+ */
 export class LoginResponseDto {
   @ApiProperty({ description: 'Requires MFA verification', example: false })
   requiresMFA: boolean;
@@ -38,18 +50,10 @@ export class LoginResponseDto {
   })
   mfaSessionId?: string;
 
-  @ApiProperty({
-    description: 'Access token (JWT)',
-    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
-    required: false,
-  })
+  /** Internal — set as httpOnly cookie by controller, never sent in body */
   accessToken?: string;
 
-  @ApiProperty({
-    description: 'Refresh token',
-    example: 'def50200...',
-    required: false,
-  })
+  /** Internal — set as httpOnly cookie by controller, never sent in body */
   refreshToken?: string;
 
   @ApiProperty({ type: UserResponseDto, required: false })
@@ -57,39 +61,34 @@ export class LoginResponseDto {
 
   @ApiProperty({
     description: 'Token expiration in seconds',
-    example: 3600,
+    example: 900,
     required: false,
   })
   expiresIn?: number;
 }
 
+/**
+ * Internal shape returned by AuthService.refreshToken.
+ * The controller sets cookies and only sends `expiresIn` to the client.
+ */
 export class RefreshResponseDto {
+  /** Internal — set as httpOnly cookie by controller, never sent in body */
+  accessToken?: string;
+
+  /** Internal — set as httpOnly cookie by controller, never sent in body */
+  refreshToken?: string;
+
   @ApiProperty({
-    description: 'New access token',
-    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+    description: 'Token expiration in seconds',
+    example: 900,
   })
-  accessToken: string;
-
-  @ApiProperty({ description: 'New refresh token', example: 'def50200...' })
-  refreshToken: string;
-
-  @ApiProperty({ description: 'Token expiration in seconds', example: 3600 })
   expiresIn: number;
 }
 
 export class MfaVerificationResponseDto {
-  @ApiProperty({
-    description: 'Access token',
-    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
-  })
-  accessToken: string;
-
-  @ApiProperty({ description: 'Refresh token', example: 'def50200...' })
-  refreshToken: string;
-
   @ApiProperty({ type: UserResponseDto })
   user: UserResponseDto;
 
-  @ApiProperty({ description: 'Token expiration in seconds', example: 3600 })
+  @ApiProperty({ description: 'Token expiration in seconds', example: 900 })
   expiresIn: number;
 }

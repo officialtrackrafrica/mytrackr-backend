@@ -3,6 +3,7 @@ import {
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
+  UpdateDateColumn,
   ManyToOne,
   Index,
   Unique,
@@ -36,6 +37,15 @@ export class Transaction {
   @Column({ nullable: true })
   category: string;
 
+  @Column({ nullable: true, type: 'varchar' })
+  manualCategory: string | null;
+
+  @Column({ default: 'mono' })
+  categorySource: string; // 'mono' | 'manual'
+
+  @Column({ type: 'jsonb', nullable: true })
+  metadata: Record<string, any>;
+
   @Column({ default: 'NGN' })
   currency: string;
 
@@ -47,4 +57,7 @@ export class Transaction {
 
   @CreateDateColumn()
   createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
 }

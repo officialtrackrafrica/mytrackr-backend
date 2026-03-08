@@ -5,8 +5,8 @@ import * as bcrypt from 'bcrypt';
 @Injectable()
 export class EncryptionService {
   private readonly algorithm = 'aes-256-gcm';
-  private readonly keyLength = 32; // 256 bits
-  private readonly ivLength = 16; // 128 bits
+  private readonly keyLength = 32;
+  private readonly ivLength = 16;
   private readonly key: Buffer;
 
   constructor() {

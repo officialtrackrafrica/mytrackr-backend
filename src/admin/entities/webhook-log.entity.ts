@@ -15,7 +15,7 @@ export class WebhookLog {
   id: string;
 
   @Column()
-  source: string; // e.g. 'mono', 'paystack'
+  source: string;
 
   @Column()
   event: string;
@@ -24,7 +24,7 @@ export class WebhookLog {
   payload: Record<string, any>;
 
   @Column({ default: 'received' })
-  status: string; // 'received' | 'processed' | 'failed'
+  status: string;
 
   @Column({ type: 'text', nullable: true })
   error: string;

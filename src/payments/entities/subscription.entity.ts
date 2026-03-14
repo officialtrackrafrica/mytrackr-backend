@@ -21,13 +21,12 @@ export class Subscription {
   plan: Plan;
 
   @Column({ default: 'active' })
-  status: string; // 'active', 'past_due', 'canceled', 'trialing'
+  status: string;
+  @Column({ type: 'varchar', nullable: true })
+  gatewaySubscriptionId: string;
 
   @Column({ type: 'varchar', nullable: true })
-  gatewaySubscriptionId: string; // ID from Paystack/Stripe etc
-
-  @Column({ type: 'varchar', nullable: true })
-  gatewayCustomerCode: string; // Customer code from gateway
+  gatewayCustomerCode: string;
 
   @Column({ type: 'timestamptz', nullable: true })
   currentPeriodStart: Date;

@@ -33,7 +33,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   ) {
     super({
       jwtFromRequest: (req: Request) => {
-        // Try cookie first, fall back to bearer header for backward-compat
         const fromCookie = cookieExtractor(req);
         if (fromCookie) return fromCookie;
         return ExtractJwt.fromAuthHeaderAsBearerToken()(req);
@@ -49,7 +48,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Invalid token type');
     }
 
-    // Fast-path: check Redis blacklist (O(1)) before hitting the database
     if (payload.jti) {
       const blacklisted = await this.tokenBlacklist.isBlacklisted(payload.jti);
       if (blacklisted) {
@@ -57,16 +55,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       }
     }
 
-    // Check if session is still valid
     const session = await this.sessionService.getSession(payload.sessionId);
     if (!session) {
       throw new UnauthorizedException('Session expired or revoked');
     }
 
-    // Update session activity
     await this.sessionService.updateSessionActivity(payload.sessionId);
 
-    // Fetch user with roles for CASL RBAC
     const user = await this.usersRepository.findOne({
       where: { id: payload.sub },
       relations: ['roles'],
@@ -76,12 +71,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('User not found');
     }
 
-    // Return the full user object (with roles) merged with session info
     return {
       ...user,
       sessionId: payload.sessionId,
       deviceId: payload.deviceId,
-      accessJti: payload.jti, // expose so logout can blacklist it
+      accessJti: payload.jti,
     };
   }
 }

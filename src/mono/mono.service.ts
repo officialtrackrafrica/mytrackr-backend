@@ -23,6 +23,8 @@ import { v4 as uuidv4 } from 'uuid';
 export class MonoService {
   private readonly logger = new Logger(MonoService.name);
   private readonly baseUrl = 'https://api.withmono.com/v2';
+  private readonly maxRetries = 3;
+  private readonly initialRetryDelayMs = 60 * 1000; // 1 minute
 
   constructor(
     private configService: ConfigService,
@@ -112,6 +114,45 @@ export class MonoService {
     }
   }
 
+  /**
+   * Exponential backoff retry for Mono async operations (like categorisation, metadata)
+   */
+  private retryMonoAction(
+    actionName: string,
+    actionFn: () => Promise<any>,
+    retryCount = 0,
+  ): void {
+    if (retryCount >= this.maxRetries) {
+      this.logger.error(
+        `[${actionName}] Reached max retries (${this.maxRetries}). Action permanently failed.`,
+      );
+      // In a more complex system, we might update account status to 'FAILED' here.
+      return;
+    }
+
+    const delay = this.initialRetryDelayMs * Math.pow(2, retryCount); // 1m, 2m, 4m
+    this.logger.log(
+      `[${actionName}] Scheduling retry ${retryCount + 1}/${this.maxRetries} in ${delay}ms`,
+    );
+
+    setTimeout(() => {
+      void (async () => {
+        try {
+          this.logger.log(
+            `[${actionName}] Executing retry ${retryCount + 1}...`,
+          );
+          await actionFn();
+        } catch (error) {
+          this.logger.warn(
+            `[${actionName}] Retry ${retryCount + 1} failed: ${error.message}`,
+          );
+          // Recurse for the next retry
+          this.retryMonoAction(actionName, actionFn, retryCount + 1);
+        }
+      })();
+    }, delay);
+  }
+
   async initiateAccountLinking(user: User, dto: InitiateAccountDto) {
     const payload: any = {
       customer: {
@@ -130,7 +171,6 @@ export class MonoService {
     payload.meta = {
       ref: `acc_link_${uuidv4()}|${user.id}`,
     };
-    console.log(payload);
     this.logger.debug(
       `Sending payload to Mono: ${JSON.stringify(payload, null, 2)}`,
     );
@@ -241,7 +281,7 @@ export class MonoService {
     if (parsedStart && parsedStart > now) {
       throw new BadRequestException('Start date cannot be in the future');
     }
-    // Clamp end date to today if it's in the future
+
     const effectiveEnd =
       parsedEnd && parsedEnd > now ? this.formatDateForMono(now) : end;
 
@@ -257,7 +297,6 @@ export class MonoService {
       return { message: 'No linked accounts found for this user', data: [] };
     }
 
-    // Delta sync all accounts
     await Promise.all(
       userAccounts.map((acc) =>
         this.syncTransactionsForAccount(acc, parsedStart, forceSync).catch(
@@ -269,7 +308,6 @@ export class MonoService {
       ),
     );
 
-    // Serve from DB
     return this.getTransactionsFromDb(userId, start, effectiveEnd);
   }
 
@@ -362,7 +400,6 @@ export class MonoService {
           totalInserted += transactions.length;
         }
 
-        // Check for next page
         hasMore = !!response?.meta?.next;
         page++;
       } catch (error) {
@@ -396,8 +433,6 @@ export class MonoService {
         metadata: tx.enrichment || tx.metadata || null,
       }),
     );
-
-    // Use ON CONFLICT to update Mono-sourced fields but preserve manual overrides
     await this.transactionRepository
       .createQueryBuilder()
       .insert()
@@ -432,7 +467,6 @@ export class MonoService {
       userAccounts.map(async (acc) => {
         const where: any = { monoAccount: { id: acc.id } };
 
-        // Apply date filters
         if (start && end) {
           where.date = Between(
             this.parseDateParam(start),
@@ -533,8 +567,6 @@ export class MonoService {
     return this.monoPost(`/accounts/${accountId}/transactions/metadata`, null);
   }
 
-  // ─── Manual Category Override ───────────────────────────────────────
-
   async updateTransactionCategory(
     userId: string,
     transactionId: string,
@@ -593,8 +625,6 @@ export class MonoService {
       categorySource: transaction.categorySource,
     };
   }
-
-  // ─── Job Tracking ──────────────────────────────────────────────────
 
   async getEnrichmentJobStatus(jobId: string) {
     return this.monoGet(`/accounts/jobs/${jobId}`);
@@ -784,7 +814,7 @@ export class MonoService {
         this.logger.log(
           `Creditworthiness data received — can afford: ${data?.summary?.can_afford}`,
         );
-        // TODO: Persist creditworthiness results
+
         break;
 
       default:
@@ -816,7 +846,6 @@ export class MonoService {
         await this.monoAccountRepository.save(account);
         this.logger.log(`Saved new MonoAccount: ${monoAccountId}`);
       } else {
-        // Prevent stealing link if already linked to another user
         if (account.user && account.user.id !== userId) {
           this.logger.warn(
             `Security Warning: User ${userId} attempted to link an account already linked to ${account.user.id}`,
@@ -858,7 +887,6 @@ export class MonoService {
       );
       this.logger.log(`Updated MonoAccount: ${monoAccountId}`);
 
-      // Trigger initial transaction sync (Jan 1 → today)
       const account = await this.monoAccountRepository.findOne({
         where: { monoAccountId },
       });
@@ -867,7 +895,6 @@ export class MonoService {
           `Triggering initial transaction sync for ${monoAccountId}`,
         );
 
-        // Sync transactions, then auto-trigger categorisation + metadata enrichment
         this.syncTransactionsForAccount(account)
           .then(async () => {
             this.logger.log(
@@ -907,6 +934,16 @@ export class MonoService {
       return;
     }
 
+    if (data?.status === 'failed' || data?.message) {
+      this.logger.warn(
+        `Categorisation failed or incomplete for account: ${monoAccountId}. Message: ${data?.message}. Scheduling retry.`,
+      );
+      this.retryMonoAction(`categorise_${monoAccountId}`, () =>
+        this.categoriseTransactions(monoAccountId),
+      );
+      return;
+    }
+
     const account = await this.monoAccountRepository.findOne({
       where: { monoAccountId },
     });
@@ -922,10 +959,8 @@ export class MonoService {
       `Re-syncing transactions after categorisation for ${monoAccountId}`,
     );
 
-    // Force a full re-sync to pull updated categories
     await this.syncTransactionsForAccount(account, undefined, true);
 
-    // Update the categorisation timestamp
     await this.monoAccountRepository.update(
       { id: account.id },
       { lastCategorisedAt: new Date() },
@@ -947,6 +982,16 @@ export class MonoService {
       return;
     }
 
+    if (data?.status === 'failed' || data?.message) {
+      this.logger.warn(
+        `Metadata enrichment failed or incomplete for account: ${monoAccountId}. Message: ${data?.message}. Scheduling retry.`,
+      );
+      this.retryMonoAction(`enrich_metadata_${monoAccountId}`, () =>
+        this.enrichTransactionMetadata(monoAccountId),
+      );
+      return;
+    }
+
     const account = await this.monoAccountRepository.findOne({
       where: { monoAccountId },
     });
@@ -962,7 +1007,6 @@ export class MonoService {
       `Re-syncing transactions after metadata enrichment for ${monoAccountId}`,
     );
 
-    // Force a full re-sync to pull updated metadata
     await this.syncTransactionsForAccount(account, undefined, true);
 
     this.logger.log(`Transaction metadata updated for ${monoAccountId}`);

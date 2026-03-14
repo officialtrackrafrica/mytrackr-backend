@@ -28,8 +28,6 @@ export class MfaService {
     private readonly encryptionService: EncryptionService,
   ) {}
 
-  // ─── Enable MFA (Step 1: Generate Secret + QR) ───────────────────
-
   async generateSecret(userId: string): Promise<EnableMfaResponseDto> {
     const user = await this.findUserOrFail(userId);
 
@@ -41,10 +39,8 @@ export class MfaService {
       );
     }
 
-    // Generate TOTP secret
     const secret = otpGenerateSecret();
 
-    // Build the otpauth:// URI
     const accountName = user.email || user.phone || user.id;
     const otpauthUrl = otpGenerateURI({
       issuer: this.APP_NAME,
@@ -52,10 +48,8 @@ export class MfaService {
       secret,
     });
 
-    // Generate QR code as data URL
     const qrCodeDataUrl = await QRCode.toDataURL(otpauthUrl);
 
-    // Store the secret temporarily (not enabled yet until verified)
     await this.usersRepository.update(user.id, {
       securitySettings: {
         ...user.securitySettings,
@@ -72,8 +66,6 @@ export class MfaService {
       qrCodeDataUrl,
     };
   }
-
-  // ─── Enable MFA (Step 2: Verify Setup) ───────────────────────────
 
   async verifyAndEnable(
     userId: string,
@@ -97,7 +89,6 @@ export class MfaService {
       );
     }
 
-    // Verify the token against the stored secret
     const result = await otpVerify({
       secret: user.securitySettings.mfaSecret,
       token,
@@ -111,10 +102,8 @@ export class MfaService {
       );
     }
 
-    // Generate backup codes
     const backupCodes = this.generateBackupCodes();
 
-    // Enable MFA
     await this.usersRepository.update(user.id, {
       securitySettings: {
         ...user.securitySettings,
@@ -131,8 +120,6 @@ export class MfaService {
     };
   }
 
-  // ─── Verify TOTP Token (for login) ───────────────────────────────
-
   async verifyToken(userId: string, token: string): Promise<boolean> {
     const user = await this.findUserOrFail(userId);
 
@@ -143,7 +130,6 @@ export class MfaService {
       throw new AuthError('MFA_NOT_ENABLED', 'MFA is not enabled', 400);
     }
 
-    // First try TOTP verification
     const result = await otpVerify({
       secret: user.securitySettings.mfaSecret,
       token,
@@ -153,12 +139,10 @@ export class MfaService {
       return true;
     }
 
-    // Then try backup codes
     const backupCodes = user.securitySettings.mfaBackupCodes || [];
     const codeIndex = backupCodes.indexOf(token.toUpperCase());
 
     if (codeIndex !== -1) {
-      // Consume the backup code (one-time use)
       const updatedCodes = [...backupCodes];
       updatedCodes.splice(codeIndex, 1);
 
@@ -178,8 +162,6 @@ export class MfaService {
     return false;
   }
 
-  // ─── Disable MFA ─────────────────────────────────────────────────
-
   async disable(
     userId: string,
     token: string,
@@ -191,7 +173,6 @@ export class MfaService {
       throw new AuthError('MFA_NOT_ENABLED', 'MFA is not enabled', 400);
     }
 
-    // Verify password
     if (!user.passwordHash) {
       throw new AuthError(
         'PASSWORD_REQUIRED',
@@ -209,7 +190,6 @@ export class MfaService {
       throw new AuthError('INVALID_PASSWORD', 'Invalid password', 401);
     }
 
-    // Verify TOTP token
     const result = await otpVerify({
       secret: user.securitySettings.mfaSecret!,
       token,
@@ -223,7 +203,6 @@ export class MfaService {
       );
     }
 
-    // Disable MFA
     await this.usersRepository.update(user.id, {
       securitySettings: {
         ...user.securitySettings,
@@ -242,8 +221,6 @@ export class MfaService {
     };
   }
 
-  // ─── Regenerate Backup Codes ─────────────────────────────────────
-
   async regenerateBackupCodes(
     userId: string,
     token: string,
@@ -257,7 +234,6 @@ export class MfaService {
       throw new AuthError('MFA_NOT_ENABLED', 'MFA is not enabled', 400);
     }
 
-    // Verify TOTP token
     const result = await otpVerify({
       secret: user.securitySettings.mfaSecret,
       token,
@@ -284,8 +260,6 @@ export class MfaService {
 
     return { backupCodes };
   }
-
-  // ─── Helpers ─────────────────────────────────────────────────────
 
   private async findUserOrFail(userId: string): Promise<User> {
     const user = await this.usersRepository.findOne({

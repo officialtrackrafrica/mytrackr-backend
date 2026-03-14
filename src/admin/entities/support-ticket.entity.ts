@@ -24,10 +24,10 @@ export class SupportTicket {
   description: string;
 
   @Column({ default: 'open' })
-  status: string; // 'open' | 'in_progress' | 'resolved' | 'closed'
+  status: string;
 
   @Column({ default: 'medium' })
-  priority: string; // 'low' | 'medium' | 'high' | 'critical'
+  priority: string;
 
   @Column({ nullable: true })
   assignedTo: string;

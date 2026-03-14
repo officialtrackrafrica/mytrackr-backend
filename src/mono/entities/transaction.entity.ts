@@ -32,7 +32,7 @@ export class Transaction {
   amount: number;
 
   @Column()
-  type: string; // 'credit' | 'debit'
+  type: string;
 
   @Column({ nullable: true })
   category: string;

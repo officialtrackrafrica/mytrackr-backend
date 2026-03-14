@@ -85,7 +85,6 @@ export class PaystackService implements IPaymentGateway {
 
       const tx = data.data;
 
-      // Map Paystack status to standard status
       let mappedStatus: 'success' | 'failed' | 'pending' = 'pending';
       if (tx.status === 'success') mappedStatus = 'success';
       else if (tx.status === 'failed' || tx.status === 'abandoned')
@@ -114,7 +113,6 @@ export class PaystackService implements IPaymentGateway {
     payload: any,
     signatureHeader?: string,
   ): Promise<PaymentWebhookEvent | null> {
-    // Verify signature
     if (signatureHeader) {
       const hash = crypto
         .createHmac('sha512', this.secretKey)

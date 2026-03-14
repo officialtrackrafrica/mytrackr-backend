@@ -77,7 +77,6 @@ export class SessionController {
   ): Promise<{ success: boolean }> {
     const userId = req.user.id;
 
-    // Verify user owns the session
     const session = await this.sessionService.getSession(sessionId);
     if (!session || session.userId !== userId) {
       throw new HttpException(

@@ -22,7 +22,7 @@ export class PlanGuard implements CanActivate {
     );
 
     if (!requiredPlans) {
-      return true; // No plan required for this route
+      return true;
     }
 
     const request = context.switchToHttp().getRequest();
@@ -32,7 +32,6 @@ export class PlanGuard implements CanActivate {
       throw new ForbiddenException('User not authenticated');
     }
 
-    // Admins bypass subscription checks
     if (user.role?.name === 'Super Admin' || user.role?.name === 'Admin') {
       return true;
     }
@@ -46,7 +45,6 @@ export class PlanGuard implements CanActivate {
       );
     }
 
-    // If specific plans are required, check if they match
     if (requiredPlans.length > 0) {
       const match = requiredPlans.some(
         (planName) =>

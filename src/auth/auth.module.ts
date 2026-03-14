@@ -24,6 +24,7 @@ import { JwtAuthGuard } from './guards';
 import { SecurityModule } from '../security/security.module';
 import { CaslModule } from '../casl/casl.module';
 import { RedisModule, TokenBlacklistService } from '../common/redis';
+import { StorageModule } from '../storage/storage.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { RedisModule, TokenBlacklistService } from '../common/redis';
     SecurityModule,
     CaslModule,
     RedisModule,
+    StorageModule,
   ],
   controllers: [
     AuthController,

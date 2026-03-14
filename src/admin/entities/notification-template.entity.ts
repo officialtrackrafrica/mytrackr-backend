@@ -21,10 +21,10 @@ export class NotificationTemplate {
   body: string;
 
   @Column({ default: 'email' })
-  channel: string; // 'email' | 'push' | 'sms'
+  channel: string;
 
   @Column({ type: 'jsonb', nullable: true })
-  variables: string[]; // e.g. ['{{userName}}', '{{amount}}']
+  variables: string[];
 
   @Column({ default: true })
   isActive: boolean;

@@ -42,8 +42,6 @@ export class AdminOpsController {
     private readonly auditService: AdminAuditService,
   ) {}
 
-  // ─── Audit Logs ────────────────────────────────────────────
-
   @Get('audit-logs')
   @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
   @ApiOperation({ summary: 'Get audit trail with filters' })
@@ -67,8 +65,6 @@ export class AdminOpsController {
   async getSuspiciousActivity() {
     return this.auditService.getSuspiciousActivity();
   }
-
-  // ─── System Settings ───────────────────────────────────────
 
   @Get('settings')
   @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
@@ -136,8 +132,6 @@ export class AdminOpsController {
     return result;
   }
 
-  // ─── Notification Management ───────────────────────────────
-
   @Post('notifications/broadcast')
   @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
   @ApiOperation({ summary: 'Broadcast a notification to users' })
@@ -191,8 +185,6 @@ export class AdminOpsController {
     return this.systemService.updateNotificationTemplate(id, dto);
   }
 
-  // ─── Webhook & Integration Monitoring ──────────────────────
-
   @Get('webhooks/logs')
   @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
   @ApiOperation({ summary: 'Get webhook delivery logs' })
@@ -231,11 +223,9 @@ export class AdminOpsController {
   @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
   @ApiOperation({ summary: 'Check health of third-party integrations' })
   @ApiResponse({ status: 200, description: 'Integration health status' })
-  async getIntegrationsHealth() {
+  getIntegrationsHealth() {
     return this.systemService.getIntegrationsHealth();
   }
-
-  // ─── System Health & Ops ───────────────────────────────────
 
   @Get('health')
   @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))

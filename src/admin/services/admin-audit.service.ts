@@ -81,7 +81,6 @@ export class AdminAuditService {
   }
 
   async getFailedLoginAttempts() {
-    // Query users who have failed login attempts
     const users = await this.usersRepository
       .createQueryBuilder('user')
       .where(
@@ -107,7 +106,6 @@ export class AdminAuditService {
   }
 
   async getSuspiciousActivity() {
-    // Get users with multiple failed login attempts (threshold: 3+)
     const lockedUsers = await this.usersRepository
       .createQueryBuilder('user')
       .where(
@@ -115,7 +113,6 @@ export class AdminAuditService {
       )
       .getMany();
 
-    // Get recent audit logs that might indicate suspicious behavior
     const suspiciousLogs = await this.auditLogRepository
       .createQueryBuilder('log')
       .where('log.action IN (:...actions)', {

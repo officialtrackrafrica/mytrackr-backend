@@ -40,7 +40,6 @@ export class SubscriptionService {
     });
 
     if (!sub) {
-      // Find the free plan if it exists
       const freePlan = await this.planRepository.findOne({
         where: { slug: 'free' },
       });
@@ -51,7 +50,6 @@ export class SubscriptionService {
       };
     }
 
-    // Check if subscription expired
     const now = new Date();
     if (sub.currentPeriodEnd && sub.currentPeriodEnd < now) {
       sub.status = 'past_due';
@@ -87,14 +85,11 @@ export class SubscriptionService {
         'Free plans do not require payment initialization',
       );
 
-    const gatewayName = dto.gateway || 'paystack';
+    const gatewayName = 'paystack';
     const gateway = this.paymentFactory.getGateway(gatewayName);
 
-    // Create pending transaction record
     const reference = `sub_${crypto.randomBytes(8).toString('hex')}`;
 
-    // Convert to kobo/cents depending on currency.
-    // Usually handled by a utility, simple *100 here assuming NGN/USD
     const gatewayAmount = Math.round(plan.price * 100);
 
     const tx = this.txRepository.create({
@@ -109,7 +104,6 @@ export class SubscriptionService {
 
     await this.txRepository.save(tx);
 
-    // Call Gateway
     const initResponse = await gateway.initializePayment({
       amount: gatewayAmount,
       email: user.email,
@@ -134,7 +128,6 @@ export class SubscriptionService {
 
     this.logger.log(`Received ${provider} webhook: ${event.event}`);
 
-    // Simplified webhook handler for MVP
     if (
       event.event === 'charge.success' ||
       event.event === 'payment_intent.succeeded'
@@ -146,10 +139,9 @@ export class SubscriptionService {
       });
 
       if (!tx || tx.status === 'success') {
-        return { status: 'processed' }; // Already handled
+        return { status: 'processed' };
       }
 
-      // Verify payment with gateway just to be absolutely sure
       const verification = await gateway.verifyPayment(reference);
 
       if (verification.status === 'success') {
@@ -187,13 +179,11 @@ export class SubscriptionService {
 
     if (!plan || !user) return;
 
-    // Set existing active subscriptions to canceled
     await this.subRepository.update(
       { user: { id: userId }, status: 'active' },
       { status: 'canceled', canceledAt: new Date() },
     );
 
-    // Calculate end date based on interval
     const startDate = new Date();
     const endDate = new Date(startDate);
 
@@ -202,7 +192,6 @@ export class SubscriptionService {
     } else if (plan.interval === 'month') {
       endDate.setMonth(endDate.getMonth() + 1);
     } else {
-      // fallback, default to 30 days
       endDate.setDate(endDate.getDate() + 30);
     }
 
@@ -218,5 +207,16 @@ export class SubscriptionService {
 
     await this.subRepository.save(sub);
     this.logger.log(`Provisioned plan ${plan.name} for user ${user.id}`);
+  }
+
+  async updatePlanPrice(planId: string, newPrice: number) {
+    const plan = await this.planRepository.findOne({ where: { id: planId } });
+    if (!plan) throw new NotFoundException('Subscription plan not found');
+
+    plan.price = newPrice;
+    await this.planRepository.save(plan);
+    this.logger.log(`Updated plan ${plan.name} price to ${newPrice}`);
+
+    return plan;
   }
 }

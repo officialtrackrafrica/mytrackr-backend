@@ -7,16 +7,27 @@ export class EncryptionService {
   private readonly algorithm = 'aes-256-gcm';
   private readonly keyLength = 32;
   private readonly ivLength = 16;
-  private readonly key: Buffer;
+  private readonly saltLength = 16;
+  private readonly password: string;
 
   constructor() {
-    const password = process.env.ENCRYPTION_PASSWORD || 'default_dev_password';
-    this.key = crypto.scryptSync(password, 'salt', this.keyLength);
+    this.password = process.env.ENCRYPTION_PASSWORD || 'default_dev_password';
   }
 
-  encrypt(text: string): { encrypted: string; iv: string; tag: string } {
+  private deriveKey(salt: Buffer): Buffer {
+    return crypto.scryptSync(this.password, salt, this.keyLength);
+  }
+
+  encrypt(text: string): {
+    encrypted: string;
+    iv: string;
+    tag: string;
+    salt: string;
+  } {
+    const salt = crypto.randomBytes(this.saltLength);
+    const key = this.deriveKey(salt);
     const iv = crypto.randomBytes(this.ivLength);
-    const cipher = crypto.createCipheriv(this.algorithm, this.key, iv);
+    const cipher = crypto.createCipheriv(this.algorithm, key, iv);
 
     let encrypted = cipher.update(text, 'utf8', 'hex');
     encrypted += cipher.final('hex');
@@ -27,6 +38,7 @@ export class EncryptionService {
       encrypted,
       iv: iv.toString('hex'),
       tag: tag.toString('hex'),
+      salt: salt.toString('hex'),
     };
   }
 
@@ -34,10 +46,15 @@ export class EncryptionService {
     encrypted: string;
     iv: string;
     tag: string;
+    salt?: string;
   }): string {
+    const salt = encryptedData.salt
+      ? Buffer.from(encryptedData.salt, 'hex')
+      : Buffer.from('salt');
+    const key = this.deriveKey(salt);
     const iv = Buffer.from(encryptedData.iv, 'hex');
     const tag = Buffer.from(encryptedData.tag, 'hex');
-    const decipher = crypto.createDecipheriv(this.algorithm, this.key, iv);
+    const decipher = crypto.createDecipheriv(this.algorithm, key, iv);
     decipher.setAuthTag(tag);
 
     let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');

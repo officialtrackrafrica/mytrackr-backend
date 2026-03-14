@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
@@ -8,9 +8,9 @@ import { SessionService } from './session.service';
 import { RolesService } from './roles.service';
 import { MfaService } from './mfa.service';
 import { EncryptionService } from '../../security/encryption.service';
+import { StorageService } from '../../storage/storage.service';
 import { AuthError } from '../../common/errors';
 import {
-  UnifiedLoginDto,
   EmailLoginDto,
   RefreshDto,
   LoginResponseDto,
@@ -43,6 +43,8 @@ interface TokenPayload {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     @InjectRepository(User)
     private usersRepository: Repository<User>,
@@ -51,6 +53,7 @@ export class AuthService {
     private encryptionService: EncryptionService,
     private rolesService: RolesService,
     private mfaService: MfaService,
+    private storageService: StorageService,
   ) {}
 
   async loginWithEmail(
@@ -65,18 +68,6 @@ export class AuthService {
     return this.validateAndLoginUser(user, password, deviceInfo);
   }
 
-  // @deprecated Use loginWithEmail instead
-  async login(loginDto: UnifiedLoginDto): Promise<LoginResponseDto> {
-    const { email, password, deviceInfo } = loginDto;
-
-    const user = await this.usersRepository.findOne({
-      where: { email },
-      relations: ['roles'],
-    });
-
-    return this.validateAndLoginUser(user, password, deviceInfo);
-  }
-
   private async validateAndLoginUser(
     user: User | null,
     password?: string,
@@ -86,7 +77,6 @@ export class AuthService {
       throw new AuthError('INVALID_CREDENTIALS', 'Invalid credentials');
     }
 
-    // Check if account is locked
     if (user.securitySettings?.lockoutUntil) {
       const lockoutUntil = new Date(user.securitySettings.lockoutUntil);
       if (lockoutUntil > new Date()) {
@@ -94,9 +84,7 @@ export class AuthService {
       }
     }
 
-    // Verify password
     if (!user.passwordHash) {
-      // Account was created via Google OAuth — guide user to the right method
       if (user.googleId) {
         throw new AuthError(
           'GOOGLE_ACCOUNT',
@@ -107,7 +95,6 @@ export class AuthService {
       throw new AuthError('INVALID_CREDENTIALS', 'Invalid credentials');
     }
 
-    // Check verification status
     if (!user.isVerified) {
       throw new AuthError(
         'NOT_VERIFIED',
@@ -116,11 +103,8 @@ export class AuthService {
       );
     }
 
-    // Self-healing: Ensure verified user has 'User' role
     if (user.roles && !user.roles.some((role) => role.name === 'User')) {
       await this.rolesService.assignRoleToUser(user.id, 'User');
-      // Reload user with new roles to ensure token/session has correct info if needed
-      // (though roles aren't in the token payload usually, they are in the session-user object returned)
       const updatedUser = await this.usersRepository.findOne({
         where: { id: user.id },
         relations: ['roles'],
@@ -136,12 +120,10 @@ export class AuthService {
     );
 
     if (!isValidPassword) {
-      // Increment failed attempts
       await this.incrementFailedAttempts(user);
       throw new AuthError('INVALID_CREDENTIALS', 'Invalid credentials');
     }
 
-    // Reset failed attempts on successful login
     if (user.securitySettings?.failedLoginAttempts) {
       await this.usersRepository.update(user.id, {
         securitySettings: {
@@ -152,9 +134,7 @@ export class AuthService {
       });
     }
 
-    // Check if MFA is required
     if (user.securitySettings?.mfaEnabled) {
-      // Create pending session for MFA
       const session = await this.sessionService.createSession(
         user.id,
         deviceInfo,
@@ -166,10 +146,8 @@ export class AuthService {
       };
     }
 
-    // Revoke all previous sessions and blacklist old tokens BEFORE issuing new ones
     await this.sessionService.revokeAndBlacklistAllForUser(user.id);
 
-    // Create session and generate tokens
     const session = await this.sessionService.createSession(
       user.id,
       deviceInfo,
@@ -208,7 +186,6 @@ export class AuthService {
       throw new AuthError('TOKEN_INVALID', 'Invalid token type');
     }
 
-    // Check if token is revoked
     if (payload.jti) {
       const isRevoked = await this.sessionService.isTokenRevoked(payload.jti);
       if (isRevoked) {
@@ -216,12 +193,10 @@ export class AuthService {
       }
     }
 
-    // Check device mismatch
     if (deviceId && payload.deviceId && payload.deviceId !== deviceId) {
       throw new AuthError('DEVICE_MISMATCH', 'Device ID does not match');
     }
 
-    // Get user
     const user = await this.usersRepository.findOne({
       where: { id: payload.sub },
     });
@@ -230,7 +205,6 @@ export class AuthService {
       throw new AuthError('USER_NOT_FOUND', 'User not found');
     }
 
-    // Check if password was changed after token issuance
     const passwordChangedAt = user.securitySettings?.lastPasswordChange;
     if (
       passwordChangedAt &&
@@ -244,18 +218,15 @@ export class AuthService {
       );
     }
 
-    // Get session
     const session = await this.sessionService.getSession(payload.sessionId);
     if (!session) {
       throw new AuthError('SESSION_NOT_FOUND', 'Session not found');
     }
 
-    // Rotate refresh token - revoke old one
     if (payload.jti) {
       await this.sessionService.revokeToken(payload.jti);
     }
 
-    // Generate new tokens
     const newTokens = await this.generateTokens(user.id, session.id, deviceId);
 
     return {
@@ -299,9 +270,7 @@ export class AuthService {
       expiresIn: '7d',
     });
 
-    // Track refresh token JTI for revocation
     await this.sessionService.storeTokenId(refreshJti, userId, sessionId);
-    // Also track access token JTI so we can bulk-blacklist on password change
     await this.sessionService.storeTokenId(accessJti, userId, sessionId);
 
     return {
@@ -323,7 +292,6 @@ export class AuthService {
       lastName,
     } = registerDto;
 
-    // Check if user already exists
     if (method === 'email' && email) {
       const existing = await this.usersRepository.findOne({ where: { email } });
       if (existing) {
@@ -344,10 +312,7 @@ export class AuthService {
       }
     }
 
-    // Google registration - auto-verified
     if (method === 'google') {
-      // In production, verify googleIdToken with Google API
-      // For now, we mock this by extracting a fake googleId
       const googleId = googleIdToken || `google_${Date.now()}`;
 
       const existing = await this.usersRepository.findOne({
@@ -371,7 +336,7 @@ export class AuthService {
       });
 
       const savedUser = await this.usersRepository.save(newUser);
-      // Auto-assign default User role
+
       await this.rolesService.assignRoleToUser(savedUser.id, 'User');
       const session = await this.sessionService.createSession(savedUser.id);
       const tokens = await this.generateTokens(savedUser.id, session.id);
@@ -386,10 +351,9 @@ export class AuthService {
       };
     }
 
-    // Email or Phone registration - requires OTP verification
     const passwordHash = await this.encryptionService.hashPassword(password!);
     const verificationCode = this.generateOTP();
-    const verificationCodeExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    const verificationCodeExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     const newUser = this.usersRepository.create({
       email: method === 'email' ? email : undefined,
@@ -406,9 +370,8 @@ export class AuthService {
 
     await this.usersRepository.save(newUser);
 
-    // Mock sending OTP (in production, integrate with SMS/email service)
-    console.log(
-      `[OTP] Sending verification code to ${email || phone}: ${verificationCode}`,
+    this.logger.debug(
+      `[OTP] Sending verification code to ${email || phone}: ***`,
     );
 
     return {
@@ -445,7 +408,6 @@ export class AuthService {
       throw new AuthError('CODE_EXPIRED', 'Verification code has expired', 400);
     }
 
-    // Mark user as verified
     await this.usersRepository.update(user.id, {
       isVerified: true,
       isActive: true,
@@ -453,10 +415,8 @@ export class AuthService {
       verificationCodeExpiresAt: null as any,
     });
 
-    // Auto-assign default User role
     await this.rolesService.assignRoleToUser(user.id, 'User');
 
-    // Create session and return tokens
     const session = await this.sessionService.createSession(user.id);
     const tokens = await this.generateTokens(user.id, session.id);
 
@@ -483,21 +443,20 @@ export class AuthService {
     }
 
     const verificationCode = this.generateOTP();
-    const verificationCodeExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    const verificationCodeExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     await this.usersRepository.update(user.id, {
       verificationCode,
       verificationCodeExpiresAt,
     });
 
-    // Mock sending OTP
     if (user.email) {
-      console.log(
-        `[OTP] Resending verification code to ${user.email}: ${verificationCode}`,
+      this.logger.debug(
+        `[OTP] Resending verification code to ${user.email}: ***`,
       );
     } else if (user.phone) {
-      console.log(
-        `[OTP] Resending verification code to ${user.phone}: ${verificationCode}`,
+      this.logger.debug(
+        `[OTP] Resending verification code to ${user.phone}: ***`,
       );
     }
 
@@ -537,7 +496,6 @@ export class AuthService {
       },
     });
 
-    // Revoke all sessions AND instantly blacklist all active access tokens
     await this.sessionService.revokeAndBlacklistAllForUser(userId);
 
     return { message: 'Password changed successfully' };
@@ -548,21 +506,20 @@ export class AuthService {
     const user = await this.usersRepository.findOne({ where: { email } });
 
     if (!user) {
-      // Don't reveal if user exists
       return { message: 'If email exists, a reset link has been sent' };
     }
 
     const resetToken = uuidv4();
-    const resetExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    const resetExpires = new Date(Date.now() + 60 * 60 * 1000);
 
     await this.usersRepository.update(user.id, {
       resetPasswordToken: resetToken,
       resetPasswordExpires: resetExpires,
     });
 
-    // Mock Email Sending
-    console.log(
-      `[Email] Password reset link for ${email}: https://mytrackr.com/reset-password?token=${resetToken}`,
+    // Temporarily log the token for local testing/debugging
+    this.logger.debug(
+      `[Email] Password reset link sent for ${email}. Token: ${resetToken}`,
     );
 
     return { message: 'If email exists, a reset link has been sent' };
@@ -600,7 +557,6 @@ export class AuthService {
       },
     });
 
-    // Revoke all sessions AND instantly blacklist all active access tokens in Redis
     await this.sessionService.revokeAndBlacklistAllForUser(user.id);
 
     return { message: 'Password reset successfully' };
@@ -609,8 +565,6 @@ export class AuthService {
   private generateOTP(): string {
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
-
-  // ─── Split Registration Methods ──────────────────────────────────
 
   async registerWithEmail(
     dto: RegisterWithEmailDto,
@@ -644,7 +598,7 @@ export class AuthService {
     });
 
     await this.usersRepository.save(newUser);
-    console.log(
+    this.logger.debug(
       `[OTP] Sending verification code to ${email}: ${verificationCode}`,
     );
 
@@ -660,7 +614,6 @@ export class AuthService {
   ): Promise<RegisterResponseDto> {
     const { googleIdToken, firstName, lastName } = dto;
 
-    // In production, verify googleIdToken with Google API
     const googleId = googleIdToken || `google_${Date.now()}`;
 
     const existing = await this.usersRepository.findOne({
@@ -706,7 +659,6 @@ export class AuthService {
       throw new AuthError('GOOGLE_AUTH_FAILED', 'Google authentication failed');
     }
 
-    // Ensure merged accounts are fully active and verified
     if (!user.isVerified || !user.isActive) {
       await this.usersRepository.update(user.id, {
         isVerified: true,
@@ -716,7 +668,6 @@ export class AuthService {
       user.isActive = true;
     }
 
-    // Assign User role if not already set
     if (!user.roles || !user.roles.some((role) => role.name === 'User')) {
       await this.rolesService.assignRoleToUser(user.id, 'User');
     }
@@ -734,19 +685,15 @@ export class AuthService {
     };
   }
 
-  // ─── MFA Login Verification ──────────────────────────────────────
-
   async verifyMfaLogin(
     sessionId: string,
     token: string,
   ): Promise<LoginResponseDto> {
-    // Find the session to get the user
     const session = await this.sessionService.getSession(sessionId);
     if (!session) {
       throw new AuthError('INVALID_SESSION', 'Invalid MFA session', 400);
     }
 
-    // Verify TOTP or backup code
     const isValid = await this.mfaService.verifyToken(session.userId, token);
     if (!isValid) {
       throw new AuthError(
@@ -756,7 +703,6 @@ export class AuthService {
       );
     }
 
-    // Generate tokens
     const tokens = await this.generateTokens(session.userId, session.id);
 
     const user = await this.usersRepository.findOne({
@@ -772,10 +718,6 @@ export class AuthService {
     };
   }
 
-  /**
-   * Blacklist a single access token JTI.
-   * Called by the logout endpoint to instantly invalidate the current token.
-   */
   async blacklistToken(jti: string): Promise<void> {
     await this.sessionService.revokeToken(jti);
   }
@@ -804,12 +746,29 @@ export class AuthService {
     };
 
     if (failedAttempts >= maxAttempts) {
-      // Lock account for 15 minutes
       updates.lockoutUntil = new Date(Date.now() + 15 * 60 * 1000);
     }
 
     await this.usersRepository.update(user.id, {
       securitySettings: updates,
     });
+  }
+
+  async uploadProfilePicture(userId: string, file: any): Promise<User> {
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new AuthError('USER_NOT_FOUND', 'User not found', 404);
+    }
+
+    const avatarUrl = await this.storageService.uploadFile(file, 'profiles');
+
+    await this.usersRepository.update(user.id, {
+      profilePicture: avatarUrl,
+    });
+
+    const updatedUser = await this.usersRepository.findOne({
+      where: { id: userId },
+    });
+    return updatedUser!;
   }
 }

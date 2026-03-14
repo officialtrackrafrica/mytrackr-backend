@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Body, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Req,
+  UseGuards,
+  Patch,
+  Param,
+  ParseUUIDPipe,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -8,6 +18,10 @@ import {
 import { JwtAuthGuard } from '../../auth/guards';
 import { SubscriptionService } from '../services/subscription.service';
 import { InitializeSubscriptionDto } from '../dto/subscription.dto';
+import { PoliciesGuard } from '../../casl/guards/policies.guard';
+import { CheckPolicies } from '../../casl/decorators/check-policies.decorator';
+import { AppAbility } from '../../casl/casl-ability.factory';
+import { Action } from '../../casl/action.enum';
 
 @ApiTags('Subscriptions')
 @ApiBearerAuth()
@@ -42,5 +56,22 @@ export class SubscriptionController {
   })
   async subscribe(@Req() req: any, @Body() dto: InitializeSubscriptionDto) {
     return this.subscriptionService.initializeSubscription(req.user, dto);
+  }
+
+  @UseGuards(JwtAuthGuard, PoliciesGuard)
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @Patch('plans/:id/price')
+  @ApiOperation({
+    summary: 'Update the price of a subscription plan (Admin only)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'The updated plan',
+  })
+  async updatePlanPrice(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('price') price: number,
+  ) {
+    return this.subscriptionService.updatePlanPrice(id, price);
   }
 }

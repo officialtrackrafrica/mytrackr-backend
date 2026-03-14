@@ -1,8 +1,6 @@
 import { IsString, IsNotEmpty, Length } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
-// ─── Enable MFA ─────────────────────────────────────────────────────
-
 export class EnableMfaResponseDto {
   @ApiProperty({
     description: 'TOTP secret (for manual entry)',
@@ -24,8 +22,6 @@ export class EnableMfaResponseDto {
   })
   qrCodeDataUrl: string;
 }
-
-// ─── Verify Setup ───────────────────────────────────────────────────
 
 export class VerifyMfaSetupDto {
   @ApiProperty({
@@ -60,8 +56,6 @@ export class MfaEnabledResponseDto {
   backupCodes: string[];
 }
 
-// ─── Disable MFA ────────────────────────────────────────────────────
-
 export class DisableMfaDto {
   @ApiProperty({
     description: '6-digit TOTP code to confirm identity',
@@ -88,8 +82,6 @@ export class DisableMfaResponseDto {
   @ApiProperty({ example: 'Two-factor authentication has been disabled' })
   message: string;
 }
-
-// ─── Regenerate Backup Codes ────────────────────────────────────────
 
 export class RegenerateBackupCodesDto {
   @ApiProperty({

@@ -22,7 +22,7 @@ export class UserResponseDto {
 
   @ApiProperty({
     description: 'Profile picture URL',
-    example: 'https://example.com/photo.jpg',
+    example: 'https://image.com/photo.jpg',
     required: false,
   })
   profilePicture?: string;

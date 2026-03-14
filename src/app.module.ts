@@ -16,6 +16,12 @@ import { MonoModule } from './mono/mono.module';
 import { RedisModule } from './common/redis';
 import { AdminModule } from './admin/admin.module';
 import { PaymentsModule } from './payments/payments.module';
+import { BusinessModule } from './business/business.module';
+import { FinanceModule } from './finance/finance.module';
+import { TaxModule } from './tax/tax.module';
+import { DashboardModule } from './dashboard/dashboard.module';
+import { ReportsModule } from './reports/reports.module';
+import { StorageModule } from './storage/storage.module';
 
 @Module({
   imports: [
@@ -39,11 +45,9 @@ import { PaymentsModule } from './payments/payments.module';
               ...redisOptions,
             });
 
-        // Ensure redis connects before application bootstraps
         await redisClient.ping();
 
         return {
-          // Global safety-net: 60 requests per 60 seconds per IP
           throttlers: [{ ttl: 60_000, limit: 60 }],
           storage: new ThrottlerStorageRedisService(redisClient),
         };
@@ -57,12 +61,14 @@ import { PaymentsModule } from './payments/payments.module';
     MonoModule,
     AdminModule,
     PaymentsModule,
+    BusinessModule,
+    FinanceModule,
+    TaxModule,
+    DashboardModule,
+    ReportsModule,
+    StorageModule,
   ],
   controllers: [AppController],
-  providers: [
-    AppService,
-    // Apply ThrottlerGuard globally on all routes
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
-  ],
+  providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

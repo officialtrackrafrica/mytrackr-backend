@@ -33,6 +33,8 @@ import {
   UpdateTransactionCategoryDto,
 } from './dto';
 import { JwtAuthGuard } from '../auth/guards';
+import { PlanGuard } from '../common/access-control/guards/plan.guard';
+import { RequirePlan } from '../common/access-control/decorators/require-plan.decorator';
 
 @ApiTags('Mono')
 @Controller('mono')
@@ -40,7 +42,8 @@ export class MonoController {
   constructor(private readonly monoService: MonoService) {}
 
   @Post('initiate')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PlanGuard)
+  @RequirePlan()
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Initiate Mono account linking' })
   @ApiResponse({
@@ -52,7 +55,8 @@ export class MonoController {
   }
 
   @Post('reauth')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PlanGuard)
+  @RequirePlan()
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Re-authenticate an existing Mono account' })
   @ApiResponse({
@@ -74,7 +78,8 @@ export class MonoController {
   }
 
   @Get('accounts')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PlanGuard)
+  @RequirePlan()
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'List all linked accounts for the authenticated user',
@@ -90,7 +95,8 @@ export class MonoController {
   }
 
   @Get('user/statements')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PlanGuard)
+  @RequirePlan()
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Get statements for all linked accounts of the authenticated user',
@@ -119,7 +125,8 @@ export class MonoController {
   }
 
   @Get('user/transactions')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PlanGuard)
+  @RequirePlan()
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Get transactions for all linked accounts (synced from cache)',
@@ -164,7 +171,8 @@ export class MonoController {
   }
 
   @Post('user/transactions/categorise')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PlanGuard)
+  @RequirePlan()
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Categorise all user transactions across linked accounts',
@@ -173,10 +181,9 @@ export class MonoController {
     return this.monoService.categoriseAllUserTransactions(req.user.id);
   }
 
-  // ─── Manual Category Override ───────────────────────────────────────
-
   @Patch('user/transactions/:id/category')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PlanGuard)
+  @RequirePlan()
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Override the category of a specific transaction',
@@ -202,7 +209,8 @@ export class MonoController {
   }
 
   @Delete('user/transactions/:id/category')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PlanGuard)
+  @RequirePlan()
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Reset a transaction category override',
@@ -224,10 +232,9 @@ export class MonoController {
     );
   }
 
-  // ─── Enrichment ─────────────────────────────────────────────────────
-
   @Post('user/transactions/metadata')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PlanGuard)
+  @RequirePlan()
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Enrich all user transactions with metadata',
@@ -255,8 +262,6 @@ export class MonoController {
     return { totalAccounts: accounts.length, enrichment: results };
   }
 
-  // ─── Job Tracking ──────────────────────────────────────────────────
-
   @Get('enrichment/jobs/:id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
@@ -282,10 +287,9 @@ export class MonoController {
     return this.monoService.getEnrichmentRecords(jobId);
   }
 
-  // ─── Credits / Debits / Income / Creditworthiness ──────────────────
-
   @Get('user/credits')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PlanGuard)
+  @RequirePlan()
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Get total credits history for all linked accounts',
@@ -295,7 +299,8 @@ export class MonoController {
   }
 
   @Get('user/debits')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PlanGuard)
+  @RequirePlan()
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get total debits history for all linked accounts' })
   async getDebits(@Req() req: any) {
@@ -303,7 +308,8 @@ export class MonoController {
   }
 
   @Get('user/income')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PlanGuard)
+  @RequirePlan()
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Request income analysis for all linked accounts',
@@ -316,7 +322,8 @@ export class MonoController {
   }
 
   @Post('user/creditworthiness')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PlanGuard)
+  @RequirePlan()
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Assess creditworthiness for all linked accounts',

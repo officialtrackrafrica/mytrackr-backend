@@ -57,7 +57,6 @@ export class CaslAbilityFactory {
 
     if (user.roles && user.roles.length > 0) {
       user.roles.forEach((role) => {
-        // 1. Apply hardcoded base permissions for this role
         const basePermissions = ROLE_PERMISSIONS[role.name];
         if (basePermissions) {
           basePermissions.forEach((perm) => {
@@ -69,7 +68,6 @@ export class CaslAbilityFactory {
           });
         }
 
-        // 2. Apply DB-stored permission overrides on top (if any)
         if (role.permissions && role.permissions.length > 0) {
           role.permissions.forEach((permission) => {
             if (permission.inverted) {
@@ -85,7 +83,6 @@ export class CaslAbilityFactory {
         }
       });
     } else {
-      // Fallback: users without any roles get minimal self-access
       can(Action.Read, 'User', { id: user.id });
       can(Action.Update, 'User', { id: user.id });
     }

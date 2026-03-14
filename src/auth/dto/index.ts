@@ -18,3 +18,4 @@ export * from './resend-verification.dto';
 export * from './change-password.dto';
 export * from './forgot-password.dto';
 export * from './reset-password.dto';
+export * from './upload-profile-picture.dto';

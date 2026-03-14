@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import { Session } from './session.entity';
 import { Role } from './role.entity';
+import { Business } from '../../business/entities/business.entity';
 import { MonoAccount } from '../../mono/entities/mono-account.entity';
 
 @Entity('users')
@@ -70,12 +71,23 @@ export class User {
     lockoutUntil?: Date;
   };
 
+  @Column({ type: 'jsonb', nullable: true })
+  onboardingState: {
+    profileComplete: boolean;
+    bankConnected: boolean;
+    bankSkipped: boolean;
+    setupComplete: boolean;
+  };
+
   @OneToMany(() => Session, (session) => session.user)
   sessions: Session[];
 
   @ManyToMany(() => Role)
   @JoinTable()
   roles: Role[];
+
+  @OneToMany(() => Business, (business) => business.owner)
+  businesses: Business[];
 
   @OneToMany(() => MonoAccount, (monoAccount) => monoAccount.user)
   monoAccounts: MonoAccount[];

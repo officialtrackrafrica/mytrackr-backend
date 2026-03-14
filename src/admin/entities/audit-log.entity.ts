@@ -18,10 +18,10 @@ export class AuditLog {
   userId: string;
 
   @Column()
-  action: string; // e.g. 'USER_DEACTIVATED', 'SETTING_UPDATED', 'TRANSACTION_FLAGGED'
+  action: string;
 
   @Column()
-  resource: string; // e.g. 'User', 'Transaction', 'Setting'
+  resource: string;
 
   @Column({ nullable: true })
   resourceId: string;

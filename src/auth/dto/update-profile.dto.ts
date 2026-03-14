@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsUrl, MaxLength } from 'class-validator';
+import { IsString, IsOptional, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class UpdateProfileDto {
@@ -23,13 +23,4 @@ export class UpdateProfileDto {
   @IsOptional()
   @MaxLength(100, { message: 'Business name must be at most 100 characters' })
   businessName?: string;
-
-  @ApiProperty({
-    description: 'Profile picture URL',
-    example: 'https://example.com/avatar.jpg',
-    required: false,
-  })
-  @IsUrl({}, { message: 'Profile picture must be a valid URL' })
-  @IsOptional()
-  profilePicture?: string;
 }

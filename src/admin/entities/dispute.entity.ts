@@ -24,7 +24,7 @@ export class Dispute {
   reason: string;
 
   @Column({ default: 'open' })
-  status: string; // 'open' | 'investigating' | 'resolved' | 'rejected'
+  status: string;
 
   @Column({ type: 'text', nullable: true })
   resolution: string;

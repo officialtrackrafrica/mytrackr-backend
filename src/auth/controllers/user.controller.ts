@@ -9,13 +9,17 @@ import {
   Post,
   HttpException,
   HttpStatus,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiCookieAuth,
   ApiBody,
+  ApiConsumes,
 } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -23,7 +27,12 @@ import { JwtAuthGuard } from '../guards';
 import { PoliciesGuard } from '../../casl/guards/policies.guard';
 import { CheckPolicies } from '../../casl/decorators/check-policies.decorator';
 import { User } from '../entities';
-import { UpdateProfileDto, UserResponseDto, ChangePasswordDto } from '../dto';
+import {
+  UpdateProfileDto,
+  UserResponseDto,
+  ChangePasswordDto,
+  UploadProfilePictureDto,
+} from '../dto';
 import { SWAGGER_TAGS } from '../../common/docs';
 import { AuthService } from '../services/auth.service';
 import { AuthError } from '../../common/errors';
@@ -81,8 +90,8 @@ export class UserController {
     @Request() req: AuthenticatedRequest,
     @Body() updateDto: UpdateProfileDto,
   ): Promise<UserResponseDto> {
-    const { firstName, lastName, businessName, profilePicture } = updateDto;
-    const safeUpdate = { firstName, lastName, businessName, profilePicture };
+    const { firstName, lastName, businessName } = updateDto;
+    const safeUpdate = { firstName, lastName, businessName };
 
     Object.keys(safeUpdate).forEach(
       (key) =>
@@ -130,6 +139,33 @@ export class UserController {
         HttpStatus.BAD_REQUEST,
       );
     }
+  }
+
+  @Post('me/profile-picture')
+  @ApiOperation({ summary: 'Upload profile picture' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description: 'Profile picture file',
+    type: UploadProfilePictureDto,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Profile picture uploaded returning full user profile',
+    type: UserResponseDto,
+  })
+  @UseInterceptors(FileInterceptor('file'))
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Update, 'User'))
+  async uploadProfilePicture(
+    @Request() req: AuthenticatedRequest,
+    @UploadedFile() file: any,
+  ): Promise<UserResponseDto> {
+    if (!file) {
+      throw new HttpException('No file provided', HttpStatus.BAD_REQUEST);
+    }
+
+    // Auth service handling the file upload
+    const user = await this.authService.uploadProfilePicture(req.user.id, file);
+    return this.sanitizeUser(user);
   }
 
   private sanitizeUser(user: User): UserResponseDto {

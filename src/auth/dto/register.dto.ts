@@ -74,7 +74,6 @@ export class RegisterResponseDto {
   @ApiProperty({ example: true })
   requiresVerification: boolean;
 
-  // Only present for google registration
   @ApiProperty({ required: false })
   accessToken?: string;
 

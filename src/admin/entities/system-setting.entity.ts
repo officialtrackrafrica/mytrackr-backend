@@ -21,7 +21,7 @@ export class SystemSetting {
   description: string;
 
   @Column({ default: 'general' })
-  category: string; // 'general', 'security', 'notifications', 'features'
+  category: string;
 
   @Column({ nullable: true })
   updatedBy: string;

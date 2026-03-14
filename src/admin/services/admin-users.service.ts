@@ -38,7 +38,7 @@ export class AdminUsersService {
         break;
       case 'suspended':
         user.isActive = false;
-        // Revoke all active sessions when suspending
+
         await this.sessionsRepository.update(
           { userId, revokedAt: undefined as any },
           { revokedAt: new Date() },
@@ -61,11 +61,10 @@ export class AdminUsersService {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    // Generate a random reset token
     const resetToken =
       Math.random().toString(36).substring(2, 15) +
       Math.random().toString(36).substring(2, 15);
-    const resetExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    const resetExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     user.resetPasswordToken = resetToken;
     user.resetPasswordExpires = resetExpires;
@@ -77,7 +76,7 @@ export class AdminUsersService {
       message: 'Password reset initiated',
       userId: user.id,
       email: user.email,
-      resetToken, // In production, this would be sent via email only
+      resetToken,
       expiresAt: resetExpires,
     };
   }
@@ -90,7 +89,6 @@ export class AdminUsersService {
     user.isVerified = false;
     await this.usersRepository.save(user);
 
-    // Revoke all active sessions
     await this.sessionsRepository.update({ userId }, { revokedAt: new Date() });
 
     this.logger.log(`User ${userId} soft-deleted`);

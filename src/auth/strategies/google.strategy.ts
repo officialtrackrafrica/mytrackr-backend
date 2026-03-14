@@ -37,14 +37,12 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     const firstName = name?.givenName;
     const lastName = name?.familyName;
 
-    // Find by googleId first
     let user = await this.usersRepository.findOne({
       where: { googleId: id },
       relations: ['roles'],
     });
 
     if (!user && email) {
-      // Try to find by email — this handles account merge
       user = await this.usersRepository.findOne({
         where: { email },
         relations: ['roles'],
@@ -52,10 +50,8 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     }
 
     if (user) {
-      // Merge: link googleId if not linked yet; mark as verified + active
       const updates: Partial<User> = {};
       if (!user.googleId) {
-        // First time this email/password account is used with Google — log the merge
         this.logger.warn(
           `Account merge: Google identity linked to existing account [email=${email}, userId=${user.id}]`,
         );
@@ -71,12 +67,11 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
         await this.usersRepository.update(user.id, updates);
         Object.assign(user, updates);
       }
-      // Ensure User role exists
+
       if (!user.roles || !user.roles.some((r) => r.name === 'User')) {
         await this.rolesService.assignRoleToUser(user.id, 'User');
       }
     } else {
-      // Create new user via Google
       user = this.usersRepository.create({
         googleId: id,
         email,
@@ -88,7 +83,7 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
       });
       user = await this.usersRepository.save(user);
       await this.rolesService.assignRoleToUser(user.id, 'User');
-      // Re-fetch with roles
+
       user = (await this.usersRepository.findOne({
         where: { id: user.id },
         relations: ['roles'],

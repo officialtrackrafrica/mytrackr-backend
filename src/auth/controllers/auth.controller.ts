@@ -47,14 +47,14 @@ const COOKIE_OPTS_ACCESS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
   sameSite: 'lax' as const,
-  maxAge: 15 * 60 * 1000, // 15 minutes
+  maxAge: 15 * 60 * 1000,
 };
 
 const COOKIE_OPTS_REFRESH = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
   sameSite: 'lax' as const,
-  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  maxAge: 7 * 24 * 60 * 60 * 1000,
 };
 
 function setCookies(
@@ -147,7 +147,7 @@ export class AuthController {
           accessToken: result.accessToken,
           refreshToken: result.refreshToken,
         });
-        // Strip tokens from response body before returning
+
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { accessToken: _at1, refreshToken: _rt1, ...safeResult } = result;
         return safeResult as LoginResponseDto;
@@ -372,7 +372,6 @@ export class AuthController {
     @Body() body: Partial<RefreshDto>,
   ): Promise<RefreshResponseDto> {
     try {
-      // Read from cookie first, fall back to body for backward-compat
       const refreshToken = req.cookies?.refreshToken || body.refreshToken;
       if (!refreshToken) {
         throw new AuthError('TOKEN_MISSING', 'Refresh token is required', 401);
@@ -412,7 +411,6 @@ export class AuthController {
     @Req() req: any,
     @Res({ passthrough: true }) res: ExpressResponse,
   ): Promise<{ message: string }> {
-    // Blacklist the current access token's JTI so it cannot be reused
     const jti: string | undefined = req.user?.accessJti;
     if (jti) {
       await this.authService.blacklistToken(jti);

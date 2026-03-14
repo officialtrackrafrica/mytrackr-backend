@@ -176,7 +176,6 @@ export class AdminFinanceService {
       .limit(60)
       .getRawMany();
 
-    // Group by period
     const periodMap: Record<string, any> = {};
     result.forEach((r) => {
       if (!periodMap[r.period]) {

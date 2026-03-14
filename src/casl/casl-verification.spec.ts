@@ -30,28 +30,23 @@ describe('CASL Verification', () => {
   });
 
   it('should allow Super Admin to manage all', async () => {
-    // 1. Get Super Admin role (seeded)
     const superAdminRole = (await rolesService.findAll()).find(
       (r) => r.name === 'Super Admin',
     );
 
     expect(superAdminRole).toBeDefined();
 
-    // 2. Mock a user with this role
     const user = new User();
     user.id = 'test-super-admin';
     user.roles = [superAdminRole!];
 
-    // 3. Create ability
     const ability = caslAbilityFactory.createForUser(user);
 
-    // 4. Check permission
     expect(ability.can(Action.Manage, 'all')).toBe(true);
     expect(ability.can(Action.Delete, 'User')).toBe(true);
   });
 
   it('should deny User from deleting User', async () => {
-    // 1. Get User role
     const userRole = (await rolesService.findAll()).find(
       (r) => r.name === 'User',
     );
@@ -67,7 +62,6 @@ describe('CASL Verification', () => {
   });
 
   it('should allow User to read User', async () => {
-    // 1. Get User role
     const userRole = (await rolesService.findAll()).find(
       (r) => r.name === 'User',
     );
@@ -78,9 +72,6 @@ describe('CASL Verification', () => {
     user.roles = [userRole!];
 
     const ability = caslAbilityFactory.createForUser(user);
-
-    // Debugging output
-    // console.log('User Role Permissions:', userRole?.permissions);
 
     expect(ability.can(Action.Read, 'User')).toBe(true);
   });

@@ -60,7 +60,7 @@ export class RateLimitGuard implements CanActivate {
           429,
         );
       }
-      // Redis connection error — fail-open to avoid blocking all users
+
       this.logger.warn(`RateLimiter Redis error (fail-open): ${err}`);
       return true;
     }
@@ -74,7 +74,7 @@ export class RateLimitGuard implements CanActivate {
         new RateLimiterRedis({
           storeClient: this.redis,
           keyPrefix: 'rl',
-          // rate-limiter-flexible uses duration in seconds
+
           duration: Math.ceil(config.windowMs / 1000),
           points: config.max,
         }),

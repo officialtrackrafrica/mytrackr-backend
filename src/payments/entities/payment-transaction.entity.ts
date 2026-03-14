@@ -23,19 +23,19 @@ export class PaymentTransaction {
   currency: string;
 
   @Column()
-  gateway: string; // 'paystack', 'stripe', etc
+  gateway: string;
 
   @Column({ unique: true })
   reference: string;
 
   @Column({ nullable: true })
-  gatewayReference: string; // Native reference from the provider
+  gatewayReference: string;
 
   @Column({ default: 'pending' })
-  status: string; // 'pending', 'success', 'failed', 'abandoned'
+  status: string;
 
   @Column({ nullable: true, type: 'varchar' })
-  paymentMethod: string; // e.g., 'card', 'bank_transfer'
+  paymentMethod: string;
 
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, any>;

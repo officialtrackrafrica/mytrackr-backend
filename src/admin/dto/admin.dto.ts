@@ -12,8 +12,6 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
-// ─── User Administration DTOs ────────────────────────────────
-
 export class UpdateUserStatusDto {
   @ApiProperty({
     enum: ['active', 'inactive', 'suspended'],
@@ -58,8 +56,6 @@ export class AdminQueryDto {
   limit?: number = 20;
 }
 
-// ─── Dashboard DTOs ──────────────────────────────────────────
-
 export class DashboardQueryDto {
   @ApiPropertyOptional({
     enum: ['day', 'week', 'month'],
@@ -70,8 +66,6 @@ export class DashboardQueryDto {
   @IsEnum(['day', 'week', 'month'])
   period?: 'day' | 'week' | 'month' = 'month';
 }
-
-// ─── Financial DTOs ──────────────────────────────────────────
 
 export class TransactionQueryDto {
   @ApiPropertyOptional({ description: 'Start date (YYYY-MM-DD)' })
@@ -118,8 +112,6 @@ export class TransactionQueryDto {
   limit?: number = 20;
 }
 
-// ─── Audit Log DTOs ──────────────────────────────────────────
-
 export class AuditLogQueryDto {
   @ApiPropertyOptional({ description: 'Filter by action type' })
   @IsOptional()
@@ -157,8 +149,6 @@ export class AuditLogQueryDto {
   limit?: number = 20;
 }
 
-// ─── System Settings DTOs ────────────────────────────────────
-
 export class UpdateSettingDto {
   @ApiProperty({ description: 'Setting value (any JSON-compatible type)' })
   value: any;
@@ -169,8 +159,6 @@ export class ToggleFeatureFlagDto {
   @IsBoolean()
   enabled: boolean;
 }
-
-// ─── Notification DTOs ───────────────────────────────────────
 
 export class BroadcastNotificationDto {
   @ApiProperty({ description: 'Notification title' })
@@ -258,8 +246,6 @@ export class UpdateNotificationTemplateDto {
   @IsBoolean()
   isActive?: boolean;
 }
-
-// ─── Support & Dispute DTOs ──────────────────────────────────
 
 export class UpdateTicketDto {
   @ApiPropertyOptional({
@@ -354,8 +340,6 @@ export class DisputeQueryDto {
   @Max(100)
   limit?: number = 20;
 }
-
-// ─── Webhook DTOs ────────────────────────────────────────────
 
 export class WebhookQueryDto {
   @ApiPropertyOptional({ description: 'Filter by source (e.g. mono)' })

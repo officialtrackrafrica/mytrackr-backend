@@ -12,10 +12,10 @@ export class Plan {
   id: string;
 
   @Column({ unique: true })
-  name: string; // e.g., 'Free', 'Premium'
+  name: string;
 
   @Column({ unique: true })
-  slug: string; // e.g., 'free', 'premium'
+  slug: string;
 
   @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
   price: number;
@@ -24,10 +24,10 @@ export class Plan {
   currency: string;
 
   @Column({ default: 'month' })
-  interval: string; // 'month', 'year', 'lifetime'
+  interval: string;
 
   @Column({ type: 'jsonb', default: [] })
-  features: string[]; // List of features this plan unlocks
+  features: string[];
 
   @Column({ default: true })
   isActive: boolean;

@@ -58,8 +58,6 @@ export class AdminSystemService {
     }
   }
 
-  // ─── System Settings ───────────────────────────────────────
-
   async getSettings() {
     const settings = await this.settingsRepository.find({
       order: { category: 'ASC', key: 'ASC' },
@@ -115,8 +113,6 @@ export class AdminSystemService {
     return flag;
   }
 
-  // ─── Notification Templates ────────────────────────────────
-
   async getNotificationTemplates() {
     return this.templatesRepository.find({
       order: { createdAt: 'DESC' },
@@ -147,7 +143,6 @@ export class AdminSystemService {
     channel: string,
     filters?: Record<string, any>,
   ) {
-    // In a real implementation, this would queue notifications via a job system
     this.logger.log(`Broadcasting notification: "${title}" via ${channel}`);
 
     return {
@@ -158,8 +153,6 @@ export class AdminSystemService {
       queuedAt: new Date(),
     };
   }
-
-  // ─── Support Tickets ───────────────────────────────────────
 
   async getTickets(query: TicketQueryDto) {
     const { status, priority, page = 1, limit = 20 } = query;
@@ -199,8 +192,6 @@ export class AdminSystemService {
     return this.ticketsRepository.save(ticket);
   }
 
-  // ─── Disputes ──────────────────────────────────────────────
-
   async getDisputes(query: DisputeQueryDto) {
     const { status, page = 1, limit = 20 } = query;
     const skip = (page - 1) * limit;
@@ -237,8 +228,6 @@ export class AdminSystemService {
     dispute.resolvedBy = adminId;
     return this.disputesRepository.save(dispute);
   }
-
-  // ─── Webhook Logs ──────────────────────────────────────────
 
   async getWebhookLogs(query: WebhookQueryDto) {
     const { source, event, page = 1, limit = 20 } = query;
@@ -283,9 +272,8 @@ export class AdminSystemService {
     const log = await this.webhookLogRepository.findOne({ where: { id } });
     if (!log) throw new NotFoundException('Webhook log not found');
 
-    // In a real implementation, this would re-dispatch the webhook
     log.retryCount += 1;
-    log.status = 'received'; // Reset to received for reprocessing
+    log.status = 'received';
     await this.webhookLogRepository.save(log);
 
     this.logger.log(
@@ -299,8 +287,6 @@ export class AdminSystemService {
     };
   }
 
-  // ─── System Health & Ops ───────────────────────────────────
-
   async getSystemHealth() {
     const health: Record<string, any> = {
       status: 'healthy',
@@ -308,7 +294,6 @@ export class AdminSystemService {
       services: {},
     };
 
-    // Check database
     try {
       await this.dataSource.query('SELECT 1');
       health.services.database = { status: 'up' };
@@ -320,7 +305,6 @@ export class AdminSystemService {
       health.status = 'degraded';
     }
 
-    // Check Redis
     try {
       if (this.redis) {
         await this.redis.ping();
@@ -339,7 +323,6 @@ export class AdminSystemService {
       health.status = 'degraded';
     }
 
-    // Check Mono API
     try {
       const monoKey = this.configService.get<string>('MONO_SECRET_KEY');
       health.services.mono = {
@@ -355,14 +338,12 @@ export class AdminSystemService {
   getIntegrationsHealth() {
     const integrations: Record<string, any> = {};
 
-    // Mono
     const monoKey = this.configService.get<string>('MONO_SECRET_KEY');
     integrations.mono = {
       configured: !!monoKey,
       status: monoKey ? 'active' : 'not_configured',
     };
 
-    // Additional integrations can be added here
     return integrations;
   }
 
@@ -389,7 +370,6 @@ export class AdminSystemService {
   }
 
   async getBackgroundJobs() {
-    // Return status of recent webhook processing and enrichment jobs
     const recentWebhooks = await this.webhookLogRepository
       .createQueryBuilder('log')
       .select('log.status', 'status')
@@ -408,7 +388,6 @@ export class AdminSystemService {
 
   async clearCache() {
     if (this.redis) {
-      // Only clear application-specific keys, not all Redis data
       const keys = await this.redis.keys('mytrackr:*');
       if (keys.length > 0) {
         await this.redis.del(...keys);

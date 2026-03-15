@@ -11,6 +11,7 @@ import {
   ParseUUIDPipe,
   Logger,
   BadRequestException,
+  Req,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -20,8 +21,9 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { JwtAuthGuard } from '../auth/guards';
+import { Business } from '../business/entities/business.entity';
 import { Asset } from './entities/asset.entity';
 import { Liability, LiabilityStatus } from './entities/liability.entity';
 import { CategorizationRule } from './entities/categorization-rule.entity';
@@ -48,6 +50,8 @@ export class FinanceController {
   private readonly logger = new Logger(FinanceController.name);
 
   constructor(
+    @InjectRepository(Business)
+    private readonly businessRepository: Repository<Business>,
     @InjectRepository(Asset)
     private readonly assetRepository: Repository<Asset>,
     @InjectRepository(Liability)
@@ -59,15 +63,32 @@ export class FinanceController {
     private readonly categorizationService: CategorizationService,
   ) {}
 
+  private async getBusinessIdsForUser(userId: string): Promise<string[]> {
+    const businesses = await this.businessRepository.find({
+      where: { userId },
+      select: ['id'],
+    });
+    return businesses.map((b) => b.id);
+  }
+
   @Get('assets')
-  @ApiOperation({ summary: 'List all assets for a business' })
-  @ApiQuery({ name: 'businessId', required: true, type: String })
+  @ApiOperation({
+    summary: 'List all assets for a business (or all businesses)',
+  })
+  @ApiQuery({ name: 'businessId', required: false, type: String })
   @ApiQuery({ name: 'includeArchived', required: false, type: Boolean })
   async listAssets(
-    @Query('businessId') businessId: string,
+    @Req() req: any,
+    @Query('businessId') businessId?: string,
     @Query('includeArchived') includeArchived?: string,
   ) {
-    const where: any = { businessId };
+    const where: any = {};
+    if (businessId) {
+      where.businessId = businessId;
+    } else {
+      where.businessId = In(await this.getBusinessIdsForUser(req.user.id));
+    }
+
     if (includeArchived !== 'true') {
       where.isArchived = false;
     }
@@ -100,14 +121,23 @@ export class FinanceController {
   }
 
   @Get('liabilities')
-  @ApiOperation({ summary: 'List all liabilities for a business' })
-  @ApiQuery({ name: 'businessId', required: true, type: String })
+  @ApiOperation({
+    summary: 'List all liabilities for a business (or all businesses)',
+  })
+  @ApiQuery({ name: 'businessId', required: false, type: String })
   @ApiQuery({ name: 'status', required: false, type: String })
   async listLiabilities(
-    @Query('businessId') businessId: string,
+    @Req() req: any,
+    @Query('businessId') businessId?: string,
     @Query('status') status?: string,
   ) {
-    const where: any = { businessId };
+    const where: any = {};
+    if (businessId) {
+      where.businessId = businessId;
+    } else {
+      where.businessId = In(await this.getBusinessIdsForUser(req.user.id));
+    }
+
     if (status) {
       where.status = status;
     }
@@ -145,11 +175,19 @@ export class FinanceController {
   }
 
   @Get('categorization-rules')
-  @ApiOperation({ summary: 'List categorization rules for a business' })
-  @ApiQuery({ name: 'businessId', required: true, type: String })
-  async listRules(@Query('businessId') businessId: string) {
+  @ApiOperation({
+    summary: 'List categorization rules for a business (or all businesses)',
+  })
+  @ApiQuery({ name: 'businessId', required: false, type: String })
+  async listRules(@Req() req: any, @Query('businessId') businessId?: string) {
+    const where: any = {};
+    if (businessId) {
+      where.businessId = businessId;
+    } else {
+      where.businessId = In(await this.getBusinessIdsForUser(req.user.id));
+    }
     return this.ruleRepository.find({
-      where: { businessId },
+      where,
       order: { priority: 'ASC' },
     });
   }
@@ -204,18 +242,31 @@ export class FinanceController {
   }
 
   @Get('transactions')
-  @ApiOperation({ summary: 'List transactions for a business' })
-  @ApiQuery({ name: 'businessId', required: true, type: String })
+  @ApiOperation({
+    summary: 'List transactions for a business (or all businesses)',
+  })
+  @ApiQuery({ name: 'businessId', required: false, type: String })
   @ApiQuery({ name: 'startDate', required: false, type: String })
   @ApiQuery({ name: 'endDate', required: false, type: String })
   async listTransactions(
-    @Query('businessId') businessId: string,
+    @Req() req: any,
+    @Query('businessId') businessId?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ) {
-    const query = this.transactionRepository
-      .createQueryBuilder('tx')
-      .where('tx.businessId = :businessId', { businessId });
+    const query = this.transactionRepository.createQueryBuilder('tx');
+
+    if (businessId) {
+      query.where('tx.businessId = :businessId', { businessId });
+    } else {
+      const businessIds = await this.getBusinessIdsForUser(req.user.id);
+      if (businessIds.length > 0) {
+        query.where('tx.businessId IN (:...businessIds)', { businessIds });
+      } else {
+        // Return empty if no businesses
+        return [];
+      }
+    }
 
     if (startDate && endDate) {
       const start = new Date(startDate);

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BusinessModule } from '../business/business.module';
 import { Asset } from './entities/asset.entity';
 import { Liability } from './entities/liability.entity';
 import { CategorizationRule } from './entities/categorization-rule.entity';
@@ -18,6 +19,7 @@ import { PaymentsModule } from '../payments/payments.module';
       BankAccount,
       Transaction,
     ]),
+    BusinessModule,
     PaymentsModule,
   ],
   controllers: [FinanceController],

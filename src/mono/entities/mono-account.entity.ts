@@ -6,8 +6,10 @@ import {
   UpdateDateColumn,
   ManyToOne,
   OneToMany,
+  JoinColumn,
 } from 'typeorm';
 import { User } from '../../auth/entities/user.entity';
+import { Business } from '../../business/entities/business.entity';
 import { Transaction } from './transaction.entity';
 
 @Entity('mono_accounts')
@@ -56,6 +58,13 @@ export class MonoAccount {
 
   @ManyToOne(() => User, (user) => user.monoAccounts, { onDelete: 'CASCADE' })
   user: User;
+
+  @ManyToOne(() => Business, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'businessId' })
+  business: Business;
+
+  @Column({ nullable: true })
+  businessId: string;
 
   @OneToMany(() => Transaction, (tx) => tx.monoAccount)
   transactions: Transaction[];

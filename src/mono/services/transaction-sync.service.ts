@@ -40,7 +40,7 @@ export class TransactionSyncService {
       return { synced: 0, skipped: 'MonoAccount not found' };
     }
 
-    const businessIdString = monoAccount.user ? monoAccount.user.id : '';
+    const businessIdString = monoAccount.businessId || (monoAccount.user ? monoAccount.user.id : '');
 
     const bankAccount = await this.bankAccountRepository.findOne({
       where: {

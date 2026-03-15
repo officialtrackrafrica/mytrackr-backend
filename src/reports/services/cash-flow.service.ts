@@ -1,12 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import {
   Transaction,
   TransactionCategory,
   TransactionDirection,
 } from '../../finance/entities/transaction.entity';
 import { BankAccount } from '../../finance/entities/bank-account.entity';
+import { Business } from '../../business/entities/business.entity';
 
 @Injectable()
 export class CashFlowService {
@@ -17,12 +18,34 @@ export class CashFlowService {
     private readonly transactionRepository: Repository<Transaction>,
     @InjectRepository(BankAccount)
     private readonly bankAccountRepository: Repository<BankAccount>,
+    @InjectRepository(Business)
+    private readonly businessRepository: Repository<Business>,
   ) {}
 
-  async calculateCashFlow(businessId: string, startDate: Date, endDate: Date) {
+  async calculateCashFlow(
+    userId: string,
+    businessId: string | null,
+    startDate: Date,
+    endDate: Date,
+  ) {
+    let businessIds: string[] = [];
+    if (businessId) {
+      businessIds = [businessId];
+    } else {
+      const businesses = await this.businessRepository.find({
+        where: { userId },
+        select: ['id'],
+      });
+      businessIds = businesses.map((b) => b.id);
+    }
+
+    if (businessIds.length === 0) {
+      return this.emptyCashFlow();
+    }
+
     const results = await this.transactionRepository
       .createQueryBuilder('tx')
-      .where('tx.businessId = :businessId', { businessId })
+      .where('tx.businessId IN (:...businessIds)', { businessIds })
       .andWhere('tx.date BETWEEN :startDate AND :endDate', {
         startDate,
         endDate,
@@ -68,7 +91,7 @@ export class CashFlowService {
     const monthlyBurnRate = cashOut / diffMonths;
 
     const bankAccounts = await this.bankAccountRepository.find({
-      where: { businessId },
+      where: { businessId: In(businessIds) },
     });
     const cashBalance = bankAccounts.reduce(
       (acc, account) => acc + Number(account.currentBalance),
@@ -93,6 +116,19 @@ export class CashFlowService {
       cashBalance,
       monthsOfRunway,
       lowRunwayAlert,
+    };
+  }
+
+  private emptyCashFlow() {
+    return {
+      cashIn: 0,
+      cashOut: 0,
+      netCashFlow: 0,
+      internalTransfers: { internalIn: 0, internalOut: 0 },
+      monthlyBurnRate: 0,
+      cashBalance: 0,
+      monthsOfRunway: null,
+      lowRunwayAlert: false,
     };
   }
 }

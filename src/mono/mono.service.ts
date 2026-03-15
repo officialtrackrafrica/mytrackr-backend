@@ -973,7 +973,7 @@ export class MonoService {
    * Handles the transaction_metadata webhook.
    * Re-syncs transactions for the affected account to pull updated metadata.
    */
-  private async handleTransactionMetadata(data: any) {
+  async handleTransactionMetadata(data: any) {
     const monoAccountId = data?.account || data?.id;
     if (!monoAccountId) {
       this.logger.warn(
@@ -1010,5 +1010,22 @@ export class MonoService {
     await this.syncTransactionsForAccount(account, undefined, true);
 
     this.logger.log(`Transaction metadata updated for ${monoAccountId}`);
+  }
+
+  async linkAccountToBusiness(
+    userId: string,
+    monoAccountId: string,
+    businessId: string,
+  ) {
+    const account = await this.monoAccountRepository.findOne({
+      where: { monoAccountId, user: { id: userId } },
+    });
+
+    if (!account) {
+      throw new NotFoundException('Mono account not found');
+    }
+
+    account.businessId = businessId;
+    return this.monoAccountRepository.save(account);
   }
 }

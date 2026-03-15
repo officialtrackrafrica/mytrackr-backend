@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Asset } from '../../finance/entities/asset.entity';
 import {
   Liability,
@@ -12,6 +12,7 @@ import {
   TransactionCategory,
   TransactionDirection,
 } from '../../finance/entities/transaction.entity';
+import { Business } from '../../business/entities/business.entity';
 
 @Injectable()
 export class BalanceSheetService {
@@ -26,11 +27,28 @@ export class BalanceSheetService {
     private readonly bankAccountRepository: Repository<BankAccount>,
     @InjectRepository(Transaction)
     private readonly transactionRepository: Repository<Transaction>,
+    @InjectRepository(Business)
+    private readonly businessRepository: Repository<Business>,
   ) {}
 
-  async calculateBalanceSheet(businessId: string) {
+  async calculateBalanceSheet(userId: string, businessId: string | null) {
+    let businessIds: string[] = [];
+    if (businessId) {
+      businessIds = [businessId];
+    } else {
+      const businesses = await this.businessRepository.find({
+        where: { userId },
+        select: ['id'],
+      });
+      businessIds = businesses.map((b) => b.id);
+    }
+
+    if (businessIds.length === 0) {
+      return this.emptyBalanceSheet();
+    }
+
     const bankAccounts = await this.bankAccountRepository.find({
-      where: { businessId },
+      where: { businessId: In(businessIds) },
     });
     const cashAndBankBalances = bankAccounts.reduce(
       (acc, account) => acc + Number(account.currentBalance),
@@ -38,7 +56,7 @@ export class BalanceSheetService {
     );
 
     const assets = await this.assetRepository.find({
-      where: { businessId, isArchived: false },
+      where: { businessId: In(businessIds), isArchived: false },
     });
     const businessAssets = assets.reduce(
       (acc, asset) => acc + Number(asset.currentValue || asset.purchaseValue),
@@ -48,7 +66,7 @@ export class BalanceSheetService {
     const totalAssets = cashAndBankBalances + businessAssets;
 
     const liabilities = await this.liabilityRepository.find({
-      where: { businessId, status: LiabilityStatus.ACTIVE },
+      where: { businessId: In(businessIds), status: LiabilityStatus.ACTIVE },
     });
     const totalLiabilities = liabilities.reduce(
       (acc, liability) => acc + Number(liability.amountOwed),
@@ -57,7 +75,7 @@ export class BalanceSheetService {
 
     const capitalContrib = await this.transactionRepository
       .createQueryBuilder('tx')
-      .where('tx.businessId = :businessId', { businessId })
+      .where('tx.businessId IN (:...businessIds)', { businessIds })
       .andWhere('tx.category = :cat', {
         cat: TransactionCategory.INTERNAL_TRANSFER,
       })
@@ -70,7 +88,7 @@ export class BalanceSheetService {
 
     const drawings = await this.transactionRepository
       .createQueryBuilder('tx')
-      .where('tx.businessId = :businessId', { businessId })
+      .where('tx.businessId IN (:...businessIds)', { businessIds })
       .andWhere('tx.category = :cat', {
         cat: TransactionCategory.INTERNAL_TRANSFER,
       })
@@ -83,7 +101,7 @@ export class BalanceSheetService {
 
     const pnlResults = await this.transactionRepository
       .createQueryBuilder('tx')
-      .where('tx.businessId = :businessId', { businessId })
+      .where('tx.businessId IN (:...businessIds)', { businessIds })
       .andWhere('tx.isCategorised = :isCat', { isCat: true })
       .andWhere('tx.category != :internalTransfer', {
         internalTransfer: TransactionCategory.INTERNAL_TRANSFER,
@@ -127,6 +145,20 @@ export class BalanceSheetService {
         difference: Math.abs(totalAssets - (totalLiabilities + ownersMoney)),
         isValid: Math.abs(totalAssets - (totalLiabilities + ownersMoney)) <= 1,
       },
+    };
+  }
+
+  private emptyBalanceSheet() {
+    return {
+      assets: { cashAndBankBalances: 0, businessAssets: 0, totalAssets: 0 },
+      liabilities: { totalLiabilities: 0 },
+      equity: {
+        capitalContributed: 0,
+        retainedProfit: 0,
+        ownerWithdrawals: 0,
+        ownersMoney: 0,
+      },
+      integrityCheck: { difference: 0, isValid: true },
     };
   }
 }

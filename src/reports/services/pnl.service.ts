@@ -6,6 +6,7 @@ import {
   TransactionCategory,
   TransactionDirection,
 } from '../../finance/entities/transaction.entity';
+import { Business } from '../../business/entities/business.entity';
 
 @Injectable()
 export class PnlService {
@@ -14,12 +15,34 @@ export class PnlService {
   constructor(
     @InjectRepository(Transaction)
     private readonly transactionRepository: Repository<Transaction>,
+    @InjectRepository(Business)
+    private readonly businessRepository: Repository<Business>,
   ) {}
 
-  async calculatePnl(businessId: string, startDate: Date, endDate: Date) {
+  async calculatePnl(
+    userId: string,
+    businessId: string | null,
+    startDate: Date,
+    endDate: Date,
+  ) {
+    let businessIds: string[] = [];
+    if (businessId) {
+      businessIds = [businessId];
+    } else {
+      const businesses = await this.businessRepository.find({
+        where: { userId },
+        select: ['id'],
+      });
+      businessIds = businesses.map((b) => b.id);
+    }
+
+    if (businessIds.length === 0) {
+      return this.emptyPnl();
+    }
+
     const baseQuery = this.transactionRepository
       .createQueryBuilder('tx')
-      .where('tx.businessId = :businessId', { businessId })
+      .where('tx.businessId IN (:...businessIds)', { businessIds })
       .andWhere('tx.date BETWEEN :startDate AND :endDate', {
         startDate,
         endDate,
@@ -81,7 +104,7 @@ export class PnlService {
 
     const uncategorisedStats = await this.transactionRepository
       .createQueryBuilder('tx')
-      .where('tx.businessId = :businessId', { businessId })
+      .where('tx.businessId IN (:...businessIds)', { businessIds })
       .andWhere('tx.date BETWEEN :startDate AND :endDate', {
         startDate,
         endDate,
@@ -112,6 +135,19 @@ export class PnlService {
         uncategorisedCount: parseInt(uncategorisedStats?.count || '0', 10),
         uncategorisedValue: parseFloat(uncategorisedStats?.totalValue || '0'),
       },
+    };
+  }
+
+  private emptyPnl() {
+    return {
+      revenue: { lines: [], total: 0 },
+      cogs: { lines: [], total: 0 },
+      grossProfit: 0,
+      grossProfitMargin: 0,
+      expenses: { lines: [], total: 0 },
+      netProfit: 0,
+      netProfitMargin: 0,
+      metadata: { uncategorisedCount: 0, uncategorisedValue: 0 },
     };
   }
 }

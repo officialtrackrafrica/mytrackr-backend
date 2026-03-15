@@ -9,11 +9,13 @@ import { Liability } from '../finance/entities/liability.entity';
 import { BankAccount } from '../finance/entities/bank-account.entity';
 import { Transaction } from '../finance/entities/transaction.entity';
 import { PaymentsModule } from '../payments/payments.module';
+import { BusinessModule } from '../business/business.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Asset, Liability, BankAccount, Transaction]),
     PaymentsModule,
+    BusinessModule,
   ],
   controllers: [ReportsController],
   providers: [PnlService, CashFlowService, BalanceSheetService],

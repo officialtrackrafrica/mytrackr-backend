@@ -41,5 +41,6 @@ export interface IPaymentGateway {
   parseWebhookEvent(
     payload: any,
     signatureHeader?: string,
+    rawBody?: Buffer,
   ): Promise<PaymentWebhookEvent | null>;
 }

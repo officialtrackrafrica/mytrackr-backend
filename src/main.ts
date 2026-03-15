@@ -1,3 +1,5 @@
+import cookieParser from 'cookie-parser';
+import * as express from 'express';
 import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
@@ -9,11 +11,24 @@ import { SWAGGER_TAGS } from './common/docs';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
 
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const cookieParserFn = require('cookie-parser');
-  app.use(cookieParserFn());
+  app.use(cookieParser());
+
+  app.use(
+    express.json({
+      verify: (req: any, res: any, buf: Buffer) => {
+        req.rawBody = buf;
+        const logger = new Logger('Main');
+        if (req.originalUrl && req.originalUrl.includes('/webhooks')) {
+          logger.debug(
+            `Captured rawBody for ${req.originalUrl}, length: ${buf.length}`,
+          );
+        }
+      },
+    }),
+  );
+  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
   app.useGlobalPipes(
     new ValidationPipe({

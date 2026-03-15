@@ -19,10 +19,10 @@ import { Action } from '../casl/action.enum';
 import {
   ApiTags,
   ApiOperation,
-  ApiBearerAuth,
-  ApiResponse,
   ApiQuery,
   ApiHeader,
+  ApiResponse,
+  ApiBearerAuth,
   ApiParam,
 } from '@nestjs/swagger';
 import { MonoService } from './mono.service';
@@ -353,5 +353,25 @@ export class MonoController {
   ) {
     this.monoService.verifyWebhookSecret(webhookSecret);
     return this.monoService.handleWebhookEvent(payload);
+  }
+
+  @Patch('accounts/:id/link-business')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Link a Mono account to a business' })
+  @ApiParam({
+    name: 'id',
+    description: 'Internal Mono account ID (monoAccountId)',
+  })
+  async linkBusiness(
+    @Req() req: any,
+    @Param('id') monoAccountId: string,
+    @Body('businessId') businessId: string,
+  ) {
+    return await this.monoService.linkAccountToBusiness(
+      req.user.id,
+      monoAccountId,
+      businessId,
+    );
   }
 }

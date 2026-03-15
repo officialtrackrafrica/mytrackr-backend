@@ -30,9 +30,9 @@ export class TaxController {
   @ApiOperation({
     summary: 'Calculate tax estimate',
     description:
-      'Calculates both PIT (sole proprietor) and CIT (LLC) tax estimates. Includes year-to-date projection for current year.',
+      'Calculates both PIT (sole proprietor) and CIT (LLC) tax estimates for a business (or all businesses). Includes year-to-date projection.',
   })
-  @ApiQuery({ name: 'businessId', required: true, type: String })
+  @ApiQuery({ name: 'businessId', required: false, type: String })
   @ApiQuery({
     name: 'year',
     required: true,
@@ -48,21 +48,18 @@ export class TaxController {
   @ApiResponse({ status: 200, description: 'Tax estimate with PIT and CIT' })
   async getTaxEstimate(
     @Req() req: any,
-    @Query('businessId') businessId: string,
-    @Query('year') year: string,
+    @Query('businessId') businessId?: string,
+    @Query('year') year?: string,
     @Query('deductions') deductions?: string,
   ) {
-    if (!businessId) {
-      throw new BadRequestException('businessId is required');
-    }
-    const yearNumber = parseInt(year, 10);
+    const yearNumber = parseInt(year || '', 10);
     if (!year || isNaN(yearNumber)) {
       throw new BadRequestException('Valid tax year is required');
     }
 
     return this.taxService.calculateTaxEstimate(
       req.user.id,
-      businessId,
+      businessId || null,
       yearNumber,
       deductions ? parseFloat(deductions) : 0,
     );

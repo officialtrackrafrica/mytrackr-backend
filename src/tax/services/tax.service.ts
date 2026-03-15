@@ -2,11 +2,10 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Business } from '../../business/entities/business.entity';
 import {
   Transaction,
@@ -29,22 +28,32 @@ export class TaxService {
 
   async calculateTaxEstimate(
     userId: string,
-    businessId: string,
+    businessId: string | null,
     year: number,
     userDeductions: number = 0,
   ) {
-    if (!businessId) {
-      throw new BadRequestException('businessId is required');
+    let businessIds: string[] = [];
+    if (businessId) {
+      const business = await this.businessRepository.findOne({
+        where: { id: businessId },
+      });
+      if (!business) {
+        throw new NotFoundException('Business not found');
+      }
+      if (business.userId !== userId) {
+        throw new ForbiddenException('You do not have access to this business');
+      }
+      businessIds = [businessId];
+    } else {
+      const businesses = await this.businessRepository.find({
+        where: { userId },
+        select: ['id'],
+      });
+      businessIds = businesses.map((b) => b.id);
     }
 
-    const business = await this.businessRepository.findOne({
-      where: { id: businessId },
-    });
-    if (!business) {
-      throw new NotFoundException('Business not found');
-    }
-    if (business.userId !== userId) {
-      throw new ForbiddenException('You do not have access to this business');
+    if (businessIds.length === 0) {
+      return this.emptyTaxEstimate();
     }
 
     const startDate = new Date(year, 0, 1);
@@ -52,7 +61,7 @@ export class TaxService {
 
     const pnlResults = await this.transactionRepository
       .createQueryBuilder('tx')
-      .where('tx.businessId = :businessId', { businessId })
+      .where('tx.businessId IN (:...businessIds)', { businessIds })
       .andWhere('tx.date BETWEEN :startDate AND :endDate', {
         startDate,
         endDate,
@@ -80,7 +89,7 @@ export class TaxService {
     const netProfit = totalRevenue - totalCogs - totalExpenses;
 
     const assets = await this.assetRepository.find({
-      where: { businessId, isArchived: false },
+      where: { businessId: In(businessIds), isArchived: false },
     });
     const totalAssets = assets.reduce(
       (acc, asset) => acc + Number(asset.currentValue || asset.purchaseValue),
@@ -208,6 +217,17 @@ export class TaxService {
       estimatedMonthlySetAside: estimatedAnnualTax / 12,
       isExempt: taxRate === 0,
       totalAssetsConsidered: totalAssets,
+    };
+  }
+
+  private emptyTaxEstimate() {
+    return {
+      netProfit: 0,
+      totalRevenue: 0,
+      totalAssets: 0,
+      projection: null,
+      pitCalculation: this.calculatePIT(0, 0),
+      citCalculation: this.calculateCIT(0, 0, 0, 0),
     };
   }
 }

@@ -4,6 +4,7 @@ import {
   Query,
   UseGuards,
   BadRequestException,
+  Req,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -29,9 +30,9 @@ export class DashboardController {
   @ApiOperation({
     summary: 'Get dashboard metrics',
     description:
-      'Returns key financial metrics: revenue, expenses, net profit, cash balance, uncategorised items, and burn rate.',
+      'Returns key financial metrics for a business (or all businesses): revenue, expenses, net profit, cash balance, uncategorised items, and burn rate.',
   })
-  @ApiQuery({ name: 'businessId', required: true, type: String })
+  @ApiQuery({ name: 'businessId', required: false, type: String })
   @ApiQuery({
     name: 'startDate',
     required: true,
@@ -46,6 +47,7 @@ export class DashboardController {
   })
   @ApiResponse({ status: 200, description: 'Dashboard metrics' })
   async getDashboard(
+    @Req() req: any,
     @Query('businessId') businessId: string,
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
@@ -60,6 +62,11 @@ export class DashboardController {
       throw new BadRequestException('Invalid or missing endDate');
     }
 
-    return this.dashboardService.getDashboardMetrics(businessId, start, end);
+    return this.dashboardService.getDashboardMetrics(
+      req.user.id,
+      businessId || null,
+      start,
+      end,
+    );
   }
 }

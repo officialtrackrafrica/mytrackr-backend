@@ -120,9 +120,14 @@ export class SubscriptionService {
     };
   }
 
-  async handleWebhook(provider: string, payload: any, signature?: string) {
+  async handleWebhook(
+    provider: string,
+    payload: any,
+    signature?: string,
+    rawBody?: Buffer,
+  ) {
     const gateway = this.paymentFactory.getGateway(provider);
-    const event = await gateway.parseWebhookEvent(payload, signature);
+    const event = await gateway.parseWebhookEvent(payload, signature, rawBody);
 
     if (!event) return { status: 'ignored', reason: 'Invalid signature' };
 

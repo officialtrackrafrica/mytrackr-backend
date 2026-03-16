@@ -31,10 +31,7 @@ export class User {
   lastName: string;
 
   @Column({ nullable: true })
-  businessName: string;
-
-  @Column({ nullable: true })
-  profilePicture: string;
+  profilePicture?: string;
 
   @Column({ nullable: true })
   passwordHash: string;

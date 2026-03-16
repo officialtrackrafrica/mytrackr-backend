@@ -58,8 +58,9 @@ async function bootstrap() {
 
   const config = new DocumentBuilder()
     .setTitle('MyTrackr API')
-    .setDescription('MyTrackr Authentication Platform API')
+    .setDescription('MyTrackr API — Financial tracking for African businesses')
     .setVersion('1.0')
+    .addBearerAuth()
     .addCookieAuth('accessToken', {
       type: 'apiKey',
       in: 'cookie',

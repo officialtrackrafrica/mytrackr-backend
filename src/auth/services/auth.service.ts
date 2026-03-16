@@ -4,11 +4,13 @@ import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { v4 as uuidv4 } from 'uuid';
 import { User } from '../entities';
+import { Business } from '../../business/entities/business.entity';
 import { SessionService } from './session.service';
 import { RolesService } from './roles.service';
 import { MfaService } from './mfa.service';
 import { EncryptionService } from '../../security/encryption.service';
 import { StorageService } from '../../storage/storage.service';
+import { EmailService } from '../../email/email.service';
 import { AuthError } from '../../common/errors';
 import {
   EmailLoginDto,
@@ -48,12 +50,15 @@ export class AuthService {
   constructor(
     @InjectRepository(User)
     private usersRepository: Repository<User>,
+    @InjectRepository(Business)
+    private businessRepository: Repository<Business>,
     private jwtService: JwtService,
     private sessionService: SessionService,
     private encryptionService: EncryptionService,
     private rolesService: RolesService,
     private mfaService: MfaService,
     private storageService: StorageService,
+    private emailService: EmailService,
   ) {}
 
   async loginWithEmail(
@@ -370,8 +375,10 @@ export class AuthService {
 
     await this.usersRepository.save(newUser);
 
-    this.logger.debug(
-      `[OTP] Sending verification code to ${email || phone}: ***`,
+    await this.emailService.sendOtpEmail(
+      email || phone!,
+      firstName,
+      verificationCode,
     );
 
     return {
@@ -450,15 +457,11 @@ export class AuthService {
       verificationCodeExpiresAt,
     });
 
-    if (user.email) {
-      this.logger.debug(
-        `[OTP] Resending verification code to ${user.email}: ***`,
-      );
-    } else if (user.phone) {
-      this.logger.debug(
-        `[OTP] Resending verification code to ${user.phone}: ***`,
-      );
-    }
+    await this.emailService.sendOtpEmail(
+      user.email || user.phone,
+      user.firstName,
+      verificationCode,
+    );
 
     return {
       message: `Verification code sent to ${user.email || user.phone}`,
@@ -517,9 +520,10 @@ export class AuthService {
       resetPasswordExpires: resetExpires,
     });
 
-    // Temporarily log the token for local testing/debugging
-    this.logger.debug(
-      `[Email] Password reset link sent for ${email}. Token: ${resetToken}`,
+    await this.emailService.sendPasswordResetEmail(
+      email,
+      user.firstName,
+      `http://localhost:3000/reset-password?token=${resetToken}`,
     );
 
     return { message: 'If email exists, a reset link has been sent' };
@@ -589,7 +593,6 @@ export class AuthService {
       passwordHash,
       firstName,
       lastName,
-      businessName,
       isVerified: false,
       isActive: false,
       verificationCode,
@@ -597,10 +600,19 @@ export class AuthService {
       securitySettings: { mfaEnabled: false },
     });
 
-    await this.usersRepository.save(newUser);
-    this.logger.debug(
-      `[OTP] Sending verification code to ${email}: ${verificationCode}`,
-    );
+    const savedUser = await this.usersRepository.save(newUser);
+
+    const baseBusinessName = businessName?.trim() || `${firstName}'s Business`;
+    const newBusiness = this.businessRepository.create({
+      name: baseBusinessName,
+      owner: savedUser,
+      userId: savedUser.id,
+    });
+    await this.businessRepository.save(newBusiness);
+
+    await this.emailService.sendOtpEmail(email, firstName, verificationCode);
+    // Asynchronously send a welcome email so they receive it right after registration
+    await this.emailService.sendWelcomeEmail(email, firstName);
 
     return {
       success: true,
@@ -637,6 +649,14 @@ export class AuthService {
     });
 
     const savedUser = await this.usersRepository.save(newUser);
+
+    const newBusiness = this.businessRepository.create({
+      name: `${firstName}'s Business`,
+      owner: savedUser,
+      userId: savedUser.id,
+    });
+    await this.businessRepository.save(newBusiness);
+
     await this.rolesService.assignRoleToUser(savedUser.id, 'User');
     const session = await this.sessionService.createSession(savedUser.id);
     const tokens = await this.generateTokens(savedUser.id, session.id);
@@ -728,7 +748,6 @@ export class AuthService {
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
-      businessName: user.businessName,
       profilePicture: user.profilePicture,
       isVerified: user.isVerified,
       createdAt: user.createdAt,

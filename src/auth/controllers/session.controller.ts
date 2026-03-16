@@ -13,7 +13,7 @@ import {
   ApiTags,
   ApiOperation,
   ApiResponse,
-  ApiBearerAuth,
+  ApiCookieAuth,
 } from '@nestjs/swagger';
 import { SessionService } from '../services';
 import { JwtAuthGuard } from '../guards';
@@ -34,7 +34,7 @@ interface AuthenticatedRequest {
 @ApiTags(SWAGGER_TAGS[2].name)
 @Controller('auth/sessions')
 @UseGuards(JwtAuthGuard, PoliciesGuard)
-@ApiBearerAuth()
+@ApiCookieAuth('accessToken')
 export class SessionController {
   constructor(private sessionService: SessionService) {}
 

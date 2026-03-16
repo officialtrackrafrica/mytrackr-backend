@@ -11,8 +11,8 @@ import {
   ApiTags,
   ApiOperation,
   ApiResponse,
-  ApiBearerAuth,
   ApiBody,
+  ApiCookieAuth,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../guards';
 import { PoliciesGuard } from '../../casl/guards/policies.guard';
@@ -32,8 +32,8 @@ import {
 import { AuthError } from '../../common/errors';
 
 @ApiTags('MFA (Two-Factor Authentication)')
-@ApiBearerAuth()
 @Controller('auth/mfa')
+@ApiCookieAuth('accessToken')
 @UseGuards(JwtAuthGuard, PoliciesGuard)
 export class MfaController {
   constructor(private readonly mfaService: MfaService) {}

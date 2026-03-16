@@ -12,15 +12,15 @@ import { RolesService } from '../services/roles.service';
 import { CreateRoleDto } from '../dto/create-role.dto';
 import { UpdateRoleDto } from '../dto/update-role.dto';
 import { AssignRoleDto } from '../dto/assign-role.dto';
-import { JwtAuthGuard } from '../guards/jwt-auth.guard';
+import { JwtAuthGuard } from '../guards';
 import { PoliciesGuard } from '../../casl/guards/policies.guard';
 import { CheckPolicies } from '../../casl/decorators/check-policies.decorator';
 import { AppAbility } from '../../casl/casl-ability.factory';
 import { Action } from '../../casl/action.enum';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiCookieAuth } from '@nestjs/swagger';
 
-@ApiTags('roles')
-@ApiBearerAuth()
+@ApiTags('Roles & Permissions')
+@ApiCookieAuth('accessToken')
 @Controller('roles')
 @UseGuards(JwtAuthGuard, PoliciesGuard)
 export class RolesController {

@@ -1,20 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Business, BusinessType } from '../entities/business.entity';
+import { Business } from '../entities/business.entity';
 import { User } from '../../auth/entities/user.entity';
-
-export class CreateBusinessDto {
-  name: string;
-  businessType: BusinessType;
-  currency?: string;
-}
-
-export class UpdateBusinessDto {
-  name?: string;
-  businessType?: BusinessType;
-  currency?: string;
-}
+import { CreateBusinessDto, UpdateBusinessDto } from '../dto';
 
 @Injectable()
 export class BusinessService {
@@ -29,7 +18,9 @@ export class BusinessService {
       owner: user,
       userId: user.id,
     });
-    return this.businessRepository.save(business);
+    const savedBusiness = await this.businessRepository.save(business);
+    delete (savedBusiness as any).owner;
+    return savedBusiness;
   }
 
   async findAllForUser(userId: string): Promise<Business[]> {

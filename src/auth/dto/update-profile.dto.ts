@@ -13,14 +13,4 @@ export class UpdateProfileDto {
   @IsOptional()
   @MaxLength(50, { message: 'Last name must be at most 50 characters' })
   lastName?: string;
-
-  @ApiProperty({
-    description: 'Business name',
-    example: 'Acme Corp',
-    required: false,
-  })
-  @IsString()
-  @IsOptional()
-  @MaxLength(100, { message: 'Business name must be at most 100 characters' })
-  businessName?: string;
 }

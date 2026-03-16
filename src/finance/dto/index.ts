@@ -243,3 +243,76 @@ export class CreateTransactionDto {
   @IsString()
   bankAccountId: string;
 }
+
+// ─── Response DTOs ───────────────────────────────────────────────────────────
+
+export class AssetResponseDto {
+  @ApiProperty() id: string;
+  @ApiProperty() name: string;
+  @ApiProperty({ enum: AssetCategory }) category: AssetCategory;
+  @ApiProperty() purchaseValue: number;
+  @ApiProperty() currentValue: number;
+  @ApiPropertyOptional() purchaseDate?: string;
+  @ApiPropertyOptional() notes?: string;
+  @ApiProperty() businessId: string;
+  @ApiProperty() isArchived: boolean;
+  @ApiProperty() createdAt: Date;
+  @ApiProperty() updatedAt: Date;
+}
+
+export class LiabilityResponseDto {
+  @ApiProperty() id: string;
+  @ApiProperty() name: string;
+  @ApiProperty({ enum: LiabilityType }) liabilityType: LiabilityType;
+  @ApiProperty() amountOwed: number;
+  @ApiPropertyOptional() originalAmount?: number;
+  @ApiPropertyOptional() dueDate?: string;
+  @ApiPropertyOptional() notes?: string;
+  @ApiProperty({ enum: LiabilityStatus }) status: LiabilityStatus;
+  @ApiProperty() businessId: string;
+  @ApiProperty() createdAt: Date;
+  @ApiProperty() updatedAt: Date;
+}
+
+export class CategorizationRuleResponseDto {
+  @ApiProperty() id: string;
+  @ApiProperty({ enum: MatchType }) matchType: MatchType;
+  @ApiProperty() matchValue: string;
+  @ApiProperty() category: string;
+  @ApiProperty() subCategory: string;
+  @ApiPropertyOptional() priority?: number;
+  @ApiProperty() isActive: boolean;
+  @ApiProperty() businessId: string;
+  @ApiProperty() createdAt: Date;
+}
+
+export class RuleCreateResponseDto {
+  @ApiProperty({ type: CategorizationRuleResponseDto })
+  rule: CategorizationRuleResponseDto;
+
+  @ApiProperty({
+    description: 'Number of existing transactions retroactively categorised',
+    example: 42,
+  })
+  retroactivelyApplied: number;
+}
+
+export class TransactionResponseDto {
+  @ApiProperty() id: string;
+  @ApiProperty() date: Date;
+  @ApiProperty() amount: number;
+  @ApiProperty({ enum: TransactionDirection }) direction: TransactionDirection;
+  @ApiProperty() description: string;
+  @ApiPropertyOptional({ enum: TransactionCategory })
+  category?: TransactionCategory;
+  @ApiPropertyOptional() subCategory?: string;
+  @ApiPropertyOptional() notes?: string;
+  @ApiProperty() businessId: string;
+  @ApiProperty() bankAccountId: string;
+  @ApiProperty() isCategorised: boolean;
+  @ApiProperty() createdAt: Date;
+}
+
+export class ArchiveMessageResponseDto {
+  @ApiProperty({ example: 'Asset archived' }) message: string;
+}

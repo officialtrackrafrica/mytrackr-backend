@@ -14,13 +14,6 @@ export class UserResponseDto {
   lastName?: string;
 
   @ApiProperty({
-    description: 'Business name',
-    example: 'Acme Corp',
-    required: false,
-  })
-  businessName?: string;
-
-  @ApiProperty({
     description: 'Profile picture URL',
     example: 'https://image.com/photo.jpg',
     required: false,

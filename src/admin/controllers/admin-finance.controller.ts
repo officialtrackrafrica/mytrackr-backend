@@ -3,7 +3,7 @@ import {
   ApiTags,
   ApiOperation,
   ApiResponse,
-  ApiBearerAuth,
+  ApiCookieAuth,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards';
 import { PoliciesGuard } from '../../casl/guards/policies.guard';
@@ -14,8 +14,8 @@ import { AdminFinanceService } from '../services/admin-finance.service';
 import { AdminAuditService } from '../services/admin-audit.service';
 import { TransactionQueryDto, DashboardQueryDto } from '../dto';
 
-@ApiTags('Admin - Financial Oversight')
-@ApiBearerAuth()
+@ApiTags('Admin - Finance & Subscriptions')
+@ApiCookieAuth('accessToken')
 @Controller('admin')
 @UseGuards(JwtAuthGuard, PoliciesGuard)
 export class AdminFinanceController {

@@ -9,7 +9,7 @@ import {
 import {
   ApiTags,
   ApiOperation,
-  ApiBearerAuth,
+  ApiCookieAuth,
   ApiResponse,
   ApiQuery,
 } from '@nestjs/swagger';
@@ -24,7 +24,7 @@ import { BalanceSheetService } from './services/balance-sheet.service';
 @Controller('reports')
 @UseGuards(JwtAuthGuard, PlanGuard)
 @RequirePlan()
-@ApiBearerAuth()
+@ApiCookieAuth('accessToken')
 export class ReportsController {
   constructor(
     private readonly pnlService: PnlService,

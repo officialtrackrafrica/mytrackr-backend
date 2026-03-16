@@ -13,7 +13,7 @@ import {
   ApiTags,
   ApiOperation,
   ApiResponse,
-  ApiBearerAuth,
+  ApiCookieAuth,
 } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -29,7 +29,7 @@ import { CreateStaffDto } from '../dto/create-staff.dto';
 import { AssignRoleDto } from '../dto/assign-role.dto';
 
 @ApiTags('Admin')
-@ApiBearerAuth()
+@ApiCookieAuth('accessToken')
 @Controller('admin')
 @UseGuards(JwtAuthGuard, PoliciesGuard)
 export class AdminController {

@@ -1,15 +1,8 @@
-import {
-  Controller,
-  Get,
-  Query,
-  UseGuards,
-  BadRequestException,
-  Req,
-} from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Req } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
-  ApiBearerAuth,
+  ApiCookieAuth,
   ApiResponse,
   ApiQuery,
 } from '@nestjs/swagger';
@@ -17,12 +10,15 @@ import { JwtAuthGuard } from '../auth/guards';
 import { PlanGuard } from '../common/access-control/guards/plan.guard';
 import { RequirePlan } from '../common/access-control/decorators/require-plan.decorator';
 import { DashboardService } from './services/dashboard.service';
+import { DashboardMetricsResponseDto } from './dto/dashboard.dto';
+import { SWAGGER_TAGS } from '../common/docs';
+import { AppException, ErrorResponseDto } from '../common/errors';
 
-@ApiTags('Dashboard')
+@ApiTags(SWAGGER_TAGS[7].name)
 @Controller('dashboard')
 @UseGuards(JwtAuthGuard, PlanGuard)
 @RequirePlan()
-@ApiBearerAuth()
+@ApiCookieAuth('accessToken')
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
@@ -45,7 +41,16 @@ export class DashboardController {
     type: String,
     description: 'ISO date string e.g. 2025-12-31',
   })
-  @ApiResponse({ status: 200, description: 'Dashboard metrics' })
+  @ApiResponse({
+    status: 200,
+    description: 'Dashboard metrics',
+    type: DashboardMetricsResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid or missing dates',
+    type: ErrorResponseDto,
+  })
   async getDashboard(
     @Req() req: any,
     @Query('businessId') businessId: string,
@@ -56,10 +61,16 @@ export class DashboardController {
     const end = new Date(endDate);
 
     if (!startDate || isNaN(start.getTime())) {
-      throw new BadRequestException('Invalid or missing startDate');
+      throw AppException.badRequest(
+        'Invalid or missing startDate',
+        'DASHBOARD_INVALID_DATE_RANGE',
+      );
     }
     if (!endDate || isNaN(end.getTime())) {
-      throw new BadRequestException('Invalid or missing endDate');
+      throw AppException.badRequest(
+        'Invalid or missing endDate',
+        'DASHBOARD_INVALID_DATE_RANGE',
+      );
     }
 
     return this.dashboardService.getDashboardMetrics(

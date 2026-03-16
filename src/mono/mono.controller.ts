@@ -22,7 +22,8 @@ import {
   ApiQuery,
   ApiHeader,
   ApiResponse,
-  ApiBearerAuth,
+  ApiCookieAuth,
+  ApiBody,
   ApiParam,
 } from '@nestjs/swagger';
 import { MonoService } from './mono.service';
@@ -31,12 +32,19 @@ import {
   CreditworthinessDto,
   ReauthAccountDto,
   UpdateTransactionCategoryDto,
+  MonoLinkResponseDto,
+  MonoAccountResponseDto,
+  MonoTransactionSummaryResponseDto,
+  LinkBusinessDto,
+  WebhookPayloadDto,
 } from './dto';
+import { AppException, ErrorResponseDto } from '../common/errors';
+import { SWAGGER_TAGS } from '../common/docs';
 import { JwtAuthGuard } from '../auth/guards';
 import { PlanGuard } from '../common/access-control/guards/plan.guard';
 import { RequirePlan } from '../common/access-control/decorators/require-plan.decorator';
 
-@ApiTags('Mono')
+@ApiTags(SWAGGER_TAGS[8].name)
 @Controller('mono')
 export class MonoController {
   constructor(private readonly monoService: MonoService) {}
@@ -44,11 +52,12 @@ export class MonoController {
   @Post('initiate')
   @UseGuards(JwtAuthGuard, PlanGuard)
   @RequirePlan()
-  @ApiBearerAuth()
+  @ApiCookieAuth('accessToken')
   @ApiOperation({ summary: 'Initiate Mono account linking' })
   @ApiResponse({
     status: 201,
     description: 'Returns Mono URL and session info',
+    type: MonoLinkResponseDto,
   })
   async initiate(@Req() req: any, @Body() dto: InitiateAccountDto) {
     return this.monoService.initiateAccountLinking(req.user, dto);
@@ -57,11 +66,12 @@ export class MonoController {
   @Post('reauth')
   @UseGuards(JwtAuthGuard, PlanGuard)
   @RequirePlan()
-  @ApiBearerAuth()
+  @ApiCookieAuth('accessToken')
   @ApiOperation({ summary: 'Re-authenticate an existing Mono account' })
   @ApiResponse({
     status: 201,
     description: 'Returns Mono URL and session info for revalidation',
+    type: MonoLinkResponseDto,
   })
   async reauth(@Req() req: any, @Body() dto: ReauthAccountDto) {
     return this.monoService.reauthenticateAccount(req.user.id, dto);
@@ -70,9 +80,13 @@ export class MonoController {
   @Get('all-accounts')
   @UseGuards(JwtAuthGuard, PoliciesGuard)
   @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
-  @ApiBearerAuth()
+  @ApiCookieAuth('accessToken')
   @ApiOperation({ summary: 'Get all Mono accounts (Admin only)' })
-  @ApiResponse({ status: 200, description: 'All business Mono accounts' })
+  @ApiResponse({
+    status: 200,
+    description: 'All business Mono accounts',
+    type: [MonoAccountResponseDto],
+  })
   async getAllAccounts() {
     return this.monoService.getAllPlatformAccounts();
   }
@@ -80,7 +94,7 @@ export class MonoController {
   @Get('accounts')
   @UseGuards(JwtAuthGuard, PlanGuard)
   @RequirePlan()
-  @ApiBearerAuth()
+  @ApiCookieAuth('accessToken')
   @ApiOperation({
     summary: 'List all linked accounts for the authenticated user',
     description:
@@ -89,6 +103,7 @@ export class MonoController {
   @ApiResponse({
     status: 200,
     description: 'List of user linked bank accounts',
+    type: [MonoAccountResponseDto],
   })
   async getLinkedAccounts(@Req() req: any) {
     return this.monoService.getUserLinkedAccounts(req.user.id);
@@ -97,7 +112,7 @@ export class MonoController {
   @Get('user/statements')
   @UseGuards(JwtAuthGuard, PlanGuard)
   @RequirePlan()
-  @ApiBearerAuth()
+  @ApiCookieAuth('accessToken')
   @ApiOperation({
     summary: 'Get statements for all linked accounts of the authenticated user',
   })
@@ -127,7 +142,7 @@ export class MonoController {
   @Get('user/transactions')
   @UseGuards(JwtAuthGuard, PlanGuard)
   @RequirePlan()
-  @ApiBearerAuth()
+  @ApiCookieAuth('accessToken')
   @ApiOperation({
     summary: 'Get transactions for all linked accounts (synced from cache)',
     description:
@@ -173,7 +188,7 @@ export class MonoController {
   @Post('user/transactions/categorise')
   @UseGuards(JwtAuthGuard, PlanGuard)
   @RequirePlan()
-  @ApiBearerAuth()
+  @ApiCookieAuth('accessToken')
   @ApiOperation({
     summary: 'Categorise all user transactions across linked accounts',
   })
@@ -184,7 +199,7 @@ export class MonoController {
   @Patch('user/transactions/:id/category')
   @UseGuards(JwtAuthGuard, PlanGuard)
   @RequirePlan()
-  @ApiBearerAuth()
+  @ApiCookieAuth('accessToken')
   @ApiOperation({
     summary: 'Override the category of a specific transaction',
     description:
@@ -211,7 +226,7 @@ export class MonoController {
   @Delete('user/transactions/:id/category')
   @UseGuards(JwtAuthGuard, PlanGuard)
   @RequirePlan()
-  @ApiBearerAuth()
+  @ApiCookieAuth('accessToken')
   @ApiOperation({
     summary: 'Reset a transaction category override',
     description:
@@ -235,7 +250,7 @@ export class MonoController {
   @Post('user/transactions/metadata')
   @UseGuards(JwtAuthGuard, PlanGuard)
   @RequirePlan()
-  @ApiBearerAuth()
+  @ApiCookieAuth('accessToken')
   @ApiOperation({
     summary: 'Enrich all user transactions with metadata',
     description:
@@ -264,7 +279,7 @@ export class MonoController {
 
   @Get('enrichment/jobs/:id')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
+  @ApiCookieAuth('accessToken')
   @ApiOperation({
     summary: 'Check the status of an enrichment job',
     description: 'Returns the current/final status of a data enrichment job.',
@@ -276,7 +291,7 @@ export class MonoController {
 
   @Get('enrichment/records/:jobId')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
+  @ApiCookieAuth('accessToken')
   @ApiOperation({
     summary: 'Get enrichment records for a specific job',
     description:
@@ -290,9 +305,14 @@ export class MonoController {
   @Get('user/credits')
   @UseGuards(JwtAuthGuard, PlanGuard)
   @RequirePlan()
-  @ApiBearerAuth()
+  @ApiCookieAuth('accessToken')
   @ApiOperation({
     summary: 'Get total credits history for all linked accounts',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Total credits summary',
+    type: MonoTransactionSummaryResponseDto,
   })
   async getCredits(@Req() req: any) {
     return this.monoService.getAllUserCredits(req.user.id);
@@ -301,8 +321,13 @@ export class MonoController {
   @Get('user/debits')
   @UseGuards(JwtAuthGuard, PlanGuard)
   @RequirePlan()
-  @ApiBearerAuth()
+  @ApiCookieAuth('accessToken')
   @ApiOperation({ summary: 'Get total debits history for all linked accounts' })
+  @ApiResponse({
+    status: 200,
+    description: 'Total debits summary',
+    type: MonoTransactionSummaryResponseDto,
+  })
   async getDebits(@Req() req: any) {
     return this.monoService.getAllUserDebits(req.user.id);
   }
@@ -310,7 +335,7 @@ export class MonoController {
   @Get('user/income')
   @UseGuards(JwtAuthGuard, PlanGuard)
   @RequirePlan()
-  @ApiBearerAuth()
+  @ApiCookieAuth('accessToken')
   @ApiOperation({
     summary: 'Request income analysis for all linked accounts',
     description:
@@ -324,7 +349,7 @@ export class MonoController {
   @Post('user/creditworthiness')
   @UseGuards(JwtAuthGuard, PlanGuard)
   @RequirePlan()
-  @ApiBearerAuth()
+  @ApiCookieAuth('accessToken')
   @ApiOperation({
     summary: 'Assess creditworthiness for all linked accounts',
     description:
@@ -346,10 +371,15 @@ export class MonoController {
       'Public endpoint called by Mono servers. Secured via mono-webhook-secret header verification.',
   })
   @ApiResponse({ status: 200, description: 'Webhook received' })
-  @ApiResponse({ status: 401, description: 'Invalid webhook secret' })
+  @ApiResponse({
+    status: 401,
+    description: 'Invalid webhook secret',
+    type: ErrorResponseDto,
+  })
+  @ApiBody({ type: WebhookPayloadDto })
   async handleWebhook(
     @Headers('mono-webhook-secret') webhookSecret: string,
-    @Body() payload: { event: string; data: any },
+    @Body() payload: WebhookPayloadDto,
   ) {
     this.monoService.verifyWebhookSecret(webhookSecret);
     return this.monoService.handleWebhookEvent(payload);
@@ -357,21 +387,27 @@ export class MonoController {
 
   @Patch('accounts/:id/link-business')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
+  @ApiCookieAuth('accessToken')
   @ApiOperation({ summary: 'Link a Mono account to a business' })
   @ApiParam({
     name: 'id',
     description: 'Internal Mono account ID (monoAccountId)',
   })
+  @ApiBody({ type: LinkBusinessDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Linked successfully',
+    type: MonoAccountResponseDto,
+  })
   async linkBusiness(
     @Req() req: any,
     @Param('id') monoAccountId: string,
-    @Body('businessId') businessId: string,
+    @Body() dto: LinkBusinessDto,
   ) {
     return await this.monoService.linkAccountToBusiness(
       req.user.id,
       monoAccountId,
-      businessId,
+      dto.businessId,
     );
   }
 }

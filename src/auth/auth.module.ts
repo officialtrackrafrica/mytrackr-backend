@@ -9,6 +9,7 @@ import {
   WebAuthnCredential,
   Role,
 } from './entities';
+import { Business } from '../business/entities/business.entity';
 import { AuthService, SessionService, RolesService } from './services';
 import { MfaService } from './services/mfa.service';
 import {
@@ -34,6 +35,7 @@ import { StorageModule } from '../storage/storage.module';
       RevokedToken,
       WebAuthnCredential,
       Role,
+      Business,
     ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.register({

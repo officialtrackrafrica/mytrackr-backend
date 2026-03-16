@@ -3,7 +3,7 @@ import {
   ApiTags,
   ApiOperation,
   ApiResponse,
-  ApiBearerAuth,
+  ApiCookieAuth,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards';
 import { PoliciesGuard } from '../../casl/guards/policies.guard';
@@ -14,8 +14,8 @@ import { AdminDashboardService } from '../services/admin-dashboard.service';
 import { DashboardQueryDto } from '../dto';
 
 @ApiTags('Admin - Dashboard')
-@ApiBearerAuth()
-@Controller('admin/dashboard')
+@ApiCookieAuth('accessToken')
+@Controller('admin')
 @UseGuards(JwtAuthGuard, PoliciesGuard)
 export class AdminDashboardController {
   constructor(private readonly dashboardService: AdminDashboardService) {}

@@ -12,7 +12,7 @@ import {
   ApiTags,
   ApiOperation,
   ApiResponse,
-  ApiBearerAuth,
+  ApiCookieAuth,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards';
 import { PoliciesGuard } from '../../casl/guards/policies.guard';
@@ -29,7 +29,7 @@ import {
 } from '../dto';
 
 @ApiTags('Admin - Support & Disputes')
-@ApiBearerAuth()
+@ApiCookieAuth('accessToken')
 @Controller('admin')
 @UseGuards(JwtAuthGuard, PoliciesGuard)
 export class AdminSupportController {

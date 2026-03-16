@@ -25,13 +25,18 @@ export class AllExceptionsFilter implements ExceptionFilter {
         ? exception.getStatus()
         : this.getHttpStatus(exception);
 
+    const httpResponse =
+      exception instanceof HttpException ? exception.getResponse() : null;
+
     const responseBody = {
       statusCode: httpStatus,
       timestamp: new Date().toISOString(),
       path: httpAdapter.getRequestUrl(ctx.getRequest()),
       message:
         exception instanceof HttpException
-          ? exception.message
+          ? typeof httpResponse === 'object' && httpResponse !== null
+            ? (httpResponse as any).message || exception.message
+            : exception.message
           : this.getErrorMessage(exception),
     };
 

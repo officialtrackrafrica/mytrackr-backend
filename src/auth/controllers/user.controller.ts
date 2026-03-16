@@ -90,8 +90,8 @@ export class UserController {
     @Request() req: AuthenticatedRequest,
     @Body() updateDto: UpdateProfileDto,
   ): Promise<UserResponseDto> {
-    const { firstName, lastName, businessName } = updateDto;
-    const safeUpdate = { firstName, lastName, businessName };
+    const { firstName, lastName } = updateDto;
+    const safeUpdate = { firstName, lastName };
 
     Object.keys(safeUpdate).forEach(
       (key) =>
@@ -174,7 +174,6 @@ export class UserController {
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
-      businessName: user.businessName,
       profilePicture: user.profilePicture,
       isVerified: user.isVerified,
       createdAt: user.createdAt,

@@ -14,7 +14,7 @@ import {
   ApiTags,
   ApiOperation,
   ApiResponse,
-  ApiBearerAuth,
+  ApiCookieAuth,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards';
 import { PoliciesGuard } from '../../casl/guards/policies.guard';
@@ -26,8 +26,8 @@ import { AdminAuditService } from '../services/admin-audit.service';
 import { UpdateUserStatusDto, AdminQueryDto } from '../dto';
 
 @ApiTags('Admin - User Management')
-@ApiBearerAuth()
 @Controller('admin/users')
+@ApiCookieAuth('accessToken')
 @UseGuards(JwtAuthGuard, PoliciesGuard)
 export class AdminUsersController {
   constructor(

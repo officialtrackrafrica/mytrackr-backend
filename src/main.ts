@@ -44,15 +44,22 @@ async function bootstrap() {
     new AllExceptionsFilter(httpAdapter),
   );
 
-  const corsOrigin = process.env.CORS_ORIGIN;
-  if (!corsOrigin && process.env.NODE_ENV === 'production') {
+  const rawOrigins = process.env.CORS_ORIGINS;
+  if (!rawOrigins && process.env.NODE_ENV === 'production') {
     logger.error(
-      'CORS_ORIGIN environment variable is not set. Refusing to start with wildcard CORS in production.',
+      'CORS_ORIGINS environment variable is not set. Refusing to start with wildcard CORS in production.',
     );
     process.exit(1);
   }
+  const allowedOrigins: string[] = rawOrigins
+    ? rawOrigins
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean)
+    : ['http://localhost:3001'];
+  logger.log(`CORS allowed origins: ${allowedOrigins.join(', ')}`);
   app.enableCors({
-    origin: corsOrigin || 'http://localhost:3001',
+    origin: allowedOrigins,
     credentials: true,
   });
 
@@ -74,7 +81,7 @@ async function bootstrap() {
 
   const document = SwaggerModule.createDocument(app, config.build());
   app.use(
-    '/api',
+    '/docs',
     apiReference({
       content: document,
     }),

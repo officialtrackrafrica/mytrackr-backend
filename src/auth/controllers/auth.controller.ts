@@ -441,7 +441,7 @@ export class AuthController {
   ): Promise<void> {
     const { tokens } = await this.authService.googleLogin(req.user);
     setCookies(res, tokens);
-    const redirectUrl = process.env.REDIRECT_URL || '/';
+    const redirectUrl = process.env.GOOGLE_REDIRECT_URL || '/';
     res.redirect(redirectUrl);
   }
 }

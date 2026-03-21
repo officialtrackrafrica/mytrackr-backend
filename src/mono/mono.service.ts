@@ -18,6 +18,7 @@ import { MonoAccount } from './entities/mono-account.entity';
 import { Transaction } from './entities/transaction.entity';
 import { User } from '../auth/entities/user.entity';
 import { v4 as uuidv4 } from 'uuid';
+import { AiCategorizationService } from '../categorization/categorization.service';
 
 @Injectable()
 export class MonoService {
@@ -32,6 +33,7 @@ export class MonoService {
     private monoAccountRepository: Repository<MonoAccount>,
     @InjectRepository(Transaction)
     private transactionRepository: Repository<Transaction>,
+    private readonly aiCategorizationService: AiCategorizationService,
   ) {}
 
   private getSecretKey(): string {
@@ -419,20 +421,25 @@ export class MonoService {
     account: MonoAccount,
     monoTransactions: any[],
   ) {
-    const entities = monoTransactions.map((tx) =>
-      this.transactionRepository.create({
+    const entities = await Promise.all(monoTransactions.map(async (tx) => {
+      const predicted = await this.aiCategorizationService.predict(tx.narration || '', account.user?.id || '');
+      const finalCategory = predicted.category !== 'Uncategorized' ? predicted.category : (tx.category || null);
+      const finalCategorySource = predicted.category !== 'Uncategorized' ? 'auto' : 'mono';
+
+      return this.transactionRepository.create({
         monoTransactionId: tx.id,
         monoAccount: { id: account.id } as any,
         narration: tx.narration || '',
         amount: tx.amount,
         type: tx.type,
-        category: tx.category || null,
+        category: finalCategory,
+        categorySource: finalCategorySource,
         currency: tx.currency || 'NGN',
         balance: tx.balance,
         date: new Date(tx.date),
         metadata: tx.enrichment || tx.metadata || null,
-      }),
-    );
+      });
+    }));
     await this.transactionRepository
       .createQueryBuilder()
       .insert()
@@ -590,6 +597,14 @@ export class MonoService {
     transaction.manualCategory = newCategory;
     transaction.categorySource = 'manual';
     await this.transactionRepository.save(transaction);
+
+    if (transaction.monoAccount?.user?.id) {
+      this.aiCategorizationService.learnFeedback(
+        transaction.narration,
+        newCategory,
+        transaction.monoAccount.user.id
+      ).catch(err => this.logger.error(`Failed to learn feedback: ${err.message}`));
+    }
 
     return {
       id: transaction.id,

@@ -9,12 +9,14 @@ import { MonoAccount } from './entities/mono-account.entity';
 import { Transaction } from './entities/transaction.entity';
 import { FinanceModule } from '../finance/finance.module';
 import { PaymentsModule } from '../payments/payments.module';
+import { CategorizationModule } from '../categorization/categorization.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([User, MonoAccount, Transaction]),
     FinanceModule,
     PaymentsModule,
+    CategorizationModule,
   ],
   providers: [MonoService, TransactionSyncService],
   controllers: [MonoController],

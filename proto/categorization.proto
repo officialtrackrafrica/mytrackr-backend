@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package categorization;
+
+service CategorizationService {
+  rpc PredictCategory (PredictRequest) returns (PredictResponse);
+  rpc LearnTransaction (LearnRequest) returns (LearnResponse);
+}
+
+message PredictRequest {
+  string narration = 1;
+  string userId = 2; 
+}
+
+message PredictResponse {
+  string category = 1;
+  float confidence = 2; 
+}
+
+message LearnRequest {
+  string narration = 1;
+  string correctCategory = 2;
+  string userId = 3;
+}
+
+message LearnResponse {
+  bool success = 1;
+}

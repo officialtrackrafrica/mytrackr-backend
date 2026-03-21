@@ -1,6 +1,6 @@
-node_modules
-dist
-.git
+/node_modules
+/dist
+/.git
 .env
 .env.*
 .vscode
@@ -9,6 +9,6 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .DS_Store
-Dockerfile
-docker-compose.yml
-README.md
+/Dockerfile
+/docker-compose.yml
+/README.md

@@ -14,10 +14,10 @@ services:
       - PORT=5000
       - DATABASE_HOST=db
       - DATABASE_PORT=5432
-      - DATABASE_USERNAME=postgres
-      - DATABASE_PASSWORD=postgres
-      - DATABASE_NAME=mytrackr
-      - REDIS_URL=redis://redis:6379
+      - DATABASE_USERNAME=${DATABASE_USERNAME}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD}
+      - DATABASE_NAME=${DATABASE_NAME}
+      - REDIS_URL=${REDIS_URL}
       - CORS_ORIGINS=${CORS_ORIGINS}
       - JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
@@ -25,7 +25,7 @@ services:
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - GOOGLE_CALLBACK_URL=${GOOGLE_CALLBACK_URL}
       - MONO_SECRET_KEY=${MONO_SECRET_KEY}
-      - MONO_API_URL=https://api.withmono.com
+      - MONO_API_URL=${MONO_API_URL}
       - ENCRYPTION_PASSWORD=${ENCRYPTION_PASSWORD}
       - WEBAUTHN_RP_NAME=${WEBAUTHN_RP_NAME}
       - WEBAUTHN_RP_ID=${WEBAUTHN_RP_ID}
@@ -65,9 +65,9 @@ services:
     image: postgres:15-alpine
     container_name: mytrackr-db
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=mytrackr
+      - POSTGRES_USER=${DATABASE_USERNAME}
+      - POSTGRES_PASSWORD=${DATABASE_PASSWORD}
+      - POSTGRES_DB=${DATABASE_NAME}
     ports:
       - '5432:5432'
     volumes:

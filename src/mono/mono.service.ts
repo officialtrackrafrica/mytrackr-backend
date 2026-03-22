@@ -421,25 +421,34 @@ export class MonoService {
     account: MonoAccount,
     monoTransactions: any[],
   ) {
-    const entities = await Promise.all(monoTransactions.map(async (tx) => {
-      const predicted = await this.aiCategorizationService.predict(tx.narration || '', account.user?.id || '');
-      const finalCategory = predicted.category !== 'Uncategorized' ? predicted.category : (tx.category || null);
-      const finalCategorySource = predicted.category !== 'Uncategorized' ? 'auto' : 'mono';
+    const entities = await Promise.all(
+      monoTransactions.map(async (tx) => {
+        const predicted = await this.aiCategorizationService.predict(
+          tx.narration || '',
+          account.user?.id || '',
+        );
+        const finalCategory =
+          predicted.category !== 'Uncategorized'
+            ? predicted.category
+            : tx.category || null;
+        const finalCategorySource =
+          predicted.category !== 'Uncategorized' ? 'auto' : 'mono';
 
-      return this.transactionRepository.create({
-        monoTransactionId: tx.id,
-        monoAccount: { id: account.id } as any,
-        narration: tx.narration || '',
-        amount: tx.amount,
-        type: tx.type,
-        category: finalCategory,
-        categorySource: finalCategorySource,
-        currency: tx.currency || 'NGN',
-        balance: tx.balance,
-        date: new Date(tx.date),
-        metadata: tx.enrichment || tx.metadata || null,
-      });
-    }));
+        return this.transactionRepository.create({
+          monoTransactionId: tx.id,
+          monoAccount: { id: account.id } as any,
+          narration: tx.narration || '',
+          amount: tx.amount,
+          type: tx.type,
+          category: finalCategory,
+          categorySource: finalCategorySource,
+          currency: tx.currency || 'NGN',
+          balance: tx.balance,
+          date: new Date(tx.date),
+          metadata: tx.enrichment || tx.metadata || null,
+        });
+      }),
+    );
     await this.transactionRepository
       .createQueryBuilder()
       .insert()
@@ -599,11 +608,15 @@ export class MonoService {
     await this.transactionRepository.save(transaction);
 
     if (transaction.monoAccount?.user?.id) {
-      this.aiCategorizationService.learnFeedback(
-        transaction.narration,
-        newCategory,
-        transaction.monoAccount.user.id
-      ).catch(err => this.logger.error(`Failed to learn feedback: ${err.message}`));
+      this.aiCategorizationService
+        .learnFeedback(
+          transaction.narration,
+          newCategory,
+          transaction.monoAccount.user.id,
+        )
+        .catch((err) =>
+          this.logger.error(`Failed to learn feedback: ${err.message}`),
+        );
     }
 
     return {

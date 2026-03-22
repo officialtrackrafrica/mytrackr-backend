@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 // ─── Request DTOs ────────────────────────────────────────────────────────────
@@ -11,8 +11,23 @@ export class LinkBusinessDto {
 }
 
 export class WebhookPayloadDto {
-  @ApiProperty() event: string;
-  @ApiProperty() data: any;
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  event: string;
+
+  @ApiProperty()
+  @IsNotEmpty()
+  data: any;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  event_id?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  timestamp?: any;
 }
 
 // ─── Response DTOs ───────────────────────────────────────────────────────────

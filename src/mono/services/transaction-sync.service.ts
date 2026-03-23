@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, IsNull } from 'typeorm';
 import { Transaction as MonoTransaction } from '../entities/transaction.entity';
 import { MonoAccount } from '../entities/mono-account.entity';
 import {
@@ -40,13 +40,14 @@ export class TransactionSyncService {
       return { synced: 0, skipped: 'MonoAccount not found' };
     }
 
-    const businessIdString =
-      monoAccount.businessId || (monoAccount.user ? monoAccount.user.id : '');
+    const businessId = monoAccount.businessId || null;
+    const userId = monoAccount.user ? monoAccount.user.id : null;
 
     const bankAccount = await this.bankAccountRepository.findOne({
       where: {
         accountNumber: monoAccount.accountNumber,
-        businessId: businessIdString,
+        businessId: businessId || IsNull(),
+        userId: userId || IsNull(),
       },
     });
 
@@ -61,7 +62,8 @@ export class TransactionSyncService {
         accountNumber: monoAccount.accountNumber || '',
         bankName: monoAccount.institutionName || 'Unknown',
         currentBalance: Number(monoAccount.balance) / 100,
-        businessId: businessIdString,
+        businessId: businessId || undefined,
+        userId: userId || undefined,
       });
       await this.bankAccountRepository.save(newBankAccount);
 
@@ -69,6 +71,7 @@ export class TransactionSyncService {
         monoAccount.id,
         newBankAccount.id,
         newBankAccount.businessId,
+        newBankAccount.userId,
       );
     }
 
@@ -76,13 +79,15 @@ export class TransactionSyncService {
       monoAccount.id,
       bankAccount.id,
       bankAccount.businessId,
+      bankAccount.userId,
     );
   }
 
   private async syncWithBankAccount(
     monoAccountUuid: string,
     bankAccountId: string,
-    businessId: string,
+    businessId: string | null,
+    userId: string | null,
   ): Promise<{ synced: number; skipped: string | null }> {
     const monoTransactions = await this.monoTransactionRepository.find({
       where: { monoAccount: { id: monoAccountUuid } },
@@ -99,7 +104,8 @@ export class TransactionSyncService {
 
     const rawDtos: RawTransactionDto[] = monoTransactions.map((mt) => ({
       bankAccountId,
-      businessId,
+      businessId: businessId || undefined,
+      userId: userId || undefined,
       externalId: `mono_${mt.monoTransactionId}`,
       date: mt.date,
       amount: Number(mt.amount) / 100,
@@ -112,11 +118,12 @@ export class TransactionSyncService {
 
     const synced = await this.categorizationService.ingestTransactions(
       businessId,
+      userId,
       rawDtos,
     );
 
     this.logger.log(
-      `Synced ${synced} new transactions to Finance module for business ${businessId}`,
+      `Synced ${synced} new transactions to Finance module for business ${businessId} / user ${userId}`,
     );
 
     return { synced, skipped: null };

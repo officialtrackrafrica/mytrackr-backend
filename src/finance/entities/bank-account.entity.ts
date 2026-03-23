@@ -52,12 +52,18 @@ export class BankAccount {
   @Column({ type: 'enum', enum: SyncStatus, default: SyncStatus.CONNECTED })
   syncStatus: SyncStatus;
 
-  @ManyToOne(() => Business, (business) => business.id, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Business, (business) => business.id, {
+    onDelete: 'CASCADE',
+    nullable: true,
+  })
   @JoinColumn({ name: 'businessId' })
   business: Business;
 
-  @Column()
+  @Column({ nullable: true })
   businessId: string;
+
+  @Column({ nullable: true })
+  userId: string;
 
   @OneToMany(() => Transaction, (tx) => tx.bankAccount)
   transactions: Transaction[];

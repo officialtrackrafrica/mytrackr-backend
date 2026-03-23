@@ -75,12 +75,15 @@ export class Transaction {
   @Column({ type: 'text', nullable: true })
   notes: string;
 
-  @ManyToOne(() => Business, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Business, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'businessId' })
   business: Business;
 
-  @Column()
+  @Column({ nullable: true })
   businessId: string;
+
+  @Column({ nullable: true })
+  userId: string;
 
   @ManyToOne(() => BankAccount, (acc) => acc.transactions, {
     onDelete: 'SET NULL',

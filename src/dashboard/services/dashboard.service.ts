@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository } from 'typeorm';
 import {
   Transaction,
   TransactionCategory,
@@ -34,23 +34,37 @@ export class DashboardService {
     });
 
     const activeBusinessIds = businesses.map((b) => b.id);
-    const allQueryIds = [...activeBusinessIds, userId];
 
-    // Filter by specific business if requested, otherwise get all
-    const filterIds = businessId ? [businessId] : allQueryIds;
+    let txQuery = this.transactionRepository.createQueryBuilder('tx');
+    let baQuery = this.bankAccountRepository.createQueryBuilder('ba');
 
-    const transactions = await this.transactionRepository
-      .createQueryBuilder('tx')
-      .where('tx.businessId IN (:...filterIds)', { filterIds })
+    if (businessId) {
+      txQuery = txQuery.where('tx.businessId = :businessId', { businessId });
+      baQuery = baQuery.where('ba.businessId = :businessId', { businessId });
+    } else {
+      if (activeBusinessIds.length > 0) {
+        txQuery = txQuery.where(
+          '(tx.businessId IN (:...activeBusinessIds) OR tx.userId = :userId)',
+          { activeBusinessIds, userId },
+        );
+        baQuery = baQuery.where(
+          '(ba.businessId IN (:...activeBusinessIds) OR ba.userId = :userId)',
+          { activeBusinessIds, userId },
+        );
+      } else {
+        txQuery = txQuery.where('tx.userId = :userId', { userId });
+        baQuery = baQuery.where('ba.userId = :userId', { userId });
+      }
+    }
+
+    const transactions = await txQuery
       .andWhere('tx.date BETWEEN :startDate AND :endDate', {
         startDate,
         endDate,
       })
       .getMany();
 
-    const bankAccounts = await this.bankAccountRepository.find({
-      where: { businessId: In(filterIds) },
-    });
+    const bankAccounts = await baQuery.getMany();
 
     // 2. Initialize aggregators
     const createEmptyMetrics = () => ({

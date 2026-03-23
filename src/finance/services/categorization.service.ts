@@ -13,7 +13,8 @@ import {
 
 export interface RawTransactionDto {
   bankAccountId: string;
-  businessId: string;
+  businessId?: string;
+  userId?: string;
   externalId: string;
   date: Date;
   amount: number;
@@ -34,14 +35,19 @@ export class CategorizationService {
   ) {}
 
   async ingestTransactions(
-    businessId: string,
+    businessId: string | null,
+    userId: string | null,
     dtos: RawTransactionDto[],
   ): Promise<number> {
     let newTransactionsCount = 0;
-    const activeRules = await this.ruleRepository.find({
-      where: { businessId, isActive: true },
-      order: { priority: 'ASC' },
-    });
+    let activeRules: CategorizationRule[] = [];
+
+    if (businessId) {
+      activeRules = await this.ruleRepository.find({
+        where: { businessId, isActive: true },
+        order: { priority: 'ASC' },
+      });
+    }
 
     const dedupExternalIds = dtos
       .map((dto) => dto.externalId)

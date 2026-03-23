@@ -57,18 +57,22 @@ export class DashboardController {
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
   ) {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
+    const now = new Date();
+    const defaultStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const defaultEnd = now;
 
-    if (!startDate || isNaN(start.getTime())) {
+    const start = startDate ? new Date(startDate) : defaultStart;
+    const end = endDate ? new Date(endDate) : defaultEnd;
+
+    if (isNaN(start.getTime())) {
       throw AppException.badRequest(
-        'Invalid or missing startDate',
+        'Invalid startDate format',
         'DASHBOARD_INVALID_DATE_RANGE',
       );
     }
-    if (!endDate || isNaN(end.getTime())) {
+    if (isNaN(end.getTime())) {
       throw AppException.badRequest(
-        'Invalid or missing endDate',
+        'Invalid endDate format',
         'DASHBOARD_INVALID_DATE_RANGE',
       );
     }

@@ -65,13 +65,27 @@ export class DashboardService {
     for (const tx of transactions) {
       const amount = Number(tx.amount);
 
-      if (!tx.isCategorised) {
-        uncategorisedItems++;
+      if (tx.category === TransactionCategory.INTERNAL_TRANSFER) {
+        continue;
+      }
+
+      if (tx.category === TransactionCategory.INCOME) {
+        totalRevenue += amount;
+      } else if (tx.category === TransactionCategory.COGS) {
+        totalCogs += amount;
+      } else if (tx.category === TransactionCategory.EXPENSE) {
+        totalExpenses += amount;
       } else {
-        if (tx.category === TransactionCategory.INCOME) totalRevenue += amount;
-        if (tx.category === TransactionCategory.COGS) totalCogs += amount;
-        if (tx.category === TransactionCategory.EXPENSE)
+        // Fallback for custom categories or uncategorised items
+        if (!tx.isCategorised) {
+          uncategorisedItems++;
+        }
+
+        if (tx.direction === TransactionDirection.CREDIT) {
+          totalRevenue += amount;
+        } else if (tx.direction === TransactionDirection.DEBIT) {
           totalExpenses += amount;
+        }
       }
 
       if (

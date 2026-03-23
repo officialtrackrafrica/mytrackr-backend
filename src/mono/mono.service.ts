@@ -19,6 +19,7 @@ import { Transaction } from './entities/transaction.entity';
 import { User } from '../auth/entities/user.entity';
 import { v4 as uuidv4 } from 'uuid';
 import { AiCategorizationService } from '../categorization/categorization.service';
+import { TransactionSyncService } from './services/transaction-sync.service';
 
 @Injectable()
 export class MonoService {
@@ -34,6 +35,7 @@ export class MonoService {
     @InjectRepository(Transaction)
     private transactionRepository: Repository<Transaction>,
     private readonly aiCategorizationService: AiCategorizationService,
+    private readonly transactionSyncService: TransactionSyncService,
   ) {}
 
   private getSecretKey(): string {
@@ -301,12 +303,17 @@ export class MonoService {
 
     await Promise.all(
       userAccounts.map((acc) =>
-        this.syncTransactionsForAccount(acc, parsedStart, forceSync).catch(
-          (e) =>
+        this.syncTransactionsForAccount(acc, parsedStart, forceSync)
+          .then(() =>
+            this.transactionSyncService.syncAccountTransactions(
+              acc.monoAccountId,
+            ),
+          )
+          .catch((e) =>
             this.logger.error(
               `Sync failed for account ${acc.monoAccountId}: ${e.message}`,
             ),
-        ),
+          ),
       ),
     );
 
@@ -928,6 +935,10 @@ export class MonoService {
             this.logger.log(
               `Initial sync complete for ${monoAccountId}. Triggering enrichment...`,
             );
+            
+            // Sync to finance module
+            await this.transactionSyncService.syncAccountTransactions(monoAccountId);
+
             await Promise.allSettled([
               this.categoriseTransactions(monoAccountId),
               this.enrichTransactionMetadata(monoAccountId),
@@ -988,6 +999,7 @@ export class MonoService {
     );
 
     await this.syncTransactionsForAccount(account, undefined, true);
+    await this.transactionSyncService.syncAccountTransactions(monoAccountId);
 
     await this.monoAccountRepository.update(
       { id: account.id },
@@ -1036,6 +1048,7 @@ export class MonoService {
     );
 
     await this.syncTransactionsForAccount(account, undefined, true);
+    await this.transactionSyncService.syncAccountTransactions(monoAccountId);
 
     this.logger.log(`Transaction metadata updated for ${monoAccountId}`);
   }

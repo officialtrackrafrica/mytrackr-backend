@@ -18,12 +18,15 @@ export enum TransactionDirection {
   DEBIT = 'DEBIT',
 }
 
-export enum TransactionCategory {
-  INCOME = 'INCOME',
-  COGS = 'COGS',
-  EXPENSE = 'EXPENSE',
-  INTERNAL_TRANSFER = 'INTERNAL_TRANSFER',
-}
+export const TransactionCategory = {
+  INCOME: 'INCOME',
+  COGS: 'COGS',
+  EXPENSE: 'EXPENSE',
+  INTERNAL_TRANSFER: 'INTERNAL_TRANSFER',
+} as const;
+
+export type TransactionCategory =
+  (typeof TransactionCategory)[keyof typeof TransactionCategory];
 
 @Entity('transactions')
 @Index(
@@ -53,8 +56,8 @@ export class Transaction {
   @Column({ type: 'text' })
   description: string;
 
-  @Column({ type: 'enum', enum: TransactionCategory, nullable: true })
-  category: TransactionCategory;
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  category: string;
 
   @Column({ nullable: true })
   subCategory: string;

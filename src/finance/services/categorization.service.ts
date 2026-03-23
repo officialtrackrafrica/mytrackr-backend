@@ -50,7 +50,7 @@ export class CategorizationService {
     let existingExternalIds = new Set<string>();
     if (dedupExternalIds.length > 0) {
       const existing = await this.transactionRepository.find({
-        where: { businessId, externalId: In(dedupExternalIds) },
+        where: { externalId: In(dedupExternalIds) },
         select: ['externalId'],
       });
       existingExternalIds = new Set(existing.map((e) => e.externalId));

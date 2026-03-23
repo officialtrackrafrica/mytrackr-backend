@@ -89,6 +89,10 @@ export class TransactionSyncService {
       order: { date: 'ASC' },
     });
 
+    this.logger.log(
+      `Found ${monoTransactions.length} Mono transactions for account ${monoAccountUuid}`,
+    );
+
     if (monoTransactions.length === 0) {
       return { synced: 0, skipped: 'No Mono transactions to sync' };
     }
@@ -112,7 +116,7 @@ export class TransactionSyncService {
     );
 
     this.logger.log(
-      `Synced ${synced}/${monoTransactions.length} Mono transactions for account uuid ${monoAccountUuid}`,
+      `Synced ${synced} new transactions to Finance module for business ${businessId}`,
     );
 
     return { synced, skipped: null };

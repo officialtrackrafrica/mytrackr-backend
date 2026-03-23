@@ -27,25 +27,21 @@ export class DashboardService {
     businessId: string | null,
     startDate: Date,
     endDate: Date,
-  ) {
-    let businessIds: string[] = [];
-    if (businessId) {
-      businessIds = [businessId];
-    } else {
-      const businesses = await this.businessRepository.find({
-        where: { userId },
-        select: ['id'],
-      });
-      businessIds = businesses.map((b) => b.id);
-    }
+  ): Promise<any> {
+    // 1. Fetch all data needed
+    const businesses = await this.businessRepository.find({
+      where: { userId },
+    });
 
-    if (businessIds.length === 0) {
-      return this.emptyDashboard();
-    }
+    const activeBusinessIds = businesses.map((b) => b.id);
+    const allQueryIds = [...activeBusinessIds, userId];
+
+    // Filter by specific business if requested, otherwise get all
+    const filterIds = businessId ? [businessId] : allQueryIds;
 
     const transactions = await this.transactionRepository
       .createQueryBuilder('tx')
-      .where('tx.businessId IN (:...businessIds)', { businessIds })
+      .where('tx.businessId IN (:...filterIds)', { filterIds })
       .andWhere('tx.date BETWEEN :startDate AND :endDate', {
         startDate,
         endDate,
@@ -53,81 +49,106 @@ export class DashboardService {
       .getMany();
 
     const bankAccounts = await this.bankAccountRepository.find({
-      where: { businessId: In(businessIds) },
+      where: { businessId: In(filterIds) },
     });
 
-    let totalRevenue = 0;
-    let totalCogs = 0;
-    let totalExpenses = 0;
-    let cashOut = 0;
-    let uncategorisedItems = 0;
+    // 2. Initialize aggregators
+    const createEmptyMetrics = () => ({
+      revenue: 0,
+      expenses: 0,
+      netProfit: 0,
+      cashBalance: 0,
+      uncategorisedCount: 0,
+      burnRate: 0,
+      _totalCogs: 0, // temporary internal helpers
+      _cashOut: 0,
+    });
 
-    for (const tx of transactions) {
-      const amount = Number(tx.amount);
+    const global = createEmptyMetrics();
+    const unassigned = createEmptyMetrics();
+    const businessMap = new Map<string, any>();
 
-      if (tx.category === TransactionCategory.INTERNAL_TRANSFER) {
-        continue;
-      }
+    businesses.forEach((b) => {
+      businessMap.set(b.id, {
+        businessId: b.id,
+        businessName: b.name,
+        metrics: createEmptyMetrics(),
+      });
+    });
 
-      if (tx.category === TransactionCategory.INCOME) {
-        totalRevenue += amount;
-      } else if (tx.category === TransactionCategory.COGS) {
-        totalCogs += amount;
-      } else if (tx.category === TransactionCategory.EXPENSE) {
-        totalExpenses += amount;
-      } else {
-        // Fallback for custom categories or uncategorised items
-        if (!tx.isCategorised) {
-          uncategorisedItems++;
-        }
-
-        if (tx.direction === TransactionDirection.CREDIT) {
-          totalRevenue += amount;
-        } else if (tx.direction === TransactionDirection.DEBIT) {
-          totalExpenses += amount;
-        }
-      }
-
-      if (
-        tx.direction === TransactionDirection.DEBIT &&
-        tx.category !== TransactionCategory.INTERNAL_TRANSFER
-      ) {
-        cashOut += amount;
-      }
-    }
-
-    const netProfit = totalRevenue - totalCogs - totalExpenses;
-    const cashBalance = bankAccounts.reduce(
-      (acc, account) => acc + Number(account.currentBalance),
-      0,
-    );
-
+    // 3. Aggregate Transactions
     const diffMonths = Math.max(
       1,
       (endDate.getFullYear() - startDate.getFullYear()) * 12 +
         (endDate.getMonth() - startDate.getMonth()) +
         1,
     );
-    const monthlyBurnRate = cashOut / diffMonths;
 
-    return {
-      totalRevenue,
-      totalExpenses: totalCogs + totalExpenses,
-      netProfit,
-      cashBalance,
-      uncategorisedItems,
-      monthlyBurnRate,
+    for (const tx of transactions) {
+      const amount = Number(tx.amount);
+      const targets = [global];
+      
+      if (tx.businessId === userId) {
+        targets.push(unassigned);
+      } else if (businessMap.has(tx.businessId)) {
+        targets.push(businessMap.get(tx.businessId).metrics);
+      }
+
+      targets.forEach((m) => {
+        if (tx.category === TransactionCategory.INTERNAL_TRANSFER) return;
+
+        if (tx.category === TransactionCategory.INCOME) {
+          m.revenue += amount;
+        } else if (tx.category === TransactionCategory.COGS) {
+          m._totalCogs += amount;
+        } else if (tx.category === TransactionCategory.EXPENSE) {
+          m.expenses += amount;
+        } else {
+          if (!tx.isCategorised) m.uncategorisedCount++;
+          if (tx.direction === TransactionDirection.CREDIT) {
+            m.revenue += amount;
+          } else if (tx.direction === TransactionDirection.DEBIT) {
+            m.expenses += amount;
+          }
+        }
+
+        if (
+          tx.direction === TransactionDirection.DEBIT &&
+          tx.category !== TransactionCategory.INTERNAL_TRANSFER
+        ) {
+          m._cashOut += amount;
+        }
+      });
+    }
+
+    // 4. Aggregate Bank Balances
+    bankAccounts.forEach((acc) => {
+      const balance = Number(acc.currentBalance);
+      global.cashBalance += balance;
+      if (acc.businessId === userId) {
+        unassigned.cashBalance += balance;
+      } else if (businessMap.has(acc.businessId)) {
+        businessMap.get(acc.businessId).metrics.cashBalance += balance;
+      }
+    });
+
+    // 5. Finalize Calculations
+    const finalize = (m: any) => {
+      m.expenses = m.expenses + m._totalCogs;
+      m.netProfit = m.revenue - m.expenses;
+      m.burnRate = m._cashOut / diffMonths;
+      delete m._totalCogs;
+      delete m._cashOut;
     };
-  }
 
-  private emptyDashboard() {
+    finalize(global);
+    finalize(unassigned);
+    businessMap.forEach((b) => finalize(b.metrics));
+
     return {
-      totalRevenue: 0,
-      totalExpenses: 0,
-      netProfit: 0,
-      cashBalance: 0,
-      uncategorisedItems: 0,
-      monthlyBurnRate: 0,
+      global,
+      businesses: Array.from(businessMap.values()),
+      unassigned,
     };
   }
 }

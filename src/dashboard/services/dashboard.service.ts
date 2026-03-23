@@ -87,7 +87,7 @@ export class DashboardService {
     for (const tx of transactions) {
       const amount = Number(tx.amount);
       const targets = [global];
-      
+
       if (tx.businessId === userId) {
         targets.push(unassigned);
       } else if (businessMap.has(tx.businessId)) {

@@ -40,7 +40,8 @@ export class TransactionSyncService {
       return { synced: 0, skipped: 'MonoAccount not found' };
     }
 
-    const businessIdString = monoAccount.businessId || (monoAccount.user ? monoAccount.user.id : '');
+    const businessIdString =
+      monoAccount.businessId || (monoAccount.user ? monoAccount.user.id : '');
 
     const bankAccount = await this.bankAccountRepository.findOne({
       where: {
@@ -65,26 +66,26 @@ export class TransactionSyncService {
       await this.bankAccountRepository.save(newBankAccount);
 
       return this.syncWithBankAccount(
-        monoAccountId,
+        monoAccount.id,
         newBankAccount.id,
         newBankAccount.businessId,
       );
     }
 
     return this.syncWithBankAccount(
-      monoAccountId,
+      monoAccount.id,
       bankAccount.id,
       bankAccount.businessId,
     );
   }
 
   private async syncWithBankAccount(
-    monoAccountId: string,
+    monoAccountUuid: string,
     bankAccountId: string,
     businessId: string,
   ): Promise<{ synced: number; skipped: string | null }> {
     const monoTransactions = await this.monoTransactionRepository.find({
-      where: { monoAccount: { monoAccountId } },
+      where: { monoAccount: { id: monoAccountUuid } },
       order: { date: 'ASC' },
     });
 
@@ -111,7 +112,7 @@ export class TransactionSyncService {
     );
 
     this.logger.log(
-      `Synced ${synced}/${monoTransactions.length} Mono transactions for account ${monoAccountId}`,
+      `Synced ${synced}/${monoTransactions.length} Mono transactions for account uuid ${monoAccountUuid}`,
     );
 
     return { synced, skipped: null };

@@ -68,7 +68,11 @@ export class SubscriptionController {
 
   @UseGuards(JwtAuthGuard)
   @Post('subscribe')
-  @ApiOperation({ summary: 'Initialize a new subscription payment' })
+  @ApiOperation({
+    summary: 'Initialize a new premium subscription payment',
+    description:
+      'Starts the recurring billing flow. If no planId is provided, it defaults to the system "Premium" plan.',
+  })
   @ApiResponse({
     status: 201,
     description: 'Returns payment authorization URL',
@@ -79,7 +83,7 @@ export class SubscriptionController {
     description: 'Invalid plan or initialized failed',
     type: ErrorResponseDto,
   })
-  async subscribe(@Req() req: any, @Body() dto: InitializeSubscriptionDto) {
+  async subscribe(@Req() req: any, @Body() dto?: InitializeSubscriptionDto) {
     return this.subscriptionService.initializeSubscription(req.user, dto);
   }
 

@@ -73,10 +73,20 @@ export class SubscriptionService {
     };
   }
 
-  async initializeSubscription(user: User, dto: InitializeSubscriptionDto) {
-    const plan = await this.planRepository.findOne({
-      where: { id: dto.planId },
-    });
+  async initializeSubscription(user: User, dto?: InitializeSubscriptionDto) {
+    let plan: Plan | null;
+
+    if (dto?.planId) {
+      plan = await this.planRepository.findOne({
+        where: { id: dto.planId },
+      });
+    } else {
+      // Default to premium if no planId provided
+      plan = await this.planRepository.findOne({
+        where: { slug: 'premium' },
+      });
+    }
+
     if (!plan) throw new NotFoundException('Subscription plan not found');
     if (!plan.isActive)
       throw new BadRequestException('Plan is no longer active');
@@ -88,8 +98,23 @@ export class SubscriptionService {
     const gatewayName = 'paystack';
     const gateway = this.paymentFactory.getGateway(gatewayName);
 
-    const reference = `sub_${crypto.randomBytes(8).toString('hex')}`;
+    // Ensure plan exists on gateway for recurring billing
+    if (!plan.gatewayPlanId) {
+      this.logger.log(`Creating missing ${gatewayName} plan for ${plan.name}`);
+      const gatewayPlan = await gateway.createPlan({
+        name: plan.name,
+        amount: plan.price,
+        interval: plan.interval,
+        currency: plan.currency,
+      });
+      plan.gatewayPlanId = gatewayPlan.planCode;
+      await this.planRepository.save(plan);
+      this.logger.log(
+        `Plan ${plan.name} registered on ${gatewayName} as ${plan.gatewayPlanId}`,
+      );
+    }
 
+    const reference = `sub_${crypto.randomBytes(8).toString('hex')}`;
     const gatewayAmount = Math.round(plan.price * 100);
 
     const tx = this.txRepository.create({
@@ -108,6 +133,7 @@ export class SubscriptionService {
       amount: gatewayAmount,
       email: user.email,
       reference,
+      plan: plan.gatewayPlanId, // This triggers recurring billing on Paystack
       metadata: {
         userId: user.id,
         planId: plan.id,

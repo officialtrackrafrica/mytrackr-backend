@@ -22,7 +22,6 @@ import {
   ApiResponse,
   ApiBody,
   ApiCookieAuth,
-  ApiExcludeEndpoint,
 } from '@nestjs/swagger';
 import { AuthService } from '../services';
 import {
@@ -85,8 +84,8 @@ export class AuthController {
 
   @Post('register/email')
   @UseGuards(RateLimitGuard)
-  @RateLimit({ windowMs: 60 * 60 * 1000, max: 5 })
-  @Throttle({ default: { ttl: 60 * 60 * 1000, limit: 5 } })
+  @RateLimit({ windowMs: 60 * 60 * 1000, max: 100 })
+  @Throttle({ default: { ttl: 60 * 60 * 1000, limit: 100 } })
   @ApiOperation({ summary: 'Register with email and password' })
   @ApiBody({ type: RegisterWithEmailDto })
   @ApiResponse({
@@ -122,9 +121,8 @@ export class AuthController {
   }
 
   @Post('verify-otp')
-  @UseGuards(RateLimitGuard)
-  @RateLimit({ windowMs: 15 * 60 * 1000, max: 5 })
-  @Throttle({ default: { ttl: 15 * 60 * 1000, limit: 5 } })
+  @RateLimit({ windowMs: 60 * 60 * 1000, max: 100 })
+  @Throttle({ default: { ttl: 60 * 60 * 1000, limit: 100 } })
   @ApiOperation({ summary: 'Verify registration with OTP code' })
   @ApiBody({ type: VerifyRegistrationDto })
   @ApiResponse({
@@ -172,8 +170,8 @@ export class AuthController {
 
   @Post('resend-otp')
   @UseGuards(RateLimitGuard)
-  @RateLimit({ windowMs: 15 * 60 * 1000, max: 3 })
-  @Throttle({ default: { ttl: 15 * 60 * 1000, limit: 3 } })
+  @RateLimit({ windowMs: 60 * 60 * 1000, max: 100 })
+  @Throttle({ default: { ttl: 60 * 60 * 1000, limit: 100 } })
   @ApiOperation({ summary: 'Resend verification code' })
   @ApiBody({ type: ResendVerificationDto })
   @ApiResponse({ status: 200, description: 'Verification code resent' })
@@ -205,8 +203,8 @@ export class AuthController {
 
   @Post('forgot-password')
   @UseGuards(RateLimitGuard)
-  @RateLimit({ windowMs: 15 * 60 * 1000, max: 3 })
-  @Throttle({ default: { ttl: 15 * 60 * 1000, limit: 3 } })
+  @RateLimit({ windowMs: 60 * 60 * 1000, max: 100 })
+  @Throttle({ default: { ttl: 60 * 60 * 1000, limit: 100 } })
   @ApiOperation({
     summary: 'Request password reset — magic link sent to email',
     description:
@@ -222,8 +220,8 @@ export class AuthController {
 
   @Post('reset-password')
   @UseGuards(RateLimitGuard)
-  @RateLimit({ windowMs: 15 * 60 * 1000, max: 3 })
-  @Throttle({ default: { ttl: 15 * 60 * 1000, limit: 3 } })
+  @RateLimit({ windowMs: 60 * 60 * 1000, max: 100 })
+  @Throttle({ default: { ttl: 60 * 60 * 1000, limit: 100 } })
   @ApiOperation({
     summary: 'Reset password using magic link token',
     description:
@@ -256,8 +254,8 @@ export class AuthController {
 
   @Post('login/email')
   @UseGuards(RateLimitGuard)
-  @RateLimit({ windowMs: 15 * 60 * 1000, max: 10 })
-  @Throttle({ default: { ttl: 15 * 60 * 1000, limit: 10 } })
+  @RateLimit({ windowMs: 60 * 60 * 1000, max: 100 })
+  @Throttle({ default: { ttl: 60 * 60 * 1000, limit: 100 } })
   @ApiOperation({ summary: 'Login with email and password' })
   @ApiBody({ type: EmailLoginDto })
   @ApiResponse({
@@ -310,9 +308,8 @@ export class AuthController {
   }
 
   @Post('verify-mfa')
-  @UseGuards(RateLimitGuard)
-  @RateLimit({ windowMs: 15 * 60 * 1000, max: 5 })
-  @Throttle({ default: { ttl: 15 * 60 * 1000, limit: 5 } })
+  @RateLimit({ windowMs: 60 * 60 * 1000, max: 100 })
+  @Throttle({ default: { ttl: 60 * 60 * 1000, limit: 100 } })
   @ApiOperation({ summary: 'Verify MFA code to complete login' })
   @ApiBody({ type: VerifyMfaDto })
   @ApiResponse({
@@ -419,17 +416,23 @@ export class AuthController {
     return { message: 'Logged out successfully' };
   }
 
-  @ApiExcludeEndpoint()
   @Get('google')
   @UseGuards(GoogleAuthGuard)
-  @ApiOperation({ summary: 'Initiate Google OAuth login' })
+  @ApiOperation({
+    summary: 'Initiate Google OAuth login / registration',
+    description:
+      'Redirects the user to Google to authenticate. Can be used for both signing up a new account or logging into an existing one.',
+  })
   @ApiResponse({ status: 302, description: 'Redirects to Google' })
   googleAuth() {}
 
-  @ApiExcludeEndpoint()
   @Get('google/callback')
   @UseGuards(GoogleAuthGuard)
-  @ApiOperation({ summary: 'Google OAuth callback — sets auth cookies' })
+  @ApiOperation({
+    summary: 'Google OAuth callback — sets auth cookies',
+    description:
+      'The callback URL Google redirects to after successful authentication. If the user is new, it automatically provisions an account and a default business. Sets secure HTTP-only cookies for access and refresh tokens.',
+  })
   @ApiResponse({
     status: 200,
     description: 'Google login successful — cookies set',

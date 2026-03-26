@@ -102,9 +102,9 @@ export class DashboardService {
       const amount = Number(tx.amount);
       const targets = [global];
 
-      if (tx.businessId === userId) {
+      if (!tx.businessId && tx.userId === userId) {
         targets.push(unassigned);
-      } else if (businessMap.has(tx.businessId)) {
+      } else if (tx.businessId && businessMap.has(tx.businessId)) {
         targets.push(businessMap.get(tx.businessId).metrics);
       }
 
@@ -139,9 +139,9 @@ export class DashboardService {
     bankAccounts.forEach((acc) => {
       const balance = Number(acc.currentBalance);
       global.cashBalance += balance;
-      if (acc.businessId === userId) {
+      if (!acc.businessId && acc.userId === userId) {
         unassigned.cashBalance += balance;
-      } else if (businessMap.has(acc.businessId)) {
+      } else if (acc.businessId && businessMap.has(acc.businessId)) {
         businessMap.get(acc.businessId).metrics.cashBalance += balance;
       }
     });

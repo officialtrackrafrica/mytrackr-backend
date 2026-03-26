@@ -46,6 +46,7 @@ export class PaystackService implements IPaymentGateway {
           amount: Math.round(payload.amount), // Paystack expects integer in kobo
           email: payload.email,
           reference: payload.reference,
+          plan: payload.plan,
           metadata: payload.metadata,
           callback_url: this.configService.get<string>('PAYSTACK_CALLBACK_URL'),
         }),
@@ -68,6 +69,54 @@ export class PaystackService implements IPaymentGateway {
       throw new HttpException(
         {
           message: 'Payment initialization failed',
+          cause: error.message,
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async createPlan(payload: {
+    name: string;
+    amount: number;
+    interval: string;
+    currency?: string;
+  }): Promise<{ planCode: string }> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    try {
+      const response = await fetch(`${this.baseUrl}/plan`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.secretKey}`,
+          'Content-Type': 'application/json',
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          name: payload.name,
+          amount: Math.round(payload.amount * 100),
+          interval: payload.interval,
+          currency: payload.currency || 'NGN',
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.status) {
+        throw new Error(data.message || 'Failed to create Paystack plan');
+      }
+
+      return {
+        planCode: data.data.plan_code,
+      };
+    } catch (error) {
+      this.logger.error(`Paystack plan creation error: ${error.message}`);
+      throw new HttpException(
+        {
+          message: 'Plan creation failed',
           cause: error.message,
         },
         HttpStatus.INTERNAL_SERVER_ERROR,

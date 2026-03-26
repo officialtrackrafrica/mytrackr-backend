@@ -1,11 +1,13 @@
-import { IsString, IsNotEmpty, IsNumber } from 'class-validator';
+import { IsString, IsNotEmpty, IsNumber, IsOptional } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class InitializeSubscriptionDto {
-  @ApiProperty({ description: 'The ID of the plan to subscribe to' })
+  @ApiPropertyOptional({
+    description: 'The ID of the plan to subscribe to. Defaults to Premium if not provided.',
+  })
   @IsString()
-  @IsNotEmpty()
-  planId: string;
+  @IsOptional()
+  planId?: string;
 }
 
 export class UpdatePlanPriceDto {

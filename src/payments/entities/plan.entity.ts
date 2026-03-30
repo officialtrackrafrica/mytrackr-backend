@@ -23,7 +23,7 @@ export class Plan {
   @Column({ default: 'NGN' })
   currency: string;
 
-  @Column({ default: 'month' })
+  @Column({ default: 'monthly' })
   interval: string;
 
   @Column({ type: 'jsonb', default: [] })

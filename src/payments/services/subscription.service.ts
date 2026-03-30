@@ -74,18 +74,13 @@ export class SubscriptionService {
   }
 
   async initializeSubscription(user: User, dto?: InitializeSubscriptionDto) {
-    let plan: Plan | null;
+    // Determine plan slug based on interval
+    const interval = dto?.interval || 'monthly';
+    const slug = interval === 'annually' ? 'premium-yearly' : 'premium';
 
-    if (dto?.planId) {
-      plan = await this.planRepository.findOne({
-        where: { id: dto.planId },
-      });
-    } else {
-      // Default to premium if no planId provided
-      plan = await this.planRepository.findOne({
-        where: { slug: 'premium' },
-      });
-    }
+    const plan = await this.planRepository.findOne({
+      where: { slug },
+    });
 
     if (!plan) throw new NotFoundException('Subscription plan not found');
     if (!plan.isActive)
@@ -218,9 +213,13 @@ export class SubscriptionService {
     const startDate = new Date();
     const endDate = new Date(startDate);
 
-    if (plan.interval === 'year') {
+    if (
+      plan.interval === 'year' ||
+      plan.interval === 'annually' ||
+      plan.interval === 'yearly'
+    ) {
       endDate.setFullYear(endDate.getFullYear() + 1);
-    } else if (plan.interval === 'month') {
+    } else if (plan.interval === 'month' || plan.interval === 'monthly') {
       endDate.setMonth(endDate.getMonth() + 1);
     } else {
       endDate.setDate(endDate.getDate() + 30);

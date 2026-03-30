@@ -19,7 +19,7 @@ export class PlansSeed {
         slug: 'free',
         price: 0,
         currency: 'NGN',
-        interval: 'month',
+        interval: 'monthly',
         features: ['Basic Tracking', 'Limited Reports'],
         isActive: true,
       },
@@ -28,12 +28,27 @@ export class PlansSeed {
         slug: 'premium',
         price: 3095.0, // N3095 as requested
         currency: 'NGN',
-        interval: 'month',
+        interval: 'monthly',
         features: [
           'Unlimited Tracking',
           'Advanced Reports',
           'Export Data',
           'Priority Support',
+        ],
+        isActive: true,
+      },
+      {
+        name: 'Premium Yearly',
+        slug: 'premium-yearly',
+        price: 30950.0, // 3095 * 10 (10% discount)
+        currency: 'NGN',
+        interval: 'annually',
+        features: [
+          'Unlimited Tracking',
+          'Advanced Reports',
+          'Export Data',
+          'Priority Support',
+          'Includes all monthly features',
         ],
         isActive: true,
       },

@@ -88,6 +88,21 @@ export class PaystackService implements IPaymentGateway {
     const timeout = setTimeout(() => controller.abort(), 10000);
 
     try {
+      const intervalMapping: Record<string, string> = {
+        month: 'monthly',
+        monthly: 'monthly',
+        year: 'annually',
+        yearly: 'annually',
+        annually: 'annually',
+        week: 'weekly',
+        weekly: 'weekly',
+        day: 'daily',
+        daily: 'daily',
+      };
+
+      const paystackInterval =
+        intervalMapping[payload.interval.toLowerCase()] || payload.interval;
+
       const response = await fetch(`${this.baseUrl}/plan`, {
         method: 'POST',
         headers: {
@@ -98,7 +113,7 @@ export class PaystackService implements IPaymentGateway {
         body: JSON.stringify({
           name: payload.name,
           amount: Math.round(payload.amount * 100),
-          interval: payload.interval,
+          interval: paystackInterval,
           currency: payload.currency || 'NGN',
         }),
       });

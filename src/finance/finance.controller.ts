@@ -8,26 +8,33 @@ import {
   Param,
   Query,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
   ParseUUIDPipe,
   Logger,
   Req,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
   ApiOperation,
   ApiCookieAuth,
   ApiResponse,
   ApiQuery,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository } from 'typeorm';
 import { JwtAuthGuard } from '../auth/guards';
-import { Business } from '../business/entities/business.entity';
+import { BusinessService } from '../business/services/business.service';
 import { Asset } from './entities/asset.entity';
 import { Liability, LiabilityStatus } from './entities/liability.entity';
 import { CategorizationRule } from './entities/categorization-rule.entity';
 import { Transaction } from './entities/transaction.entity';
 import { CategorizationService } from './services/categorization.service';
+import { CsvUploadService } from './services/csv-upload.service';
+import { PdfUploadService } from './services/pdf-upload.service';
 import { PlanGuard } from '../common/access-control/guards/plan.guard';
 import { RequirePlan } from '../common/access-control/decorators/require-plan.decorator';
 import { SWAGGER_TAGS } from '../common/docs';
@@ -46,6 +53,7 @@ import {
   RuleCreateResponseDto,
   TransactionResponseDto,
   ArchiveMessageResponseDto,
+  CsvUploadResponseDto,
 } from './dto';
 
 @ApiTags(SWAGGER_TAGS[5].name)
@@ -57,8 +65,9 @@ export class FinanceController {
   private readonly logger = new Logger(FinanceController.name);
 
   constructor(
-    @InjectRepository(Business)
-    private readonly businessRepository: Repository<Business>,
+    private readonly businessService: BusinessService,
+    private readonly csvUploadService: CsvUploadService,
+    private readonly pdfUploadService: PdfUploadService,
     @InjectRepository(Asset)
     private readonly assetRepository: Repository<Asset>,
     @InjectRepository(Liability)
@@ -70,21 +79,10 @@ export class FinanceController {
     private readonly categorizationService: CategorizationService,
   ) {}
 
-  private async getBusinessIdsForUser(userId: string): Promise<string[]> {
-    const businesses = await this.businessRepository.find({
-      where: { userId },
-      select: ['id'],
-    });
-    return businesses.map((b) => b.id);
-  }
-
   // --- Assets ---
 
   @Get('assets')
-  @ApiOperation({
-    summary: 'List all assets for a business (or all businesses)',
-  })
-  @ApiQuery({ name: 'businessId', required: false, type: String })
+  @ApiOperation({ summary: "List all assets for the user's business" })
   @ApiQuery({ name: 'includeArchived', required: false, type: Boolean })
   @ApiResponse({
     status: 200,
@@ -93,15 +91,12 @@ export class FinanceController {
   })
   async listAssets(
     @Req() req: any,
-    @Query('businessId') businessId?: string,
     @Query('includeArchived') includeArchived?: string,
   ) {
-    const where: any = {};
-    if (businessId) {
-      where.businessId = businessId;
-    } else {
-      where.businessId = In(await this.getBusinessIdsForUser(req.user.id));
-    }
+    const businessId = await this.businessService.getBusinessIdForUser(
+      req.user.id,
+    );
+    const where: any = { businessId };
 
     if (includeArchived !== 'true') {
       where.isArchived = false;
@@ -176,30 +171,19 @@ export class FinanceController {
     return { message: 'Asset archived' };
   }
 
-  // --- Liabilities ---
-
   @Get('liabilities')
-  @ApiOperation({
-    summary: 'List all liabilities for a business (or all businesses)',
-  })
-  @ApiQuery({ name: 'businessId', required: false, type: String })
+  @ApiOperation({ summary: "List all liabilities for the user's business" })
   @ApiQuery({ name: 'status', required: false, type: String })
   @ApiResponse({
     status: 200,
     description: 'List of liabilities',
     type: [LiabilityResponseDto],
   })
-  async listLiabilities(
-    @Req() req: any,
-    @Query('businessId') businessId?: string,
-    @Query('status') status?: string,
-  ) {
-    const where: any = {};
-    if (businessId) {
-      where.businessId = businessId;
-    } else {
-      where.businessId = In(await this.getBusinessIdsForUser(req.user.id));
-    }
+  async listLiabilities(@Req() req: any, @Query('status') status?: string) {
+    const businessId = await this.businessService.getBusinessIdForUser(
+      req.user.id,
+    );
+    const where: any = { businessId };
 
     if (status) {
       where.status = status;
@@ -289,23 +273,19 @@ export class FinanceController {
 
   @Get('categorization-rules')
   @ApiOperation({
-    summary: 'List categorization rules for a business (or all businesses)',
+    summary: "List categorization rules for the user's business",
   })
-  @ApiQuery({ name: 'businessId', required: false, type: String })
   @ApiResponse({
     status: 200,
     description: 'List of categorization rules',
     type: [CategorizationRuleResponseDto],
   })
-  async listRules(@Req() req: any, @Query('businessId') businessId?: string) {
-    const where: any = {};
-    if (businessId) {
-      where.businessId = businessId;
-    } else {
-      where.businessId = In(await this.getBusinessIdsForUser(req.user.id));
-    }
+  async listRules(@Req() req: any) {
+    const businessId = await this.businessService.getBusinessIdForUser(
+      req.user.id,
+    );
     return this.ruleRepository.find({
-      where,
+      where: { businessId },
       order: { priority: 'ASC' },
     });
   }
@@ -391,7 +371,7 @@ export class FinanceController {
   @ApiOperation({
     summary: 'Create a manual transaction',
     description:
-      'For users who skip bank connection. Creates a transaction in the finance table directly.',
+      'Record a transaction manually — useful for cash payments, offline sales, etc. Bank Account ID is optional for cash transactions.',
   })
   @ApiResponse({
     status: 201,
@@ -403,9 +383,15 @@ export class FinanceController {
     description: 'Validation error',
     type: ErrorResponseDto,
   })
-  async createTransaction(@Body() dto: CreateTransactionDto) {
+  async createTransaction(@Req() req: any, @Body() dto: CreateTransactionDto) {
+    const businessId =
+      dto.businessId ||
+      (await this.businessService.getBusinessIdForUser(req.user.id));
+
     const transaction = this.transactionRepository.create({
       ...dto,
+      businessId,
+      userId: req.user.id,
       date: new Date(dto.date),
       isCategorised: !!dto.category,
     });
@@ -413,10 +399,7 @@ export class FinanceController {
   }
 
   @Get('transactions')
-  @ApiOperation({
-    summary: 'List transactions for a business (or all businesses)',
-  })
-  @ApiQuery({ name: 'businessId', required: false, type: String })
+  @ApiOperation({ summary: "List transactions for the user's business" })
   @ApiQuery({ name: 'startDate', required: false, type: String })
   @ApiQuery({ name: 'endDate', required: false, type: String })
   @ApiResponse({
@@ -431,23 +414,16 @@ export class FinanceController {
   })
   async listTransactions(
     @Req() req: any,
-    @Query('businessId') businessId?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ) {
-    const query = this.transactionRepository.createQueryBuilder('tx');
+    const businessId = await this.businessService.getBusinessIdForUser(
+      req.user.id,
+    );
 
-    if (businessId) {
-      query.where('tx.businessId = :businessId', { businessId });
-    } else {
-      const businessIds = await this.getBusinessIdsForUser(req.user.id);
-      if (businessIds.length > 0) {
-        query.where('tx.businessId IN (:...businessIds)', { businessIds });
-      } else {
-        // Return empty if no businesses
-        return [];
-      }
-    }
+    const query = this.transactionRepository
+      .createQueryBuilder('tx')
+      .where('tx.businessId = :businessId', { businessId });
 
     if (startDate && endDate) {
       const start = new Date(startDate);
@@ -467,5 +443,145 @@ export class FinanceController {
     }
 
     return query.orderBy('tx.date', 'DESC').getMany();
+  }
+
+  // --- CSV Upload ---
+
+  @Post('transactions/upload-csv')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({
+    summary: 'Upload bank transactions via CSV',
+    description:
+      'Upload a CSV file from your bank statement. The system auto-detects common column headers (Date, Amount, Credit/Debit, Description, Reference). Duplicates are automatically skipped.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary', description: 'CSV file' },
+        bankAccountId: {
+          type: 'string',
+          description: 'Optional bank account ID to link transactions to',
+        },
+      },
+      required: ['file'],
+    },
+  })
+  @ApiQuery({
+    name: 'bankAccountId',
+    required: false,
+    type: String,
+    description: 'Bank account UUID to link uploaded transactions to',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'CSV processed — shows imported, skipped, and errors',
+    type: CsvUploadResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid CSV or missing required columns',
+    type: ErrorResponseDto,
+  })
+  async uploadCsv(
+    @Req() req: any,
+    @UploadedFile() file: Express.Multer.File,
+    @Query('bankAccountId') bankAccountId?: string,
+  ) {
+    if (!file) {
+      throw AppException.badRequest(
+        'No file uploaded. Please attach a CSV file.',
+        'CSV_NO_FILE',
+      );
+    }
+
+    if (!file.originalname.toLowerCase().endsWith('.csv')) {
+      throw AppException.badRequest(
+        'Only CSV files are accepted.',
+        'CSV_INVALID_FILE_TYPE',
+      );
+    }
+
+    const businessId = await this.businessService.getBusinessIdForUser(
+      req.user.id,
+    );
+
+    return this.csvUploadService.processCSV(
+      file.buffer,
+      businessId,
+      req.user.id,
+      bankAccountId,
+    );
+  }
+
+  // --- PDF Upload ---
+
+  @Post('transactions/upload-pdf')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({
+    summary: 'Upload bank transactions via PDF',
+    description:
+      'Upload a text-searchable PDF bank statement. Supported banks include GTB, Zenith, Access, and others with standard transaction row formats. Duplicates are automatically skipped.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary', description: 'PDF file' },
+        bankAccountId: {
+          type: 'string',
+          description: 'Optional bank account ID to link transactions to',
+        },
+      },
+      required: ['file'],
+    },
+  })
+  @ApiQuery({
+    name: 'bankAccountId',
+    required: false,
+    type: String,
+    description: 'Bank account UUID to link uploaded transactions to',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'PDF processed — shows imported, skipped, and errors',
+    type: CsvUploadResponseDto, // Reusing CSV response DTO as it has the same fields
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid PDF or no searchable text found',
+    type: ErrorResponseDto,
+  })
+  async uploadPdf(
+    @Req() req: any,
+    @UploadedFile() file: Express.Multer.File,
+    @Query('bankAccountId') bankAccountId?: string,
+  ) {
+    if (!file) {
+      throw AppException.badRequest(
+        'No file uploaded. Please attach a PDF file.',
+        'PDF_NO_FILE',
+      );
+    }
+
+    if (!file.originalname.toLowerCase().endsWith('.pdf')) {
+      throw AppException.badRequest(
+        'Only PDF files are accepted.',
+        'PDF_INVALID_FILE_TYPE',
+      );
+    }
+
+    const businessId = await this.businessService.getBusinessIdForUser(
+      req.user.id,
+    );
+
+    return this.pdfUploadService.processPdf(
+      file.buffer,
+      businessId,
+      req.user.id,
+      bankAccountId,
+    );
   }
 }

@@ -7,6 +7,8 @@ import { CategorizationRule } from './entities/categorization-rule.entity';
 import { BankAccount } from './entities/bank-account.entity';
 import { Transaction } from './entities/transaction.entity';
 import { CategorizationService } from './services/categorization.service';
+import { CsvUploadService } from './services/csv-upload.service';
+import { PdfUploadService } from './services/pdf-upload.service';
 import { FinanceController } from './finance.controller';
 import { PaymentsModule } from '../payments/payments.module';
 
@@ -23,7 +25,12 @@ import { PaymentsModule } from '../payments/payments.module';
     PaymentsModule,
   ],
   controllers: [FinanceController],
-  providers: [CategorizationService],
-  exports: [TypeOrmModule, CategorizationService],
+  providers: [CategorizationService, CsvUploadService, PdfUploadService],
+  exports: [
+    TypeOrmModule,
+    CategorizationService,
+    CsvUploadService,
+    PdfUploadService,
+  ],
 })
 export class FinanceModule {}

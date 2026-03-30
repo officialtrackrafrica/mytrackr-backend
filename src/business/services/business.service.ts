@@ -2,8 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Business } from '../entities/business.entity';
-import { User } from '../../auth/entities/user.entity';
-import { CreateBusinessDto, UpdateBusinessDto } from '../dto';
+import { UpdateBusinessDto } from '../dto';
 
 @Injectable()
 export class BusinessService {
@@ -12,22 +11,19 @@ export class BusinessService {
     private readonly businessRepository: Repository<Business>,
   ) {}
 
-  async create(user: User, dto: CreateBusinessDto): Promise<Business> {
-    const business = this.businessRepository.create({
-      ...dto,
-      owner: user,
-      userId: user.id,
+  async getBusinessForUser(userId: string): Promise<Business> {
+    const business = await this.businessRepository.findOne({
+      where: { userId },
     });
-    const savedBusiness = await this.businessRepository.save(business);
-    delete (savedBusiness as any).owner;
-    return savedBusiness;
+    if (!business) {
+      throw new NotFoundException('Business not found for this user');
+    }
+    return business;
   }
 
-  async findAllForUser(userId: string): Promise<Business[]> {
-    return this.businessRepository.find({
-      where: { userId },
-      order: { createdAt: 'DESC' },
-    });
+  async getBusinessIdForUser(userId: string): Promise<string> {
+    const business = await this.getBusinessForUser(userId);
+    return business.id;
   }
 
   async findOne(id: string, userId: string): Promise<Business> {
@@ -48,10 +44,5 @@ export class BusinessService {
     const business = await this.findOne(id, userId);
     Object.assign(business, dto);
     return this.businessRepository.save(business);
-  }
-
-  async remove(id: string, userId: string): Promise<void> {
-    const business = await this.findOne(id, userId);
-    await this.businessRepository.remove(business);
   }
 }

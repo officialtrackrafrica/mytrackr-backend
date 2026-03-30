@@ -5,6 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
+  OneToOne,
   ManyToMany,
   JoinTable,
 } from 'typeorm';
@@ -83,8 +84,8 @@ export class User {
   @JoinTable()
   roles: Role[];
 
-  @OneToMany(() => Business, (business) => business.owner)
-  businesses: Business[];
+  @OneToOne(() => Business, (business) => business.owner)
+  business: Business;
 
   @OneToMany(() => MonoAccount, (monoAccount) => monoAccount.user)
   monoAccounts: MonoAccount[];

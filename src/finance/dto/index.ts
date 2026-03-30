@@ -230,18 +230,25 @@ export class CreateTransactionDto {
   @IsString()
   subCategory?: string;
 
-  @ApiPropertyOptional({ example: 'Cash sale' })
+  @ApiPropertyOptional({ example: 'Cash sale — not deposited to bank' })
   @IsOptional()
   @IsString()
   notes?: string;
 
-  @ApiProperty({ description: 'Business ID' })
+  @ApiPropertyOptional({
+    description: 'Business ID (auto-populated from your account if omitted)',
+  })
+  @IsOptional()
   @IsString()
-  businessId: string;
+  businessId?: string;
 
-  @ApiProperty({ description: 'Bank Account ID' })
+  @ApiPropertyOptional({
+    description:
+      'Bank Account ID (omit for cash transactions not linked to a bank)',
+  })
+  @IsOptional()
   @IsString()
-  bankAccountId: string;
+  bankAccountId?: string;
 }
 
 // ─── Response DTOs ───────────────────────────────────────────────────────────
@@ -308,11 +315,26 @@ export class TransactionResponseDto {
   @ApiPropertyOptional() subCategory?: string;
   @ApiPropertyOptional() notes?: string;
   @ApiProperty() businessId: string;
-  @ApiProperty() bankAccountId: string;
+  @ApiPropertyOptional() bankAccountId?: string;
   @ApiProperty() isCategorised: boolean;
   @ApiProperty() createdAt: Date;
 }
 
 export class ArchiveMessageResponseDto {
   @ApiProperty({ example: 'Asset archived' }) message: string;
+}
+
+export class CsvUploadResponseDto {
+  @ApiProperty({ description: 'Number of transactions imported', example: 42 })
+  imported: number;
+
+  @ApiProperty({ description: 'Number of duplicate/skipped rows', example: 3 })
+  skipped: number;
+
+  @ApiProperty({
+    description: 'First 10 row-level errors (if any)',
+    type: [String],
+    example: ['Row 5: Invalid date format: "abc"'],
+  })
+  errors: string[];
 }

@@ -36,9 +36,8 @@ export class ReportsController {
   @ApiOperation({
     summary: 'Generate Profit & Loss statement',
     description:
-      'Calculates P&L for a business (or all businesses) within a date range. Excludes uncategorised and INTERNAL_TRANSFER transactions.',
+      "Calculates P&L for the user's business within a date range. Excludes uncategorised and INTERNAL_TRANSFER transactions.",
   })
-  @ApiQuery({ name: 'businessId', required: false, type: String })
   @ApiQuery({
     name: 'startDate',
     required: true,
@@ -54,7 +53,6 @@ export class ReportsController {
   @ApiResponse({ status: 200, description: 'P&L statement data' })
   async getPnl(
     @Req() req: any,
-    @Query('businessId') businessId: string,
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
   ) {
@@ -68,22 +66,20 @@ export class ReportsController {
       throw new BadRequestException('Invalid or missing endDate');
     }
 
-    return this.pnlService.calculatePnl(req.user.id, businessId, start, end);
+    return this.pnlService.calculatePnl(req.user.id, start, end);
   }
 
   @Get('cash-flow')
   @ApiOperation({
     summary: 'Generate Cash Flow statement',
     description:
-      'Calculates cash flow for a business (or all businesses) including runway and burn rate. Includes ALL transactions.',
+      "Calculates cash flow for the user's business including runway and burn rate. Includes ALL transactions.",
   })
-  @ApiQuery({ name: 'businessId', required: false, type: String })
   @ApiQuery({ name: 'startDate', required: true, type: String })
   @ApiQuery({ name: 'endDate', required: true, type: String })
   @ApiResponse({ status: 200, description: 'Cash flow statement data' })
   async getCashFlow(
     @Req() req: any,
-    @Query('businessId') businessId: string,
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
   ) {
@@ -97,29 +93,17 @@ export class ReportsController {
       throw new BadRequestException('Invalid or missing endDate');
     }
 
-    return this.cashFlowService.calculateCashFlow(
-      req.user.id,
-      businessId,
-      start,
-      end,
-    );
+    return this.cashFlowService.calculateCashFlow(req.user.id, start, end);
   }
 
   @Get('balance-sheet')
   @ApiOperation({
     summary: 'Generate Balance Sheet',
     description:
-      'Calculates assets, liabilities, and owner equity for a business (or all businesses).',
+      "Calculates assets, liabilities, and owner equity for the user's business.",
   })
-  @ApiQuery({ name: 'businessId', required: false, type: String })
   @ApiResponse({ status: 200, description: 'Balance sheet data' })
-  async getBalanceSheet(
-    @Req() req: any,
-    @Query('businessId') businessId: string,
-  ) {
-    return this.balanceSheetService.calculateBalanceSheet(
-      req.user.id,
-      businessId,
-    );
+  async getBalanceSheet(@Req() req: any) {
+    return this.balanceSheetService.calculateBalanceSheet(req.user.id);
   }
 }

@@ -1,13 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository } from 'typeorm';
 import {
   Transaction,
   TransactionCategory,
   TransactionDirection,
 } from '../../finance/entities/transaction.entity';
 import { BankAccount } from '../../finance/entities/bank-account.entity';
-import { Business } from '../../business/entities/business.entity';
+import { BusinessService } from '../../business/services/business.service';
 
 @Injectable()
 export class CashFlowService {
@@ -18,34 +18,15 @@ export class CashFlowService {
     private readonly transactionRepository: Repository<Transaction>,
     @InjectRepository(BankAccount)
     private readonly bankAccountRepository: Repository<BankAccount>,
-    @InjectRepository(Business)
-    private readonly businessRepository: Repository<Business>,
+    private readonly businessService: BusinessService,
   ) {}
 
-  async calculateCashFlow(
-    userId: string,
-    businessId: string | null,
-    startDate: Date,
-    endDate: Date,
-  ) {
-    let businessIds: string[] = [];
-    if (businessId) {
-      businessIds = [businessId];
-    } else {
-      const businesses = await this.businessRepository.find({
-        where: { userId },
-        select: ['id'],
-      });
-      businessIds = businesses.map((b) => b.id);
-    }
-
-    if (businessIds.length === 0) {
-      return this.emptyCashFlow();
-    }
+  async calculateCashFlow(userId: string, startDate: Date, endDate: Date) {
+    const businessId = await this.businessService.getBusinessIdForUser(userId);
 
     const results = await this.transactionRepository
       .createQueryBuilder('tx')
-      .where('tx.businessId IN (:...businessIds)', { businessIds })
+      .where('tx.businessId = :businessId', { businessId })
       .andWhere('tx.date BETWEEN :startDate AND :endDate', {
         startDate,
         endDate,
@@ -91,7 +72,7 @@ export class CashFlowService {
     const monthlyBurnRate = cashOut / diffMonths;
 
     const bankAccounts = await this.bankAccountRepository.find({
-      where: { businessId: In(businessIds) },
+      where: { businessId },
     });
     const cashBalance = bankAccounts.reduce(
       (acc, account) => acc + Number(account.currentBalance),

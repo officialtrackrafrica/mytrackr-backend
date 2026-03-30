@@ -26,9 +26,8 @@ export class TaxController {
   @ApiOperation({
     summary: 'Calculate tax estimate',
     description:
-      'Calculates both PIT (sole proprietor) and CIT (LLC) tax estimates for a business (or all businesses). Includes year-to-date projection.',
+      "Calculates both PIT (sole proprietor) and CIT (LLC) tax estimates for the user's business. Includes year-to-date projection.",
   })
-  @ApiQuery({ name: 'businessId', required: false, type: String })
   @ApiQuery({
     name: 'year',
     required: true,
@@ -58,7 +57,6 @@ export class TaxController {
   })
   async getTaxEstimate(
     @Req() req: any,
-    @Query('businessId') businessId?: string,
     @Query('year') year?: string,
     @Query('deductions') deductions?: string,
   ) {
@@ -72,7 +70,6 @@ export class TaxController {
 
     return this.taxService.calculateTaxEstimate(
       req.user.id,
-      businessId || null,
       yearNumber,
       deductions ? parseFloat(deductions) : 0,
     );

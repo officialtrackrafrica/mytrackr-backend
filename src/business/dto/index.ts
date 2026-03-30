@@ -4,43 +4,11 @@ import {
   IsOptional,
   MinLength,
   MaxLength,
-  IsNotEmpty,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { BusinessType } from '../entities/business.entity';
 
 // ─── Request DTOs ────────────────────────────────────────────────────────────
-
-export class CreateBusinessDto {
-  @ApiProperty({
-    description: 'Business name',
-    example: 'Acme Ventures Ltd',
-    minLength: 2,
-    maxLength: 100,
-  })
-  @IsString()
-  @IsNotEmpty()
-  @MinLength(2)
-  @MaxLength(100)
-  name: string;
-
-  @ApiProperty({
-    description: 'Business type / industry focus',
-    enum: BusinessType,
-    example: BusinessType.SERVICE,
-  })
-  @IsEnum(BusinessType)
-  businessType: BusinessType;
-
-  @ApiPropertyOptional({
-    description: 'ISO 4217 currency code',
-    example: 'NGN',
-    default: 'NGN',
-  })
-  @IsOptional()
-  @IsString()
-  currency?: string;
-}
 
 export class UpdateBusinessDto {
   @ApiPropertyOptional({
@@ -101,3 +69,4 @@ export class BusinessResponseDto {
   @ApiProperty({ description: 'Last updated timestamp' })
   updatedAt: Date;
 }
+

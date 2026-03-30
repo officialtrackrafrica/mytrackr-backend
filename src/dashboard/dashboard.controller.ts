@@ -26,9 +26,8 @@ export class DashboardController {
   @ApiOperation({
     summary: 'Get dashboard metrics',
     description:
-      'Returns key financial metrics for a business (or all businesses): revenue, expenses, net profit, cash balance, uncategorised items, and burn rate.',
+      "Returns key financial metrics for the user's business: revenue, expenses, net profit, cash balance, uncategorised items, and burn rate.",
   })
-  @ApiQuery({ name: 'businessId', required: false, type: String })
   @ApiQuery({
     name: 'startDate',
     required: true,
@@ -53,7 +52,6 @@ export class DashboardController {
   })
   async getDashboard(
     @Req() req: any,
-    @Query('businessId') businessId: string,
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
   ) {
@@ -77,11 +75,6 @@ export class DashboardController {
       );
     }
 
-    return this.dashboardService.getDashboardMetrics(
-      req.user.id,
-      businessId || null,
-      start,
-      end,
-    );
+    return this.dashboardService.getDashboardMetrics(req.user.id, start, end);
   }
 }

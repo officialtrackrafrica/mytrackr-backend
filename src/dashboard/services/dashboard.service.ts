@@ -7,7 +7,7 @@ import {
   TransactionDirection,
 } from '../../finance/entities/transaction.entity';
 import { BankAccount } from '../../finance/entities/bank-account.entity';
-import { Business } from '../../business/entities/business.entity';
+import { BusinessService } from '../../business/services/business.service';
 
 @Injectable()
 export class DashboardService {
@@ -18,79 +18,36 @@ export class DashboardService {
     private readonly transactionRepository: Repository<Transaction>,
     @InjectRepository(BankAccount)
     private readonly bankAccountRepository: Repository<BankAccount>,
-    @InjectRepository(Business)
-    private readonly businessRepository: Repository<Business>,
+    private readonly businessService: BusinessService,
   ) {}
 
   async getDashboardMetrics(
     userId: string,
-    businessId: string | null,
     startDate: Date,
     endDate: Date,
   ): Promise<any> {
-    // 1. Fetch all data needed
-    const businesses = await this.businessRepository.find({
-      where: { userId },
-    });
+    const businessId = await this.businessService.getBusinessIdForUser(userId);
 
-    const activeBusinessIds = businesses.map((b) => b.id);
-
-    let txQuery = this.transactionRepository.createQueryBuilder('tx');
-    let baQuery = this.bankAccountRepository.createQueryBuilder('ba');
-
-    if (businessId) {
-      txQuery = txQuery.where('tx.businessId = :businessId', { businessId });
-      baQuery = baQuery.where('ba.businessId = :businessId', { businessId });
-    } else {
-      if (activeBusinessIds.length > 0) {
-        txQuery = txQuery.where(
-          '(tx.businessId IN (:...activeBusinessIds) OR tx.userId = :userId)',
-          { activeBusinessIds, userId },
-        );
-        baQuery = baQuery.where(
-          '(ba.businessId IN (:...activeBusinessIds) OR ba.userId = :userId)',
-          { activeBusinessIds, userId },
-        );
-      } else {
-        txQuery = txQuery.where('tx.userId = :userId', { userId });
-        baQuery = baQuery.where('ba.userId = :userId', { userId });
-      }
-    }
-
-    const transactions = await txQuery
+    const transactions = await this.transactionRepository
+      .createQueryBuilder('tx')
+      .where('tx.businessId = :businessId', { businessId })
       .andWhere('tx.date BETWEEN :startDate AND :endDate', {
         startDate,
         endDate,
       })
       .getMany();
 
-    const bankAccounts = await baQuery.getMany();
+    const bankAccounts = await this.bankAccountRepository
+      .createQueryBuilder('ba')
+      .where('ba.businessId = :businessId', { businessId })
+      .getMany();
 
-    // 2. Initialize aggregators
-    const createEmptyMetrics = () => ({
-      revenue: 0,
-      expenses: 0,
-      netProfit: 0,
-      cashBalance: 0,
-      uncategorisedCount: 0,
-      burnRate: 0,
-      _totalCogs: 0, // temporary internal helpers
-      _cashOut: 0,
-    });
+    let revenue = 0;
+    let expenses = 0;
+    let totalCogs = 0;
+    let cashOut = 0;
+    let uncategorisedCount = 0;
 
-    const global = createEmptyMetrics();
-    const unassigned = createEmptyMetrics();
-    const businessMap = new Map<string, any>();
-
-    businesses.forEach((b) => {
-      businessMap.set(b.id, {
-        businessId: b.id,
-        businessName: b.name,
-        metrics: createEmptyMetrics(),
-      });
-    });
-
-    // 3. Aggregate Transactions
     const diffMonths = Math.max(
       1,
       (endDate.getFullYear() - startDate.getFullYear()) * 12 +
@@ -100,69 +57,48 @@ export class DashboardService {
 
     for (const tx of transactions) {
       const amount = Number(tx.amount);
-      const targets = [global];
 
-      if (!tx.businessId && tx.userId === userId) {
-        targets.push(unassigned);
-      } else if (tx.businessId && businessMap.has(tx.businessId)) {
-        targets.push(businessMap.get(tx.businessId).metrics);
+      if (tx.category === TransactionCategory.INTERNAL_TRANSFER) continue;
+
+      if (tx.category === TransactionCategory.INCOME) {
+        revenue += amount;
+      } else if (tx.category === TransactionCategory.COGS) {
+        totalCogs += amount;
+      } else if (tx.category === TransactionCategory.EXPENSE) {
+        expenses += amount;
+      } else {
+        if (!tx.isCategorised) uncategorisedCount++;
+        if (tx.direction === TransactionDirection.CREDIT) {
+          revenue += amount;
+        } else if (tx.direction === TransactionDirection.DEBIT) {
+          expenses += amount;
+        }
       }
 
-      targets.forEach((m) => {
-        if (tx.category === TransactionCategory.INTERNAL_TRANSFER) return;
-
-        if (tx.category === TransactionCategory.INCOME) {
-          m.revenue += amount;
-        } else if (tx.category === TransactionCategory.COGS) {
-          m._totalCogs += amount;
-        } else if (tx.category === TransactionCategory.EXPENSE) {
-          m.expenses += amount;
-        } else {
-          if (!tx.isCategorised) m.uncategorisedCount++;
-          if (tx.direction === TransactionDirection.CREDIT) {
-            m.revenue += amount;
-          } else if (tx.direction === TransactionDirection.DEBIT) {
-            m.expenses += amount;
-          }
-        }
-
-        if (
-          tx.direction === TransactionDirection.DEBIT &&
-          tx.category !== TransactionCategory.INTERNAL_TRANSFER
-        ) {
-          m._cashOut += amount;
-        }
-      });
+      if (
+        tx.direction === TransactionDirection.DEBIT &&
+        tx.category !== TransactionCategory.INTERNAL_TRANSFER
+      ) {
+        cashOut += amount;
+      }
     }
 
-    // 4. Aggregate Bank Balances
-    bankAccounts.forEach((acc) => {
-      const balance = Number(acc.currentBalance);
-      global.cashBalance += balance;
-      if (!acc.businessId && acc.userId === userId) {
-        unassigned.cashBalance += balance;
-      } else if (acc.businessId && businessMap.has(acc.businessId)) {
-        businessMap.get(acc.businessId).metrics.cashBalance += balance;
-      }
-    });
+    expenses = expenses + totalCogs;
+    const netProfit = revenue - expenses;
+    const burnRate = cashOut / diffMonths;
 
-    // 5. Finalize Calculations
-    const finalize = (m: any) => {
-      m.expenses = m.expenses + m._totalCogs;
-      m.netProfit = m.revenue - m.expenses;
-      m.burnRate = m._cashOut / diffMonths;
-      delete m._totalCogs;
-      delete m._cashOut;
-    };
-
-    finalize(global);
-    finalize(unassigned);
-    businessMap.forEach((b) => finalize(b.metrics));
+    const cashBalance = bankAccounts.reduce(
+      (acc, account) => acc + Number(account.currentBalance),
+      0,
+    );
 
     return {
-      global,
-      businesses: Array.from(businessMap.values()),
-      unassigned,
+      revenue,
+      expenses,
+      netProfit,
+      cashBalance,
+      uncategorisedCount,
+      burnRate,
     };
   }
 }

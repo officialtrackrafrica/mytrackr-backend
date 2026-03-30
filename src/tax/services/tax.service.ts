@@ -5,8 +5,8 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
-import { Business } from '../../business/entities/business.entity';
+import { Repository } from 'typeorm';
+import { BusinessService } from '../../business/services/business.service';
 import {
   Transaction,
   TransactionCategory,
@@ -18,8 +18,7 @@ export class TaxService {
   private readonly logger = new Logger(TaxService.name);
 
   constructor(
-    @InjectRepository(Business)
-    private readonly businessRepository: Repository<Business>,
+    private readonly businessService: BusinessService,
     @InjectRepository(Transaction)
     private readonly transactionRepository: Repository<Transaction>,
     @InjectRepository(Asset)
@@ -28,40 +27,17 @@ export class TaxService {
 
   async calculateTaxEstimate(
     userId: string,
-    businessId: string | null,
     year: number,
     userDeductions: number = 0,
   ) {
-    let businessIds: string[] = [];
-    if (businessId) {
-      const business = await this.businessRepository.findOne({
-        where: { id: businessId },
-      });
-      if (!business) {
-        throw new NotFoundException('Business not found');
-      }
-      if (business.userId !== userId) {
-        throw new ForbiddenException('You do not have access to this business');
-      }
-      businessIds = [businessId];
-    } else {
-      const businesses = await this.businessRepository.find({
-        where: { userId },
-        select: ['id'],
-      });
-      businessIds = businesses.map((b) => b.id);
-    }
-
-    if (businessIds.length === 0) {
-      return this.emptyTaxEstimate();
-    }
+    const businessId = await this.businessService.getBusinessIdForUser(userId);
 
     const startDate = new Date(year, 0, 1);
     const endDate = new Date(year, 11, 31, 23, 59, 59);
 
     const pnlResults = await this.transactionRepository
       .createQueryBuilder('tx')
-      .where('tx.businessId IN (:...businessIds)', { businessIds })
+      .where('tx.businessId = :businessId', { businessId })
       .andWhere('tx.date BETWEEN :startDate AND :endDate', {
         startDate,
         endDate,
@@ -89,7 +65,7 @@ export class TaxService {
     const netProfit = totalRevenue - totalCogs - totalExpenses;
 
     const assets = await this.assetRepository.find({
-      where: { businessId: In(businessIds), isArchived: false },
+      where: { businessId, isArchived: false },
     });
     const totalAssets = assets.reduce(
       (acc, asset) => acc + Number(asset.currentValue || asset.purchaseValue),

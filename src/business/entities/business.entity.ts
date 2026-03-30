@@ -4,8 +4,7 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
-  OneToMany,
-  ManyToOne,
+  OneToOne,
   JoinColumn,
 } from 'typeorm';
 import { User } from '../../auth/entities/user.entity';
@@ -29,11 +28,11 @@ export class Business {
   @Column({ default: 'NGN' })
   currency: string;
 
-  @ManyToOne(() => User, (user) => user.businesses, { onDelete: 'CASCADE' })
+  @OneToOne(() => User, (user) => user.business, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'userId' })
   owner: User;
 
-  @Column()
+  @Column({ unique: true })
   userId: string;
 
   @CreateDateColumn()

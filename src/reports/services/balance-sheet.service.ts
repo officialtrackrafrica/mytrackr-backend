@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Asset } from '../../finance/entities/asset.entity';
 import {
   Liability,
@@ -12,7 +12,7 @@ import {
   TransactionCategory,
   TransactionDirection,
 } from '../../finance/entities/transaction.entity';
-import { Business } from '../../business/entities/business.entity';
+import { BusinessService } from '../../business/services/business.service';
 
 @Injectable()
 export class BalanceSheetService {
@@ -27,28 +27,14 @@ export class BalanceSheetService {
     private readonly bankAccountRepository: Repository<BankAccount>,
     @InjectRepository(Transaction)
     private readonly transactionRepository: Repository<Transaction>,
-    @InjectRepository(Business)
-    private readonly businessRepository: Repository<Business>,
+    private readonly businessService: BusinessService,
   ) {}
 
-  async calculateBalanceSheet(userId: string, businessId: string | null) {
-    let businessIds: string[] = [];
-    if (businessId) {
-      businessIds = [businessId];
-    } else {
-      const businesses = await this.businessRepository.find({
-        where: { userId },
-        select: ['id'],
-      });
-      businessIds = businesses.map((b) => b.id);
-    }
-
-    if (businessIds.length === 0) {
-      return this.emptyBalanceSheet();
-    }
+  async calculateBalanceSheet(userId: string) {
+    const businessId = await this.businessService.getBusinessIdForUser(userId);
 
     const bankAccounts = await this.bankAccountRepository.find({
-      where: { businessId: In(businessIds) },
+      where: { businessId },
     });
     const cashAndBankBalances = bankAccounts.reduce(
       (acc, account) => acc + Number(account.currentBalance),
@@ -56,7 +42,7 @@ export class BalanceSheetService {
     );
 
     const assets = await this.assetRepository.find({
-      where: { businessId: In(businessIds), isArchived: false },
+      where: { businessId, isArchived: false },
     });
     const businessAssets = assets.reduce(
       (acc, asset) => acc + Number(asset.currentValue || asset.purchaseValue),
@@ -66,7 +52,7 @@ export class BalanceSheetService {
     const totalAssets = cashAndBankBalances + businessAssets;
 
     const liabilities = await this.liabilityRepository.find({
-      where: { businessId: In(businessIds), status: LiabilityStatus.ACTIVE },
+      where: { businessId, status: LiabilityStatus.ACTIVE },
     });
     const totalLiabilities = liabilities.reduce(
       (acc, liability) => acc + Number(liability.amountOwed),
@@ -75,7 +61,7 @@ export class BalanceSheetService {
 
     const capitalContrib = await this.transactionRepository
       .createQueryBuilder('tx')
-      .where('tx.businessId IN (:...businessIds)', { businessIds })
+      .where('tx.businessId = :businessId', { businessId })
       .andWhere('tx.category = :cat', {
         cat: TransactionCategory.INTERNAL_TRANSFER,
       })
@@ -88,7 +74,7 @@ export class BalanceSheetService {
 
     const drawings = await this.transactionRepository
       .createQueryBuilder('tx')
-      .where('tx.businessId IN (:...businessIds)', { businessIds })
+      .where('tx.businessId = :businessId', { businessId })
       .andWhere('tx.category = :cat', {
         cat: TransactionCategory.INTERNAL_TRANSFER,
       })
@@ -101,7 +87,7 @@ export class BalanceSheetService {
 
     const pnlResults = await this.transactionRepository
       .createQueryBuilder('tx')
-      .where('tx.businessId IN (:...businessIds)', { businessIds })
+      .where('tx.businessId = :businessId', { businessId })
       .andWhere('tx.isCategorised = :isCat', { isCat: true })
       .andWhere('tx.category != :internalTransfer', {
         internalTransfer: TransactionCategory.INTERNAL_TRANSFER,

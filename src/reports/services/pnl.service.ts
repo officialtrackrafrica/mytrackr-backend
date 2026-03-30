@@ -6,7 +6,7 @@ import {
   TransactionCategory,
   TransactionDirection,
 } from '../../finance/entities/transaction.entity';
-import { Business } from '../../business/entities/business.entity';
+import { BusinessService } from '../../business/services/business.service';
 
 @Injectable()
 export class PnlService {
@@ -15,34 +15,15 @@ export class PnlService {
   constructor(
     @InjectRepository(Transaction)
     private readonly transactionRepository: Repository<Transaction>,
-    @InjectRepository(Business)
-    private readonly businessRepository: Repository<Business>,
+    private readonly businessService: BusinessService,
   ) {}
 
-  async calculatePnl(
-    userId: string,
-    businessId: string | null,
-    startDate: Date,
-    endDate: Date,
-  ) {
-    let businessIds: string[] = [];
-    if (businessId) {
-      businessIds = [businessId];
-    } else {
-      const businesses = await this.businessRepository.find({
-        where: { userId },
-        select: ['id'],
-      });
-      businessIds = businesses.map((b) => b.id);
-    }
-
-    if (businessIds.length === 0) {
-      return this.emptyPnl();
-    }
+  async calculatePnl(userId: string, startDate: Date, endDate: Date) {
+    const businessId = await this.businessService.getBusinessIdForUser(userId);
 
     const baseQuery = this.transactionRepository
       .createQueryBuilder('tx')
-      .where('tx.businessId IN (:...businessIds)', { businessIds })
+      .where('tx.businessId = :businessId', { businessId })
       .andWhere('tx.date BETWEEN :startDate AND :endDate', {
         startDate,
         endDate,
@@ -104,7 +85,7 @@ export class PnlService {
 
     const uncategorisedStats = await this.transactionRepository
       .createQueryBuilder('tx')
-      .where('tx.businessId IN (:...businessIds)', { businessIds })
+      .where('tx.businessId = :businessId', { businessId })
       .andWhere('tx.date BETWEEN :startDate AND :endDate', {
         startDate,
         endDate,

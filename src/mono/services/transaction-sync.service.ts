@@ -43,11 +43,10 @@ export class TransactionSyncService {
     const businessId = monoAccount.businessId || null;
     const userId = monoAccount.user ? monoAccount.user.id : null;
 
-    const bankAccount = await this.bankAccountRepository.findOne({
+    // Use providerAccountId as a unique identifier for the lookup
+    let bankAccount = await this.bankAccountRepository.findOne({
       where: {
-        accountNumber: monoAccount.accountNumber,
-        businessId: businessId || IsNull(),
-        userId: userId || IsNull(),
+        providerAccountId: monoAccountId,
       },
     });
 
@@ -64,7 +63,7 @@ export class TransactionSyncService {
         },
       });
 
-      const newBankAccount = this.bankAccountRepository.create({
+      bankAccount = this.bankAccountRepository.create({
         providerAccountId: monoAccount.monoAccountId,
         accountNumber: monoAccount.accountNumber || '',
         bankName: monoAccount.institutionName || 'Unknown',
@@ -73,14 +72,26 @@ export class TransactionSyncService {
         userId: userId || undefined,
         isPrimary: existingCount === 0,
       });
-      await this.bankAccountRepository.save(newBankAccount);
-
-      return this.syncWithBankAccount(
-        monoAccount.id,
-        newBankAccount.id,
-        newBankAccount.businessId,
-        newBankAccount.userId,
-      );
+      await this.bankAccountRepository.save(bankAccount);
+    } else {
+      // Update businessId/userId if they've changed (e.g. account just linked to business)
+      if (
+        bankAccount.businessId !== businessId ||
+        bankAccount.userId !== userId
+      ) {
+        this.logger.log(
+          `Updating existing BankAccount record for ${monoAccountId} with new business/user context`,
+        );
+        bankAccount.businessId = businessId;
+        bankAccount.userId = userId;
+        
+        // Also update balance if available from last sync
+        if (monoAccount.balance !== undefined) {
+          bankAccount.currentBalance = Number(monoAccount.balance) / 100;
+        }
+        
+        await this.bankAccountRepository.save(bankAccount);
+      }
     }
 
     return this.syncWithBankAccount(

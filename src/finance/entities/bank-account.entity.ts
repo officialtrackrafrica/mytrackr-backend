@@ -60,10 +60,10 @@ export class BankAccount {
   business: Business;
 
   @Column({ nullable: true })
-  businessId: string;
+  businessId: string | null;
 
   @Column({ nullable: true })
-  userId: string;
+  userId: string | null;
 
   @Column({ default: false })
   isPrimary: boolean;

@@ -1067,6 +1067,17 @@ export class MonoService {
     }
 
     account.businessId = businessId;
-    return this.monoAccountRepository.save(account);
+    const saved = await this.monoAccountRepository.save(account);
+
+    // Trigger immediate sync to Finance module so the account appears in the dashboard
+    void this.transactionSyncService
+      .syncAccountTransactions(monoAccountId)
+      .catch((e) =>
+        this.logger.error(
+          `Failed to sync account ${monoAccountId} after linking business: ${e.message}`,
+        ),
+      );
+
+    return saved;
   }
 }

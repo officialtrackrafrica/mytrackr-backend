@@ -64,7 +64,7 @@ export class MonoAccount {
   business: Business;
 
   @Column({ nullable: true })
-  businessId: string;
+  businessId: string | null;
 
   @OneToMany(() => Transaction, (tx) => tx.monoAccount)
   transactions: Transaction[];

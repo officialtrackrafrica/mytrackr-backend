@@ -10,6 +10,7 @@ import { Transaction } from './entities/transaction.entity';
 import { FinanceModule } from '../finance/finance.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { CategorizationModule } from '../categorization/categorization.module';
+import { BusinessModule } from '../business/business.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { CategorizationModule } from '../categorization/categorization.module';
     FinanceModule,
     PaymentsModule,
     CategorizationModule,
+    BusinessModule,
   ],
   providers: [MonoService, TransactionSyncService],
   controllers: [MonoController],

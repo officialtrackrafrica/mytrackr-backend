@@ -84,12 +84,12 @@ export class TransactionSyncService {
         );
         bankAccount.businessId = businessId;
         bankAccount.userId = userId;
-        
-        // Also update balance if available from last sync
-        if (monoAccount.balance !== undefined) {
-          bankAccount.currentBalance = Number(monoAccount.balance) / 100;
-        }
-        
+        await this.bankAccountRepository.save(bankAccount);
+      }
+
+      // Always update balance if available from last sync
+      if (monoAccount.balance !== undefined) {
+        bankAccount.currentBalance = Number(monoAccount.balance) / 100;
         await this.bankAccountRepository.save(bankAccount);
       }
     }

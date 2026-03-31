@@ -20,6 +20,7 @@ import { User } from '../auth/entities/user.entity';
 import { v4 as uuidv4 } from 'uuid';
 import { AiCategorizationService } from '../categorization/categorization.service';
 import { TransactionSyncService } from './services/transaction-sync.service';
+import { BusinessService } from '../business/services/business.service';
 
 @Injectable()
 export class MonoService {
@@ -36,6 +37,7 @@ export class MonoService {
     private transactionRepository: Repository<Transaction>,
     private readonly aiCategorizationService: AiCategorizationService,
     private readonly transactionSyncService: TransactionSyncService,
+    private readonly businessService: BusinessService,
   ) {}
 
   private getSecretKey(): string {
@@ -878,6 +880,23 @@ export class MonoService {
           user: userId ? ({ id: userId } as any) : null,
           dataStatus: 'CONNECTED',
         });
+
+        // Auto-link to the user's business if it exists
+        if (userId) {
+          try {
+            const businessId =
+              await this.businessService.getBusinessIdForUser(userId);
+            account.businessId = businessId;
+            this.logger.log(
+              `Auto-linked account ${monoAccountId} to business ${businessId}`,
+            );
+          } catch (e) {
+            this.logger.warn(
+              `Could not auto-link business for user ${userId}: ${e.message}`,
+            );
+          }
+        }
+
         await this.monoAccountRepository.save(account);
         this.logger.log(`Saved new MonoAccount: ${monoAccountId}`);
       } else {
@@ -906,20 +925,41 @@ export class MonoService {
     if (!monoAccountId) return;
 
     try {
-      await this.monoAccountRepository.update(
-        { monoAccountId },
-        {
-          dataStatus: data?.meta?.data_status,
-          name: data?.account?.name,
-          accountNumber: data?.account?.accountNumber,
-          currency: data?.account?.currency,
-          balance: data?.account?.balance,
-          type: data?.account?.type,
-          bvn: data?.account?.bvn,
-          institutionName: data?.account?.institution?.name,
-          institutionBankCode: data?.account?.institution?.bankCode,
-        },
-      );
+      const existing = await this.monoAccountRepository.findOne({
+        where: { monoAccountId },
+        relations: ['user'],
+      });
+
+      const updateData: any = {
+        dataStatus: data?.meta?.data_status,
+        name: data?.account?.name,
+        accountNumber: data?.account?.accountNumber,
+        currency: data?.account?.currency,
+        balance: data?.account?.balance,
+        type: data?.account?.type,
+        bvn: data?.account?.bvn,
+        institutionName: data?.account?.institution?.name,
+        institutionBankCode: data?.account?.institution?.bankCode,
+      };
+
+      // Check if we can auto-link business if it's missing
+      if (existing && !existing.businessId && existing.user) {
+        try {
+          const businessId = await this.businessService.getBusinessIdForUser(
+            existing.user.id,
+          );
+          updateData.businessId = businessId;
+          this.logger.log(
+            `Auto-linked existing account ${monoAccountId} to business ${businessId}`,
+          );
+        } catch (e) {
+          this.logger.warn(
+            `Auto-link attempt failed for ${monoAccountId}: ${e.message}`,
+          );
+        }
+      }
+
+      await this.monoAccountRepository.update({ monoAccountId }, updateData);
       this.logger.log(`Updated MonoAccount: ${monoAccountId}`);
 
       const account = await this.monoAccountRepository.findOne({
@@ -935,9 +975,11 @@ export class MonoService {
             this.logger.log(
               `Initial sync complete for ${monoAccountId}. Triggering enrichment...`,
             );
-            
+
             // Sync to finance module
-            await this.transactionSyncService.syncAccountTransactions(monoAccountId);
+            await this.transactionSyncService.syncAccountTransactions(
+              monoAccountId,
+            );
 
             await Promise.allSettled([
               this.categoriseTransactions(monoAccountId),

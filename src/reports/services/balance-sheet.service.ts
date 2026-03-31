@@ -109,16 +109,32 @@ export class BalanceSheetService {
     }
 
     const retainedProfit = allTimeRevenue - allTimeCogs - allTimeExpenses;
-
     const ownersMoney = totalCapital + retainedProfit - totalDrawings;
 
     return {
       assets: {
+        bankAccounts: bankAccounts.map((a) => ({
+          id: a.id,
+          name: a.bankName,
+          balance: Number(a.currentBalance),
+        })),
         cashAndBankBalances,
-        businessAssets,
+        businessAssets: assets.map((a) => ({
+          id: a.id,
+          name: a.name,
+          category: a.category,
+          value: Number(a.currentValue || a.purchaseValue),
+        })),
+        businessAssetsTotal: businessAssets,
         totalAssets,
       },
       liabilities: {
+        activeLiabilities: liabilities.map((l) => ({
+          id: l.id,
+          name: l.name,
+          category: l.liabilityType,
+          amountOwed: Number(l.amountOwed),
+        })),
         totalLiabilities,
       },
       equity: {

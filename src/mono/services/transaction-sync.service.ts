@@ -57,6 +57,13 @@ export class TransactionSyncService {
           `Creating one automatically.`,
       );
 
+      const existingCount = await this.bankAccountRepository.count({
+        where: {
+          businessId: businessId || IsNull(),
+          userId: userId || IsNull(),
+        },
+      });
+
       const newBankAccount = this.bankAccountRepository.create({
         providerAccountId: monoAccount.monoAccountId,
         accountNumber: monoAccount.accountNumber || '',
@@ -64,6 +71,7 @@ export class TransactionSyncService {
         currentBalance: Number(monoAccount.balance) / 100,
         businessId: businessId || undefined,
         userId: userId || undefined,
+        isPrimary: existingCount === 0,
       });
       await this.bankAccountRepository.save(newBankAccount);
 

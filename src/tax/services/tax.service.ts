@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BusinessService } from '../../business/services/business.service';
@@ -85,6 +80,44 @@ export class TaxService {
       }
     }
 
+    const deductionsResults = await this.transactionRepository
+      .createQueryBuilder('tx')
+      .where('tx.businessId = :businessId', { businessId })
+      .andWhere('tx.date BETWEEN :startDate AND :endDate', {
+        startDate,
+        endDate,
+      })
+      .andWhere('tx.category = :expense', {
+        expense: TransactionCategory.EXPENSE,
+      })
+      .andWhere('LOWER(tx.subCategory) IN (:...deductions)', {
+        deductions: ['hmo', 'life insurance', 'pension', 'rent'],
+      })
+      .select('tx.subCategory', 'subCategory')
+      .addSelect('SUM(tx.amount)', 'total')
+      .groupBy('tx.subCategory')
+      .getRawMany();
+
+    const deductionsMap: Record<string, number> = {
+      hmo: 0,
+      'life insurance': 0,
+      pension: 0,
+      rent: 0,
+    };
+
+    let totalDeductions = 0;
+    deductionsResults.forEach((d) => {
+      const sub = d.subCategory.toLowerCase();
+      const amount = parseFloat(d.total);
+      deductionsMap[sub] = amount;
+      totalDeductions += amount;
+    });
+
+    const pitCalculation = this.calculatePIT(
+      projectedNetProfit,
+      totalDeductions + userDeductions,
+    );
+
     return {
       netProfit,
       totalRevenue,
@@ -95,11 +128,19 @@ export class TaxService {
             projectedAnnualNetProfit: projectedNetProfit,
           }
         : null,
-      pitCalculation: this.calculatePIT(projectedNetProfit, userDeductions),
+      deductions: {
+        hmo: deductionsMap.hmo,
+        lifeInsurance: deductionsMap['life insurance'],
+        pension: deductionsMap.pension,
+        rent: deductionsMap.rent,
+        extra: userDeductions,
+        total: totalDeductions + userDeductions,
+      },
+      pitCalculation,
       citCalculation: this.calculateCIT(
         totalRevenue,
         projectedNetProfit,
-        userDeductions,
+        totalDeductions + userDeductions,
         totalAssets,
       ),
     };

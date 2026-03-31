@@ -40,10 +40,12 @@ const COLUMN_ALIASES: Record<string, string[]> = {
     'trans ref',
     'transaction ref',
   ],
+  name: ['name', 'counterparty', 'beneficiary', 'sender', 'receiver'],
 };
 
 interface ParsedRow {
   date: string;
+  name?: string;
   amount: number;
   direction: TransactionDirection;
   description: string;
@@ -221,8 +223,12 @@ export class CsvUploadService {
       ? row[columnMap.reference]?.trim()
       : undefined;
 
+    // Name
+    const name = columnMap.name ? row[columnMap.name]?.trim() : undefined;
+
     return {
       date: parsedDate,
+      name,
       amount,
       direction,
       description,
@@ -288,6 +294,7 @@ export class CsvUploadService {
     for (const row of rows) {
       const transaction = this.transactionRepository.create({
         date: new Date(row.date),
+        name: row.name || undefined,
         amount: row.amount,
         direction: row.direction,
         description: row.description,

@@ -65,6 +65,9 @@ export class BankAccount {
   @Column({ nullable: true })
   userId: string;
 
+  @Column({ default: false })
+  isPrimary: boolean;
+
   @OneToMany(() => Transaction, (tx) => tx.bankAccount)
   transactions: Transaction[];
 

@@ -17,6 +17,7 @@ export interface RawTransactionDto {
   userId?: string;
   externalId: string;
   date: Date;
+  name?: string;
   amount: number;
   direction: TransactionDirection;
   description: string;
@@ -91,24 +92,26 @@ export class CategorizationService {
 
   private applyRules(tx: Transaction, rules: CategorizationRule[]) {
     const desc = (tx.description || '').toLowerCase();
+    const name = (tx.name || '').toLowerCase();
+
     for (const rule of rules) {
       const matchVal = rule.matchValue.toLowerCase();
       let isMatch = false;
 
       switch (rule.matchType) {
         case MatchType.CONTAINS:
-          isMatch = desc.includes(matchVal);
+          isMatch = desc.includes(matchVal) || name.includes(matchVal);
           break;
         case MatchType.STARTS_WITH:
-          isMatch = desc.startsWith(matchVal);
+          isMatch = desc.startsWith(matchVal) || name.startsWith(matchVal);
           break;
         case MatchType.EXACT:
-          isMatch = desc === matchVal;
+          isMatch = desc === matchVal || name === matchVal;
           break;
         case MatchType.REGEX:
           try {
             const regex = new RegExp(rule.matchValue, 'i');
-            isMatch = regex.test(tx.description);
+            isMatch = regex.test(desc) || regex.test(name);
           } catch {
             isMatch = false;
           }
@@ -133,21 +136,27 @@ export class CategorizationService {
 
     const descLower = rule.matchValue.toLowerCase();
     if (rule.matchType === MatchType.CONTAINS) {
-      query = query.andWhere('LOWER(tx.description) LIKE :match', {
-        match: `%${descLower}%`,
-      });
+      query = query.andWhere(
+        '(LOWER(tx.description) LIKE :match OR LOWER(tx.name) LIKE :match)',
+        { match: `%${descLower}%` },
+      );
     } else if (rule.matchType === MatchType.STARTS_WITH) {
-      query = query.andWhere('LOWER(tx.description) LIKE :match', {
-        match: `${descLower}%`,
-      });
+      query = query.andWhere(
+        '(LOWER(tx.description) LIKE :match OR LOWER(tx.name) LIKE :match)',
+        { match: `${descLower}%` },
+      );
     } else if (rule.matchType === MatchType.EXACT) {
-      query = query.andWhere('LOWER(tx.description) = :match', {
-        match: descLower,
-      });
+      query = query.andWhere(
+        '(LOWER(tx.description) = :match OR LOWER(tx.name) = :match)',
+        { match: descLower },
+      );
     } else if (rule.matchType === MatchType.REGEX) {
-      query = query.andWhere('tx.description ~* :match', {
-        match: rule.matchValue,
-      });
+      query = query.andWhere(
+        '(tx.description ~* :match OR tx.name ~* :match)',
+        {
+          match: rule.matchValue,
+        },
+      );
     }
 
     const txsToUpdate = await query.getMany();

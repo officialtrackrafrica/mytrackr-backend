@@ -8,6 +8,14 @@ import {
 } from '../../finance/entities/transaction.entity';
 import { BusinessService } from '../../business/services/business.service';
 
+const OTHER_EXPENSE_SUB_CATEGORIES = [
+  'Tax payment',
+  'Tax',
+  'Interest on loan',
+  'Interest',
+  'Loan Interest',
+];
+
 @Injectable()
 export class PnlService {
   private readonly logger = new Logger(PnlService.name);
@@ -45,11 +53,13 @@ export class PnlService {
 
     const incomeLines: { subCategory: any; amount: number }[] = [];
     const cogsLines: { subCategory: any; amount: number }[] = [];
-    const expenseLines: { subCategory: any; amount: number }[] = [];
+    const operatingExpenseLines: { subCategory: any; amount: number }[] = [];
+    const otherExpenseLines: { subCategory: any; amount: number }[] = [];
 
     let totalRevenue = 0;
     let totalCogs = 0;
-    let totalExpenses = 0;
+    let totalOperatingExpenses = 0;
+    let totalOtherExpenses = 0;
 
     for (const r of results) {
       const amount = parseFloat(r.total);
@@ -70,11 +80,23 @@ export class PnlService {
         r.category === TransactionCategory.EXPENSE &&
         r.direction === TransactionDirection.DEBIT
       ) {
-        expenseLines.push({ subCategory: r.subCategory, amount });
-        totalExpenses += amount;
+        const isOther = OTHER_EXPENSE_SUB_CATEGORIES.some(
+          (cat) =>
+            r.subCategory &&
+            r.subCategory.toLowerCase().includes(cat.toLowerCase()),
+        );
+
+        if (isOther) {
+          otherExpenseLines.push({ subCategory: r.subCategory, amount });
+          totalOtherExpenses += amount;
+        } else {
+          operatingExpenseLines.push({ subCategory: r.subCategory, amount });
+          totalOperatingExpenses += amount;
+        }
       }
     }
 
+    const totalExpenses = totalOperatingExpenses + totalOtherExpenses;
     const grossProfit = totalRevenue - totalCogs;
     const netProfit = grossProfit - totalExpenses;
 
@@ -107,7 +129,14 @@ export class PnlService {
       grossProfit,
       grossProfitMargin,
       expenses: {
-        lines: expenseLines,
+        operating: {
+          lines: operatingExpenseLines,
+          total: totalOperatingExpenses,
+        },
+        other: {
+          lines: otherExpenseLines,
+          total: totalOtherExpenses,
+        },
         total: totalExpenses,
       },
       netProfit,
@@ -117,6 +146,63 @@ export class PnlService {
         uncategorisedValue: parseFloat(uncategorisedStats?.totalValue || '0'),
       },
     };
+  }
+
+  async generatePnlCsv(
+    userId: string,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<string> {
+    const report = await this.calculatePnl(userId, startDate, endDate);
+    const rows: string[] = [];
+
+    rows.push('Profit & Loss Report');
+    rows.push(
+      `Period: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`,
+    );
+    rows.push('');
+
+    // Revenue
+    rows.push('REVENUE,Amount');
+    report.revenue.lines.forEach((l) => {
+      rows.push(`${l.subCategory},${l.amount.toFixed(2)}`);
+    });
+    rows.push(`Total Revenue,${report.revenue.total.toFixed(2)}`);
+    rows.push('');
+
+    // COGS
+    rows.push('COST OF GOODS SOLD,Amount');
+    report.cogs.lines.forEach((l) => {
+      rows.push(`${l.subCategory},${l.amount.toFixed(2)}`);
+    });
+    rows.push(`Total COGS,${report.cogs.total.toFixed(2)}`);
+    rows.push('');
+
+    rows.push(`Gross Profit,${report.grossProfit.toFixed(2)}`);
+    rows.push('');
+
+    // Operating Expenses
+    rows.push('OPERATING EXPENSES,Amount');
+    report.expenses.operating.lines.forEach((l) =>
+      rows.push(`${l.subCategory},${l.amount.toFixed(2)}`),
+    );
+    rows.push(
+      `Total Operating Expenses,${report.expenses.operating.total.toFixed(2)}`,
+    );
+    rows.push('');
+
+    // Other Expenses
+    rows.push('OTHER EXPENSES,Amount');
+    report.expenses.other.lines.forEach((l) =>
+      rows.push(`${l.subCategory},${l.amount.toFixed(2)}`),
+    );
+    rows.push(`Total Other Expenses,${report.expenses.other.total.toFixed(2)}`);
+    rows.push('');
+
+    rows.push(`Net Profit,${report.netProfit.toFixed(2)}`);
+    rows.push(`Net Profit Margin,${report.netProfitMargin.toFixed(2)}%`);
+
+    return rows.join('\n');
   }
 
   private emptyPnl() {

@@ -9,6 +9,7 @@ import {
 
 interface ParsedRow {
   date: string;
+  name?: string;
   amount: number;
   direction: TransactionDirection;
   description: string;
@@ -117,6 +118,7 @@ export class PdfUploadService {
             amount: dVal,
             direction: TransactionDirection.DEBIT,
             description: desc.trim(),
+            name: this.extractName(desc),
           });
         }
         continue;
@@ -146,6 +148,7 @@ export class PdfUploadService {
           amount: Math.abs(amount),
           direction,
           description: desc.trim(),
+          name: this.extractName(desc),
         });
         continue;
       }
@@ -165,11 +168,33 @@ export class PdfUploadService {
               ? TransactionDirection.DEBIT
               : TransactionDirection.CREDIT,
           description: desc.trim(),
+          name: this.extractName(desc),
         });
       }
     }
 
     return rows;
+  }
+
+  /**
+   * Attempt to extract a counterparty name from transaction narration.
+   */
+  private extractName(narration: string): string | undefined {
+    // Patterns: "TRF FROM NAME", "PAYMENT TO NAME", "NAME /REF", etc.
+    const patterns = [
+      /TRF\s+(?:FROM|TO)\s+([^/]+)/i,
+      /TRANSFER\s+(?:FROM|TO)\s+([^/]+)/i,
+      /PAYMENT\s+(?:FROM|TO)\s+([^/]+)/i,
+      /^([^/]+)\s+\/\s+/i, // "AYANFE GBENGA / FOOD"
+    ];
+
+    for (const p of patterns) {
+      const match = narration.match(p);
+      if (match && match[1]) {
+        return match[1].trim();
+      }
+    }
+    return undefined;
   }
 
   private parseAmount(str: string): number {
@@ -222,6 +247,7 @@ export class PdfUploadService {
     for (const row of rows) {
       const transaction = this.transactionRepository.create({
         date: new Date(row.date),
+        name: row.name || undefined,
         amount: row.amount,
         direction: row.direction,
         description: row.description,

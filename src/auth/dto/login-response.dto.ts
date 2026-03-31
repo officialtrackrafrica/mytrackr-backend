@@ -23,6 +23,43 @@ export class UserResponseDto {
   @ApiProperty({ description: 'Is email verified', example: true })
   isVerified: boolean;
 
+  @ApiProperty({
+    description: 'Professional Title',
+    example: 'Product Designer',
+    required: false,
+  })
+  professionalTitle?: string;
+
+  @ApiProperty({
+    description: 'Country',
+    example: 'Australia',
+    required: false,
+  })
+  country?: string;
+
+  @ApiProperty({
+    description: 'Timezone',
+    example: 'UTC-08:00',
+    required: false,
+  })
+  timezone?: string;
+
+  @ApiProperty({
+    description: 'Biography',
+    example: 'I am a Product Designer...',
+    required: false,
+  })
+  bio?: string;
+
+  @ApiProperty({
+    description: 'Portfolio projects',
+    example: [
+      { name: 'Project 1', url: 'https://...', type: 'pdf', size: 200 },
+    ],
+    required: false,
+  })
+  portfolioProjects?: any[];
+
   @ApiProperty({ description: 'Account creation date' })
   createdAt: Date;
 }

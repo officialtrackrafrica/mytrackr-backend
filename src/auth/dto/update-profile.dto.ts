@@ -13,4 +13,40 @@ export class UpdateProfileDto {
   @IsOptional()
   @MaxLength(50, { message: 'Last name must be at most 50 characters' })
   lastName?: string;
+
+  @ApiProperty({
+    description: 'Professional Title',
+    example: 'Product Designer',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  professionalTitle?: string;
+
+  @ApiProperty({
+    description: 'Country',
+    example: 'Australia',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  country?: string;
+
+  @ApiProperty({
+    description: 'Timezone',
+    example: 'UTC-08:00',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  timezone?: string;
+
+  @ApiProperty({
+    description: 'Biography',
+    example: 'I am a Product Designer...',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  bio?: string;
 }

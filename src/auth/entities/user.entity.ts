@@ -77,6 +77,27 @@ export class User {
     setupComplete: boolean;
   };
 
+  @Column({ nullable: true })
+  bio: string;
+
+  @Column({ nullable: true })
+  professionalTitle: string;
+
+  @Column({ nullable: true })
+  country: string;
+
+  @Column({ nullable: true })
+  timezone: string;
+
+  @Column({ type: 'jsonb', nullable: true })
+  portfolioProjects: {
+    name: string;
+    url: string;
+    type: string;
+    size: number;
+    uploadedAt: Date;
+  }[];
+
   @OneToMany(() => Session, (session) => session.user)
   sessions: Session[];
 

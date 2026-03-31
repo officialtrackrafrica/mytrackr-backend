@@ -23,6 +23,7 @@ import {
   ApiQuery,
   ApiConsumes,
   ApiBody,
+  ApiParam,
 } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -35,6 +36,7 @@ import { Transaction } from './entities/transaction.entity';
 import { CategorizationService } from './services/categorization.service';
 import { CsvUploadService } from './services/csv-upload.service';
 import { PdfUploadService } from './services/pdf-upload.service';
+import { BankAccountService } from './services/bank-account.service';
 import { PlanGuard } from '../common/access-control/guards/plan.guard';
 import { RequirePlan } from '../common/access-control/decorators/require-plan.decorator';
 import { SWAGGER_TAGS } from '../common/docs';
@@ -54,6 +56,8 @@ import {
   TransactionResponseDto,
   ArchiveMessageResponseDto,
   CsvUploadResponseDto,
+  TransactionQueryDto,
+  PaginatedTransactionResponseDto,
 } from './dto';
 
 @ApiTags(SWAGGER_TAGS[5].name)
@@ -77,6 +81,7 @@ export class FinanceController {
     @InjectRepository(Transaction)
     private readonly transactionRepository: Repository<Transaction>,
     private readonly categorizationService: CategorizationService,
+    private readonly bankAccountService: BankAccountService,
   ) {}
 
   // --- Assets ---
@@ -384,9 +389,9 @@ export class FinanceController {
     type: ErrorResponseDto,
   })
   async createTransaction(@Req() req: any, @Body() dto: CreateTransactionDto) {
-    const businessId =
-      dto.businessId ||
-      (await this.businessService.getBusinessIdForUser(req.user.id));
+    const businessId = await this.businessService.getBusinessIdForUser(
+      req.user.id,
+    );
 
     const transaction = this.transactionRepository.create({
       ...dto,
@@ -394,55 +399,84 @@ export class FinanceController {
       userId: req.user.id,
       date: new Date(dto.date),
       isCategorised: !!dto.category,
+      bankAccountId: dto.bankAccountId || undefined,
     });
     return this.transactionRepository.save(transaction);
   }
 
   @Get('transactions')
-  @ApiOperation({ summary: "List transactions for the user's business" })
-  @ApiQuery({ name: 'startDate', required: false, type: String })
-  @ApiQuery({ name: 'endDate', required: false, type: String })
-  @ApiResponse({
-    status: 200,
-    description: 'List of transactions',
-    type: [TransactionResponseDto],
+  @ApiOperation({
+    summary:
+      "List transactions for the user's business with pagination and filtering",
   })
   @ApiResponse({
-    status: 400,
-    description: 'Invalid date range',
-    type: ErrorResponseDto,
+    status: 200,
+    description: 'Paginated list of transactions',
+    type: PaginatedTransactionResponseDto,
   })
   async listTransactions(
     @Req() req: any,
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
+    @Query() queryDto: TransactionQueryDto,
   ) {
     const businessId = await this.businessService.getBusinessIdForUser(
       req.user.id,
     );
 
+    const {
+      page = 1,
+      limit = 20,
+      search,
+      isCategorised,
+      startDate,
+      endDate,
+      sortBy = 'date',
+      sortOrder = 'DESC',
+    } = queryDto;
+
     const query = this.transactionRepository
       .createQueryBuilder('tx')
       .where('tx.businessId = :businessId', { businessId });
+
+    if (search) {
+      query.andWhere(
+        '(tx.description ILIKE :search OR tx.name ILIKE :search OR tx.externalId ILIKE :search)',
+        { search: `%${search}%` },
+      );
+    }
+
+    if (isCategorised !== undefined) {
+      query.andWhere('tx.isCategorised = :isCategorised', { isCategorised });
+    }
 
     if (startDate && endDate) {
       const start = new Date(startDate);
       const end = new Date(endDate);
 
-      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-        throw AppException.badRequest(
-          'Invalid startDate or endDate',
-          'INVALID_DATE_RANGE',
-        );
+      if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+        query.andWhere('tx.date BETWEEN :startDate AND :endDate', {
+          startDate: start,
+          endDate: end,
+        });
       }
-
-      query.andWhere('tx.date BETWEEN :startDate AND :endDate', {
-        startDate: start,
-        endDate: end,
-      });
     }
 
-    return query.orderBy('tx.date', 'DESC').getMany();
+    const skip = (page - 1) * limit;
+
+    const [data, total] = await query
+      .orderBy(`tx.${sortBy}`, sortOrder)
+      .skip(skip)
+      .take(limit)
+      .getManyAndCount();
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
   // --- CSV Upload ---
@@ -583,5 +617,73 @@ export class FinanceController {
       req.user.id,
       bankAccountId,
     );
+  }
+
+  // --- Bank Accounts ---
+
+  @Get('bank-accounts')
+  @ApiOperation({ summary: "List all bank accounts for the user's business" })
+  @ApiResponse({
+    status: 200,
+    description: 'List of bank accounts',
+  })
+  async listBankAccounts(@Req() req: any) {
+    const businessId = await this.businessService.getBusinessIdForUser(
+      req.user.id,
+    );
+    return this.bankAccountService.listAccounts(req.user.id, businessId);
+  }
+
+  @Patch('bank-accounts/:id/primary')
+  @ApiOperation({ summary: 'Set a bank account as primary' })
+  @ApiParam({ name: 'id', description: 'Bank account UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Account set as primary',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Account not found',
+    type: ErrorResponseDto,
+  })
+  async setPrimaryAccount(
+    @Req() req: any,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const businessId = await this.businessService.getBusinessIdForUser(
+      req.user.id,
+    );
+    return this.bankAccountService.setPrimaryAccount(
+      req.user.id,
+      businessId,
+      id,
+    );
+  }
+
+  @Delete('bank-accounts/:id')
+  @ApiOperation({
+    summary: 'Disconnect/delete a bank account',
+    description:
+      'Permanently removes the bank account link. If it was the primary account, another will be automatically promoted.',
+  })
+  @ApiParam({ name: 'id', description: 'Bank account UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Account deleted',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Account not found',
+    type: ErrorResponseDto,
+  })
+  async deleteBankAccount(
+    @Req() req: any,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const businessId = await this.businessService.getBusinessIdForUser(
+      req.user.id,
+    );
+    await this.bankAccountService.deleteAccount(req.user.id, businessId, id);
+    return { message: 'Bank account deleted and primary status updated' };
   }
 }

@@ -207,6 +207,10 @@ export class CreateTransactionDto {
   @IsDateString()
   date: string;
 
+  @ApiPropertyOptional({ example: 'Ayanfe Gbenga' })
+  @IsString()
+  name: string;
+
   @ApiProperty({ example: 50000 })
   @IsNumber()
   @Type(() => Number)
@@ -236,19 +240,56 @@ export class CreateTransactionDto {
   notes?: string;
 
   @ApiPropertyOptional({
-    description: 'Business ID (auto-populated from your account if omitted)',
-  })
-  @IsOptional()
-  @IsString()
-  businessId?: string;
-
-  @ApiPropertyOptional({
-    description:
-      'Bank Account ID (omit for cash transactions not linked to a bank)',
+    description: 'Bank Account ID (omit for cash transactions)',
   })
   @IsOptional()
   @IsString()
   bankAccountId?: string;
+}
+
+export class TransactionQueryDto {
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  page?: number = 1;
+
+  @ApiPropertyOptional({ example: 20 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  limit?: number = 20;
+
+  @ApiPropertyOptional({ example: 'Ayanfe' })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  @Type(() => Boolean)
+  isCategorised?: boolean;
+
+  @ApiPropertyOptional({ example: '2025-01-01' })
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @ApiPropertyOptional({ example: '2025-12-31' })
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+
+  @ApiPropertyOptional({ example: 'date' })
+  @IsOptional()
+  @IsString()
+  sortBy?: string = 'date';
+
+  @ApiPropertyOptional({ example: 'DESC' })
+  @IsOptional()
+  @IsString()
+  sortOrder?: 'ASC' | 'DESC' = 'DESC';
 }
 
 // ─── Response DTOs ───────────────────────────────────────────────────────────
@@ -307,6 +348,7 @@ export class RuleCreateResponseDto {
 export class TransactionResponseDto {
   @ApiProperty() id: string;
   @ApiProperty() date: Date;
+  @ApiPropertyOptional() name?: string;
   @ApiProperty() amount: number;
   @ApiProperty({ enum: TransactionDirection }) direction: TransactionDirection;
   @ApiProperty() description: string;
@@ -318,6 +360,19 @@ export class TransactionResponseDto {
   @ApiPropertyOptional() bankAccountId?: string;
   @ApiProperty() isCategorised: boolean;
   @ApiProperty() createdAt: Date;
+}
+
+export class PaginatedTransactionResponseDto {
+  @ApiProperty({ type: [TransactionResponseDto] })
+  data: TransactionResponseDto[];
+
+  @ApiProperty()
+  meta: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
 }
 
 export class ArchiveMessageResponseDto {

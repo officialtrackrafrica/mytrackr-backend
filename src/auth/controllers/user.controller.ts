@@ -90,14 +90,20 @@ export class UserController {
     @Request() req: AuthenticatedRequest,
     @Body() updateDto: UpdateProfileDto,
   ): Promise<UserResponseDto> {
-    const { firstName, lastName } = updateDto;
-    const safeUpdate = { firstName, lastName };
+    const { firstName, lastName, professionalTitle, country, timezone, bio } =
+      updateDto;
+    const safeUpdate: any = {
+      firstName,
+      lastName,
+      professionalTitle,
+      country,
+      timezone,
+      bio,
+    };
 
-    Object.keys(safeUpdate).forEach(
-      (key) =>
-        safeUpdate[key as keyof typeof safeUpdate] === undefined &&
-        delete safeUpdate[key as keyof typeof safeUpdate],
-    );
+    Object.keys(safeUpdate).forEach((key) => {
+      if (safeUpdate[key] === undefined) delete safeUpdate[key];
+    });
 
     await this.usersRepository.update(req.user.id, safeUpdate);
 
@@ -175,6 +181,11 @@ export class UserController {
       firstName: user.firstName,
       lastName: user.lastName,
       profilePicture: user.profilePicture,
+      professionalTitle: user.professionalTitle,
+      country: user.country,
+      timezone: user.timezone,
+      bio: user.bio,
+      portfolioProjects: user.portfolioProjects,
       isVerified: user.isVerified,
       createdAt: user.createdAt,
     };

@@ -39,9 +39,15 @@ export class Transaction {
   id: string;
 
   @Column({ unique: true, nullable: true })
+  @Index('IDX_tx_external_id')
   externalId: string;
 
+  @Column({ nullable: true })
+  @Index('IDX_tx_name')
+  name: string;
+
   @Column({ type: 'date' })
+  @Index('IDX_tx_date')
   date: Date;
 
   @Column({ type: 'date', nullable: true })

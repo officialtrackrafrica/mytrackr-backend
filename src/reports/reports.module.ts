@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { PnlService } from './services/pnl.service';
 import { CashFlowService } from './services/cash-flow.service';
 import { BalanceSheetService } from './services/balance-sheet.service';
+import { AnalyticsService } from './services/analytics.service';
 import { ReportsController } from './reports.controller';
 import { Asset } from '../finance/entities/asset.entity';
 import { Liability } from '../finance/entities/liability.entity';
@@ -18,7 +19,7 @@ import { BusinessModule } from '../business/business.module';
     BusinessModule,
   ],
   controllers: [ReportsController],
-  providers: [PnlService, CashFlowService, BalanceSheetService],
-  exports: [PnlService, CashFlowService, BalanceSheetService],
+  providers: [PnlService, CashFlowService, BalanceSheetService, AnalyticsService],
+  exports: [PnlService, CashFlowService, BalanceSheetService, AnalyticsService],
 })
 export class ReportsModule {}

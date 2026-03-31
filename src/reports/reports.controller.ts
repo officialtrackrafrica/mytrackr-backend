@@ -19,6 +19,7 @@ import { RequirePlan } from '../common/access-control/decorators/require-plan.de
 import { PnlService } from './services/pnl.service';
 import { CashFlowService } from './services/cash-flow.service';
 import { BalanceSheetService } from './services/balance-sheet.service';
+import { AnalyticsService } from './services/analytics.service';
 
 @ApiTags('Reports')
 @Controller('reports')
@@ -30,6 +31,7 @@ export class ReportsController {
     private readonly pnlService: PnlService,
     private readonly cashFlowService: CashFlowService,
     private readonly balanceSheetService: BalanceSheetService,
+    private readonly analyticsService: AnalyticsService,
   ) {}
 
   @Get('pnl')
@@ -105,5 +107,71 @@ export class ReportsController {
   @ApiResponse({ status: 200, description: 'Balance sheet data' })
   async getBalanceSheet(@Req() req: any) {
     return this.balanceSheetService.calculateBalanceSheet(req.user.id);
+  }
+
+  @Get('analytics')
+  @ApiOperation({
+    summary: 'Get time-series analytics for Sales and P&L',
+    description:
+      'Returns daily, weekly, or monthly revenue, expenses, and net profit for charting purposes.',
+  })
+  @ApiQuery({ name: 'startDate', required: true, type: String })
+  @ApiQuery({ name: 'endDate', required: true, type: String })
+  @ApiQuery({
+    name: 'interval',
+    required: false,
+    enum: ['day', 'week', 'month'],
+    default: 'day',
+  })
+  @ApiResponse({ status: 200, description: 'Time-series analytics data' })
+  async getAnalytics(
+    @Req() req: any,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Query('interval') interval: 'day' | 'week' | 'month' = 'day',
+  ) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    if (!startDate || isNaN(start.getTime())) {
+      throw new BadRequestException('Invalid or missing startDate');
+    }
+    if (!endDate || isNaN(end.getTime())) {
+      throw new BadRequestException('Invalid or missing endDate');
+    }
+
+    return this.analyticsService.getAnalytics(
+      req.user.id,
+      start,
+      end,
+      interval,
+    );
+  }
+
+  @Get('pnl/export')
+  @ApiOperation({
+    summary: 'Export Profit & Loss report to CSV',
+    description: "Downloads the user's business P&L report as a CSV file.",
+  })
+  @ApiQuery({ name: 'startDate', required: true, type: String })
+  @ApiQuery({ name: 'endDate', required: true, type: String })
+  @ApiResponse({ status: 200, description: 'CSV file download' })
+  async exportPnl(
+    @Req() req: any,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+  ) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    if (!startDate || isNaN(start.getTime())) {
+      throw new BadRequestException('Invalid or missing startDate');
+    }
+    if (!endDate || isNaN(end.getTime())) {
+      throw new BadRequestException('Invalid or missing endDate');
+    }
+
+    const csv = await this.pnlService.generatePnlCsv(req.user.id, start, end);
+    return csv;
   }
 }

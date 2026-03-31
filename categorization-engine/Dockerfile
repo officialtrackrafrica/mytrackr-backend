@@ -10,7 +10,7 @@ COPY categorization-engine/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy proto declarations
-COPY proto /proto
+COPY src/proto /proto
 
 # Copy the engine implementation
 COPY categorization-engine /app

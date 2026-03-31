@@ -38,11 +38,12 @@ import {
   LinkBusinessDto,
   WebhookPayloadDto,
 } from './dto';
-import { AppException, ErrorResponseDto } from '../common/errors';
+import { ErrorResponseDto } from '../common/errors';
 import { SWAGGER_TAGS } from '../common/docs';
 import { JwtAuthGuard } from '../auth/guards';
 import { PlanGuard } from '../common/access-control/guards/plan.guard';
 import { RequirePlan } from '../common/access-control/decorators/require-plan.decorator';
+import { PublicPlan } from '../common/access-control/decorators/public-plan.decorator';
 
 @ApiTags(SWAGGER_TAGS[8].name)
 @Controller('mono')
@@ -50,8 +51,8 @@ export class MonoController {
   constructor(private readonly monoService: MonoService) {}
 
   @Post('initiate')
-  @UseGuards(JwtAuthGuard, PlanGuard)
-  @RequirePlan()
+  @UseGuards(JwtAuthGuard)
+  @PublicPlan()
   @ApiCookieAuth('accessToken')
   @ApiOperation({ summary: 'Initiate Mono account linking' })
   @ApiResponse({
@@ -64,8 +65,8 @@ export class MonoController {
   }
 
   @Post('reauth')
-  @UseGuards(JwtAuthGuard, PlanGuard)
-  @RequirePlan()
+  @UseGuards(JwtAuthGuard)
+  @PublicPlan()
   @ApiCookieAuth('accessToken')
   @ApiOperation({ summary: 'Re-authenticate an existing Mono account' })
   @ApiResponse({
@@ -92,8 +93,8 @@ export class MonoController {
   }
 
   @Get('accounts')
-  @UseGuards(JwtAuthGuard, PlanGuard)
-  @RequirePlan()
+  @UseGuards(JwtAuthGuard)
+  @PublicPlan()
   @ApiCookieAuth('accessToken')
   @ApiOperation({
     summary: 'List all linked accounts for the authenticated user',

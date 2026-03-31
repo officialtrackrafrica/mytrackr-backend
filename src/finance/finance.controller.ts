@@ -41,6 +41,7 @@ import { PlanGuard } from '../common/access-control/guards/plan.guard';
 import { RequirePlan } from '../common/access-control/decorators/require-plan.decorator';
 import { SWAGGER_TAGS } from '../common/docs';
 import { AppException, ErrorResponseDto } from '../common/errors';
+import { PublicPlan } from '../common/access-control/decorators/public-plan.decorator';
 import {
   CreateAssetDto,
   UpdateAssetDto,
@@ -622,6 +623,7 @@ export class FinanceController {
   // --- Bank Accounts ---
 
   @Get('bank-accounts')
+  @PublicPlan()
   @ApiOperation({ summary: "List all bank accounts for the user's business" })
   @ApiResponse({
     status: 200,

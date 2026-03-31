@@ -21,7 +21,7 @@ export class PlanGuard implements CanActivate {
       [context.getHandler(), context.getClass()],
     );
 
-    if (!requiredPlans) {
+    if (!requiredPlans || requiredPlans.includes('PUBLIC')) {
       return true;
     }
 

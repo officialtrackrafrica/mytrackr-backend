@@ -59,10 +59,10 @@ export class BankAccount {
   @JoinColumn({ name: 'businessId' })
   business: Business;
 
-  @Column({ nullable: true })
+  @Column({ type: 'uuid', nullable: true })
   businessId: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'uuid', nullable: true })
   userId: string | null;
 
   @Column({ default: false })

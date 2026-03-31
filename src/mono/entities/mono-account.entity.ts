@@ -63,7 +63,7 @@ export class MonoAccount {
   @JoinColumn({ name: 'businessId' })
   business: Business;
 
-  @Column({ nullable: true })
+  @Column({ type: 'uuid', nullable: true })
   businessId: string | null;
 
   @OneToMany(() => Transaction, (tx) => tx.monoAccount)

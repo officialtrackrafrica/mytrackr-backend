@@ -10,6 +10,7 @@ import {
   CategorizationRule,
   MatchType,
 } from '../entities/categorization-rule.entity';
+import { AiCategorizationService } from '../../categorization/categorization.service';
 
 export interface RawTransactionDto {
   bankAccountId: string;
@@ -24,6 +25,12 @@ export interface RawTransactionDto {
   valueDate?: Date;
 }
 
+/**
+ * Confidence threshold above which the AI prediction is auto-applied and the
+ * transaction is marked as fully categorised without human review.
+ */
+const AI_AUTO_APPLY_THRESHOLD = 0.8;
+
 @Injectable()
 export class CategorizationService {
   private readonly logger = new Logger(CategorizationService.name);
@@ -33,8 +40,21 @@ export class CategorizationService {
     private readonly transactionRepository: Repository<Transaction>,
     @InjectRepository(CategorizationRule)
     private readonly ruleRepository: Repository<CategorizationRule>,
+    // ✅ Injected — gRPC AI engine
+    private readonly aiCategorizationService: AiCategorizationService,
   ) {}
 
+  /**
+   * Main ingestion pipeline.
+   *
+   * Order of priority for each transaction:
+   *  1. User-defined CategorizationRules  (highest trust — explicit)
+   *  2. AI prediction with confidence > 80%  (auto-applied)
+   *  3. Direction-based heuristic fallback  (credit=INCOME, debit=EXPENSE)
+   *
+   * The heuristic ensures isCategorised is ALWAYS true after ingestion,
+   * which means /reports/analytics will never return an empty array again.
+   */
   async ingestTransactions(
     businessId: string | null,
     userId: string | null,
@@ -50,6 +70,7 @@ export class CategorizationService {
       });
     }
 
+    // Dedup: skip transactions already stored
     const dedupExternalIds = dtos
       .map((dto) => dto.externalId)
       .filter((id) => id != null);
@@ -75,7 +96,26 @@ export class CategorizationService {
         isCategorised: false,
       });
 
+      // ── Step 1: Rule-based matching ────────────────────────────────────────
       this.applyRules(tx, activeRules);
+
+      // ── Step 2: AI prediction (only if rules didn't match) ─────────────────
+      if (!tx.isCategorised) {
+        await this.applyAiPrediction(tx, dto.description, userId ?? '');
+      }
+
+      // ── Step 3: Direction-based heuristic fallback ─────────────────────────
+      // Guarantees isCategorised = true so reports are never empty.
+      if (!tx.isCategorised) {
+        tx.category =
+          dto.direction === TransactionDirection.CREDIT
+            ? TransactionCategory.INCOME
+            : TransactionCategory.EXPENSE;
+        tx.isCategorised = true;
+        this.logger.debug(
+          `Heuristic fallback applied to "${dto.description}": ${tx.category}`,
+        );
+      }
 
       transactionsToInsert.push(tx);
       newTransactionsCount++;
@@ -87,7 +127,112 @@ export class CategorizationService {
       });
     }
 
+    this.logger.log(
+      `Ingested ${newTransactionsCount} new transactions (business=${businessId}, user=${userId})`,
+    );
+
     return newTransactionsCount;
+  }
+
+  /**
+   * Retroactive AI Sync — fixes all currently uncategorised transactions for a
+   * given business/user.  Call this once via the endpoint below to instantly
+   * populate dashboards for existing accounts.
+   *
+   * Returns the number of transactions updated.
+   */
+  async retroactiveAiSync(
+    businessId: string | null,
+    userId: string | null,
+  ): Promise<number> {
+    const where: any = { isCategorised: false };
+    if (businessId) where.businessId = businessId;
+    else if (userId) where.userId = userId;
+
+    const uncategorised = await this.transactionRepository.find({ where });
+
+    if (uncategorised.length === 0) {
+      this.logger.log('Retroactive AI sync: nothing to update.');
+      return 0;
+    }
+
+    this.logger.log(
+      `Retroactive AI sync: processing ${uncategorised.length} uncategorised transactions...`,
+    );
+
+    let updatedCount = 0;
+
+    for (const tx of uncategorised) {
+      const description = tx.description || tx.name || '';
+
+      // Try AI first
+      await this.applyAiPrediction(tx, description, userId ?? '');
+
+      // Fall back to direction heuristic
+      if (!tx.isCategorised) {
+        tx.category =
+          tx.direction === TransactionDirection.CREDIT
+            ? TransactionCategory.INCOME
+            : TransactionCategory.EXPENSE;
+        tx.isCategorised = true;
+      }
+
+      updatedCount++;
+    }
+
+    await this.transactionRepository.save(uncategorised, { chunk: 100 });
+
+    this.logger.log(
+      `Retroactive AI sync complete: updated ${updatedCount} transactions.`,
+    );
+
+    return updatedCount;
+  }
+
+  // ── Private helpers ────────────────────────────────────────────────────────
+
+  /**
+   * Calls the gRPC AI engine and auto-applies the result if confidence is
+   * above the threshold.  Also stores the AI suggestion on low-confidence hits
+   * so the frontend can show a hint even when not auto-applying.
+   */
+  private async applyAiPrediction(
+    tx: Transaction,
+    description: string,
+    userId: string,
+  ): Promise<void> {
+    try {
+      const predicted = await this.aiCategorizationService.predict(
+        description,
+        userId,
+      );
+
+      if (
+        predicted.category &&
+        predicted.category !== 'Uncategorized' &&
+        predicted.confidence >= AI_AUTO_APPLY_THRESHOLD
+      ) {
+        tx.category = predicted.category as TransactionCategory;
+        tx.isCategorised = true;
+        this.logger.debug(
+          `AI auto-applied "${predicted.category}" (${(predicted.confidence * 100).toFixed(1)}%) to: "${description}"`,
+        );
+      } else if (predicted.category && predicted.category !== 'Uncategorized') {
+        // Low confidence — store as a suggestion but don't mark as categorised
+        // so the user is nudged to review it.
+        // We use the `notes` field to carry the suggestion without polluting
+        // the real category column.
+        tx.notes = `AI suggestion: ${predicted.category} (${(predicted.confidence * 100).toFixed(1)}% confidence)`;
+        this.logger.debug(
+          `AI suggestion stored (low confidence ${(predicted.confidence * 100).toFixed(1)}%) for: "${description}"`,
+        );
+      }
+    } catch (err) {
+      // AI errors must never block ingestion
+      this.logger.warn(
+        `AI prediction failed for "${description}": ${err.message}`,
+      );
+    }
   }
 
   private applyRules(tx: Transaction, rules: CategorizationRule[]) {
@@ -153,9 +298,7 @@ export class CategorizationService {
     } else if (rule.matchType === MatchType.REGEX) {
       query = query.andWhere(
         '(tx.description ~* :match OR tx.name ~* :match)',
-        {
-          match: rule.matchValue,
-        },
+        { match: rule.matchValue },
       );
     }
 

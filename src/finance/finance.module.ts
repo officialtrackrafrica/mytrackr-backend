@@ -12,6 +12,7 @@ import { PdfUploadService } from './services/pdf-upload.service';
 import { BankAccountService } from './services/bank-account.service';
 import { FinanceController } from './finance.controller';
 import { PaymentsModule } from '../payments/payments.module';
+import { CategorizationModule } from '../categorization/categorization.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { PaymentsModule } from '../payments/payments.module';
     ]),
     BusinessModule,
     PaymentsModule,
+    CategorizationModule,
   ],
   controllers: [FinanceController],
   providers: [

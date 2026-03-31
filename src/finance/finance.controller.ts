@@ -480,6 +480,37 @@ export class FinanceController {
     };
   }
 
+  /**
+   * POST /finance/transactions/retroactive-ai-sync
+   *
+   * One-shot call that runs the AI categorisation pipeline over every
+   * uncategorised transaction belonging to the current user's business.
+   *
+   * Use this to instantly populate the Analytics dashboard for accounts that
+   * were linked before the autonomous pipeline was deployed.
+   */
+  @Post('transactions/retroactive-ai-sync')
+  @ApiOperation({
+    summary: 'Retroactive AI categorisation sync',
+    description:
+      'Runs AI prediction (+ direction fallback) over all uncategorised ' +
+      'transactions for the current business, instantly populating reports.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Number of transactions updated',
+  })
+  async retroactiveAiSync(@Req() req: any) {
+    const businessId = await this.businessService.getBusinessIdForUser(
+      req.user.id,
+    );
+    const updated = await this.categorizationService.retroactiveAiSync(
+      businessId,
+      req.user.id,
+    );
+    return { updated, message: `${updated} transactions categorised.` };
+  }
+
   // --- CSV Upload ---
 
   @Post('transactions/upload-csv')

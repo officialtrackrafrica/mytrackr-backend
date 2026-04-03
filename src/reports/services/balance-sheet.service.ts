@@ -63,10 +63,10 @@ export class BalanceSheetService {
       .createQueryBuilder('tx')
       .where('tx.businessId = :businessId', { businessId })
       .andWhere('tx.category = :cat', {
-        cat: TransactionCategory.INTERNAL_TRANSFER,
+        cat: TransactionCategory.EQUITY,
       })
       .andWhere('tx.direction = :dir', { dir: TransactionDirection.CREDIT })
-      .andWhere('tx.subCategory = :sub', { sub: 'Owner Injection (Capital)' })
+      .andWhere('tx.subCategory = :sub', { sub: 'Capital contributed' })
       .select('SUM(tx.amount)', 'total')
       .getRawOne();
 
@@ -76,10 +76,12 @@ export class BalanceSheetService {
       .createQueryBuilder('tx')
       .where('tx.businessId = :businessId', { businessId })
       .andWhere('tx.category = :cat', {
-        cat: TransactionCategory.INTERNAL_TRANSFER,
+        cat: TransactionCategory.EQUITY,
       })
       .andWhere('tx.direction = :dir', { dir: TransactionDirection.DEBIT })
-      .andWhere('tx.subCategory = :sub', { sub: 'Owner Withdrawal (Drawing)' })
+      .andWhere('tx.subCategory = :sub', {
+        sub: 'Owner Withdrawal (for personal use)',
+      })
       .select('SUM(tx.amount)', 'total')
       .getRawOne();
 
@@ -89,8 +91,11 @@ export class BalanceSheetService {
       .createQueryBuilder('tx')
       .where('tx.businessId = :businessId', { businessId })
       .andWhere('tx.isCategorised = :isCat', { isCat: true })
-      .andWhere('tx.category != :internalTransfer', {
-        internalTransfer: TransactionCategory.INTERNAL_TRANSFER,
+      .andWhere('tx.category != :transfer', {
+        transfer: TransactionCategory.TRANSFER,
+      })
+      .andWhere('tx.category != :equity', {
+        equity: TransactionCategory.EQUITY,
       })
       .select('tx.category', 'category')
       .addSelect('SUM(tx.amount)', 'total')

@@ -38,8 +38,8 @@ export class TaxService {
         endDate,
       })
       .andWhere('tx.isCategorised = :isCat', { isCat: true })
-      .andWhere('tx.category != :internalTransfer', {
-        internalTransfer: TransactionCategory.INTERNAL_TRANSFER,
+      .andWhere('tx.category != :transfer', {
+        transfer: TransactionCategory.TRANSFER,
       })
       .select('tx.category', 'category')
       .addSelect('SUM(tx.amount)', 'total')

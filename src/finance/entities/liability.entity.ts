@@ -10,10 +10,11 @@ import {
 import { Business } from '../../business/entities/business.entity';
 
 export enum LiabilityType {
-  LOAN = 'LOAN',
-  SUPPLIER_DEBT = 'SUPPLIER_DEBT',
-  CREDIT_CARD = 'CREDIT_CARD',
-  OTHER = 'OTHER',
+  BUSINESS_LOAN = 'Business Loan',
+  COOPERATIVE_LOAN = 'Cooperative Loan',
+  FAMILY_LOAN = 'Friends & Family Loan',
+  SUPPLIER_DEBT = 'Money owed to Supplier',
+  OTHER = 'Other Liabilities',
 }
 
 export enum LiabilityStatus {

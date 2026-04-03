@@ -46,7 +46,7 @@ export class CashFlowService {
     for (const r of results) {
       const amount = parseFloat(r.total);
 
-      if (r.category === TransactionCategory.INTERNAL_TRANSFER) {
+      if (r.category === TransactionCategory.TRANSFER) {
         if (r.direction === TransactionDirection.CREDIT) {
           internalIn += amount;
         } else {

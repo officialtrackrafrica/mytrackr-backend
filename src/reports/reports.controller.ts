@@ -21,7 +21,9 @@ import { CashFlowService } from './services/cash-flow.service';
 import { BalanceSheetService } from './services/balance-sheet.service';
 import { AnalyticsService } from './services/analytics.service';
 
-@ApiTags('Reports')
+import { SWAGGER_TAGS } from '../common/docs';
+
+@ApiTags(SWAGGER_TAGS[10].name)
 @Controller('reports')
 @UseGuards(JwtAuthGuard, PlanGuard)
 @RequirePlan()
@@ -38,7 +40,7 @@ export class ReportsController {
   @ApiOperation({
     summary: 'Generate Profit & Loss statement',
     description:
-      "Calculates P&L for the user's business within a date range. Excludes uncategorised and INTERNAL_TRANSFER transactions.",
+      "Calculates P&L for the user's business within a date range. Excludes uncategorised and TRANSFER transactions.",
   })
   @ApiQuery({
     name: 'startDate',

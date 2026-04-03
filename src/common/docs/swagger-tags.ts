@@ -21,7 +21,8 @@ export const SWAGGER_TAGS = [
   },
   {
     name: '5. Finance',
-    description: 'Assets, liabilities, categorization rules, and manual transactions',
+    description:
+      'Assets, liabilities, categorization rules, and manual transactions',
   },
   {
     name: '6. Tax',
@@ -33,11 +34,16 @@ export const SWAGGER_TAGS = [
   },
   {
     name: '8. Mono (Bank Linking)',
-    description: 'Connect bank accounts via Mono, sync transactions and statements',
+    description:
+      'Connect bank accounts via Mono, sync transactions and statements',
   },
   {
     name: '9. Subscriptions & Payments',
     description: 'Subscription plans, payment initialization, and webhooks',
   },
+  {
+    name: '10. Reports & Analytics',
+    description:
+      'Financial reports (P&L, Balance Sheet, Cash Flow) and analytics data',
+  },
 ];
-

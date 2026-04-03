@@ -37,8 +37,8 @@ export class PnlService {
         endDate,
       })
       .andWhere('tx.isCategorised = :isCat', { isCat: true })
-      .andWhere('tx.category != :internalTransfer', {
-        internalTransfer: TransactionCategory.INTERNAL_TRANSFER,
+      .andWhere('tx.category != :transfer', {
+        transfer: TransactionCategory.TRANSFER,
       });
 
     const results = await baseQuery

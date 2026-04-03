@@ -11,6 +11,11 @@ import {
   MatchType,
 } from '../entities/categorization-rule.entity';
 import { AiCategorizationService } from '../../categorization/categorization.service';
+import {
+  AccountCategory,
+  AccountCategoryType,
+} from '../entities/account-category.entity';
+import { AccountSubCategory } from '../entities/account-subcategory.entity';
 
 export interface RawTransactionDto {
   bankAccountId: string;
@@ -40,6 +45,10 @@ export class CategorizationService {
     private readonly transactionRepository: Repository<Transaction>,
     @InjectRepository(CategorizationRule)
     private readonly ruleRepository: Repository<CategorizationRule>,
+    @InjectRepository(AccountCategory)
+    private readonly categoryRepo: Repository<AccountCategory>,
+    @InjectRepository(AccountSubCategory)
+    private readonly subCategoryRepo: Repository<AccountSubCategory>,
     // ✅ Injected — gRPC AI engine
     private readonly aiCategorizationService: AiCategorizationService,
   ) {}
@@ -111,6 +120,11 @@ export class CategorizationService {
           dto.direction === TransactionDirection.CREDIT
             ? TransactionCategory.INCOME
             : TransactionCategory.EXPENSE;
+        
+        // Resolve to dynamic ID if possible for first-class reporting
+        const cat = await this.categoryRepo.findOne({ where: { type: tx.category as any } });
+        if (cat) tx.categoryId = cat.id;
+
         tx.isCategorised = true;
         this.logger.debug(
           `Heuristic fallback applied to "${dto.description}": ${tx.category}`,
@@ -174,6 +188,10 @@ export class CategorizationService {
           tx.direction === TransactionDirection.CREDIT
             ? TransactionCategory.INCOME
             : TransactionCategory.EXPENSE;
+        
+        const cat = await this.categoryRepo.findOne({ where: { type: tx.category as any } });
+        if (cat) tx.categoryId = cat.id;
+
         tx.isCategorised = true;
       }
 
@@ -212,8 +230,24 @@ export class CategorizationService {
         predicted.category !== 'Uncategorized' &&
         predicted.confidence >= AI_AUTO_APPLY_THRESHOLD
       ) {
-        tx.category = predicted.category as TransactionCategory;
-        tx.isCategorised = true;
+        // AI returns a sub-category name
+        const sub = await this.subCategoryRepo.findOne({
+          where: { name: predicted.category },
+          relations: ['category'],
+        });
+
+        if (sub) {
+          tx.subCategory = sub.name;
+          tx.subCategoryId = sub.id;
+          tx.category = sub.category.type as TransactionCategory;
+          tx.categoryId = sub.category.id;
+          tx.isCategorised = true;
+        } else {
+          // Fallback if AI name doesn't match our dynamic list
+          tx.category = predicted.category as TransactionCategory;
+          tx.isCategorised = true;
+        }
+
         this.logger.debug(
           `AI auto-applied "${predicted.category}" (${(predicted.confidence * 100).toFixed(1)}%) to: "${description}"`,
         );

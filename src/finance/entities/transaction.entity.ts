@@ -12,6 +12,8 @@ import {
 import { Business } from '../../business/entities/business.entity';
 import { BankAccount } from './bank-account.entity';
 import { CategorizationRule } from './categorization-rule.entity';
+import { AccountCategory } from './account-category.entity';
+import { AccountSubCategory } from './account-subcategory.entity';
 
 export enum TransactionDirection {
   CREDIT = 'CREDIT',
@@ -22,7 +24,10 @@ export const TransactionCategory = {
   INCOME: 'INCOME',
   COGS: 'COGS',
   EXPENSE: 'EXPENSE',
-  INTERNAL_TRANSFER: 'INTERNAL_TRANSFER',
+  ASSET: 'ASSET',
+  LIABILITY: 'LIABILITY',
+  EQUITY: 'EQUITY',
+  TRANSFER: 'TRANSFER',
 } as const;
 
 export type TransactionCategory =
@@ -67,6 +72,22 @@ export class Transaction {
 
   @Column({ nullable: true })
   subCategory: string;
+
+  @ManyToOne(() => AccountCategory, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'categoryId' })
+  categoryRef: AccountCategory;
+
+  @Column({ nullable: true })
+  @Index('IDX_tx_category_id')
+  categoryId: string;
+
+  @ManyToOne(() => AccountSubCategory, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'subCategoryId' })
+  subCategoryRef: AccountSubCategory;
+
+  @Column({ nullable: true })
+  @Index('IDX_tx_subcategory_id')
+  subCategoryId: string;
 
   @Column({ default: false })
   isCategorised: boolean;

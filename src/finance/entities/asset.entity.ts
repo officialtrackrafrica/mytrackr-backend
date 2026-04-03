@@ -10,13 +10,14 @@ import {
 import { Business } from '../../business/entities/business.entity';
 
 export enum AssetCategory {
-  EQUIPMENT = 'EQUIPMENT',
-  VEHICLE = 'VEHICLE',
-  FURNITURE = 'FURNITURE',
-  ELECTRONICS = 'ELECTRONICS',
-  PROPERTIES = 'PROPERTIES',
-  CASH_IN_HAND = 'CASH_IN_HAND',
-  OTHER = 'OTHER',
+  CASH_BANK = 'Cash in Bank Account',
+  CASH_HAND = 'Cash in Hand',
+  INVENTORY = 'Goods/Stock/Inventory',
+  RECEIVABLES = 'Money Owed by Customers (Receivables)',
+  LAND_BUILDINGS = 'Land & Buildings',
+  EQUIPMENT = 'Equipment & Machinery',
+  FURNITURE = 'Furniture',
+  OTHER = 'Other Assets',
 }
 
 @Entity('assets')

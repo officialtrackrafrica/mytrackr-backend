@@ -52,8 +52,8 @@ export class AnalyticsService {
         endDate,
       })
       .andWhere('tx.isCategorised = :isCat', { isCat: true })
-      .andWhere('tx.category != :internalTransfer', {
-        internalTransfer: TransactionCategory.INTERNAL_TRANSFER,
+      .andWhere('tx.category != :transfer', {
+        transfer: TransactionCategory.TRANSFER,
       })
       .groupBy(`TO_CHAR(tx.date, '${dateFormat}')`)
       .addGroupBy('tx.category')
@@ -68,6 +68,7 @@ export class AnalyticsService {
     > = {};
 
     for (const r of results) {
+      if (r.category === TransactionCategory.TRANSFER) continue;
       const period = r.period;
       const amount = parseFloat(r.total);
 

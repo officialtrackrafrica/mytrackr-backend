@@ -58,7 +58,7 @@ export class DashboardService {
     for (const tx of transactions) {
       const amount = Number(tx.amount);
 
-      if (tx.category === TransactionCategory.INTERNAL_TRANSFER) continue;
+      if (tx.category === TransactionCategory.TRANSFER) continue;
 
       if (tx.category === TransactionCategory.INCOME) {
         revenue += amount;
@@ -77,7 +77,7 @@ export class DashboardService {
 
       if (
         tx.direction === TransactionDirection.DEBIT &&
-        tx.category !== TransactionCategory.INTERNAL_TRANSFER
+        tx.category !== TransactionCategory.TRANSFER
       ) {
         cashOut += amount;
       }

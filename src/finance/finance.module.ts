@@ -6,6 +6,8 @@ import { Liability } from './entities/liability.entity';
 import { CategorizationRule } from './entities/categorization-rule.entity';
 import { BankAccount } from './entities/bank-account.entity';
 import { Transaction } from './entities/transaction.entity';
+import { AccountCategory } from './entities/account-category.entity';
+import { AccountSubCategory } from './entities/account-subcategory.entity';
 import { CategorizationService } from './services/categorization.service';
 import { CsvUploadService } from './services/csv-upload.service';
 import { PdfUploadService } from './services/pdf-upload.service';
@@ -22,6 +24,8 @@ import { CategorizationModule } from '../categorization/categorization.module';
       CategorizationRule,
       BankAccount,
       Transaction,
+      AccountCategory,
+      AccountSubCategory,
     ]),
     BusinessModule,
     PaymentsModule,

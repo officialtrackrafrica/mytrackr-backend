@@ -13,6 +13,7 @@ import {
   ApiResponse,
   ApiBody,
   ApiCookieAuth,
+  ApiExcludeController,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../guards';
 import { PoliciesGuard } from '../../casl/guards/policies.guard';
@@ -31,6 +32,7 @@ import {
 } from '../dto/mfa.dto';
 import { AuthError } from '../../common/errors';
 
+@ApiExcludeController()
 @ApiTags('MFA (Two-Factor Authentication)')
 @Controller('auth/mfa')
 @ApiCookieAuth('accessToken')

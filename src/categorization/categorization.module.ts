@@ -15,7 +15,7 @@ import { AiCategorizationService } from './categorization.service';
           transport: Transport.GRPC,
           options: {
             package: 'categorization',
-            protoPath: join(__dirname, '../../proto/categorization.proto'),
+            protoPath: join(__dirname, '../proto/categorization.proto'),
             url: configService.get<string>(
               'CATEGORIZATION_ENGINE_URL',
               'localhost:50051',

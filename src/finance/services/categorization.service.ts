@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, Brackets } from 'typeorm';
 import {
   Transaction,
   TransactionCategory,
@@ -13,7 +13,6 @@ import {
 import { AiCategorizationService } from '../../categorization/categorization.service';
 import {
   AccountCategory,
-  AccountCategoryType,
 } from '../entities/account-category.entity';
 import { AccountSubCategory } from '../entities/account-subcategory.entity';
 
@@ -120,9 +119,11 @@ export class CategorizationService {
           dto.direction === TransactionDirection.CREDIT
             ? TransactionCategory.INCOME
             : TransactionCategory.EXPENSE;
-        
+
         // Resolve to dynamic ID if possible for first-class reporting
-        const cat = await this.categoryRepo.findOne({ where: { type: tx.category as any } });
+        const cat = await this.categoryRepo.findOne({
+          where: { type: tx.category as any },
+        });
         if (cat) tx.categoryId = cat.id;
 
         tx.isCategorised = true;
@@ -188,8 +189,10 @@ export class CategorizationService {
           tx.direction === TransactionDirection.CREDIT
             ? TransactionCategory.INCOME
             : TransactionCategory.EXPENSE;
-        
-        const cat = await this.categoryRepo.findOne({ where: { type: tx.category as any } });
+
+        const cat = await this.categoryRepo.findOne({
+          where: { type: tx.category as any },
+        });
         if (cat) tx.categoryId = cat.id;
 
         tx.isCategorised = true;
@@ -205,6 +208,30 @@ export class CategorizationService {
     );
 
     return updatedCount;
+  }
+
+  /**
+   * Returns a hierarchical list of account categories and their sub-categories.
+   * Includes all system-default categories and any business-specific overrides/additions.
+   */
+  async listCategories(businessId?: string): Promise<AccountCategory[]> {
+    const query = this.categoryRepo
+      .createQueryBuilder('category')
+      .leftJoinAndSelect('category.subCategories', 'subCategory')
+      .where(
+        new Brackets((qb) => {
+          qb.where('category.isSystem = :isSystem', { isSystem: true });
+          if (businessId) {
+            qb.orWhere('category.businessId = :businessId', { businessId });
+          }
+        }),
+      );
+
+    return query
+      .orderBy('category.type', 'ASC')
+      .addOrderBy('category.name', 'ASC')
+      .addOrderBy('subCategory.name', 'ASC')
+      .getMany();
   }
 
   // ── Private helpers ────────────────────────────────────────────────────────

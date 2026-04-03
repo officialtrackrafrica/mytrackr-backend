@@ -59,6 +59,7 @@ import {
   CsvUploadResponseDto,
   TransactionQueryDto,
   PaginatedTransactionResponseDto,
+  AccountCategoryResponseDto,
 } from './dto';
 
 @ApiTags(SWAGGER_TAGS[5].name)
@@ -273,6 +274,27 @@ export class FinanceController {
       status: LiabilityStatus.ARCHIVED,
     });
     return { message: 'Liability archived' };
+  }
+
+  // --- Categories ---
+
+  @Get('categories')
+  @ApiOperation({
+    summary: 'List all financial categories and subtypes',
+    description:
+      'Returns a hierarchical list of system-default and business-specific categories ' +
+      'used for transaction classification.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Hierarchical list of categories',
+    type: [AccountCategoryResponseDto],
+  })
+  async listCategories(@Req() req: any) {
+    const businessId = await this.businessService.getBusinessIdForUser(
+      req.user.id,
+    );
+    return this.categorizationService.listCategories(businessId);
   }
 
   // --- Categorization Rules ---

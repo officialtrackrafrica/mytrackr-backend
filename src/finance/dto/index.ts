@@ -15,6 +15,7 @@ import {
 import { AssetCategory } from '../entities/asset.entity';
 import { LiabilityType, LiabilityStatus } from '../entities/liability.entity';
 import { MatchType } from '../entities/categorization-rule.entity';
+import { AccountCategoryType } from '../entities/account-category.entity';
 
 export class CreateAssetDto {
   @ApiProperty({ example: 'MacBook Pro' })
@@ -392,4 +393,38 @@ export class CsvUploadResponseDto {
     example: ['Row 5: Invalid date format: "abc"'],
   })
   errors: string[];
+}
+
+export class AccountSubCategoryResponseDto {
+  @ApiProperty({ example: '71cc0462-9eef-471f-b8dd-61df76f281a2' })
+  id: string;
+
+  @ApiProperty({ example: 'Rent' })
+  name: string;
+
+  @ApiProperty({ example: true })
+  isSystem: boolean;
+
+  @ApiPropertyOptional()
+  businessId?: string;
+}
+
+export class AccountCategoryResponseDto {
+  @ApiProperty({ example: '71cc0462-9eef-471f-b8dd-61df76f281a2' })
+  id: string;
+
+  @ApiProperty({ example: 'Expenses (Profit Statement)' })
+  name: string;
+
+  @ApiProperty({ enum: AccountCategoryType })
+  type: AccountCategoryType;
+
+  @ApiProperty({ example: true })
+  isSystem: boolean;
+
+  @ApiPropertyOptional()
+  businessId?: string;
+
+  @ApiProperty({ type: [AccountSubCategoryResponseDto] })
+  subCategories: AccountSubCategoryResponseDto[];
 }

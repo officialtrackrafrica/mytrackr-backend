@@ -92,7 +92,7 @@ export class MonoFinanceController {
 
   @Patch('linked-accounts/transactions/:id/category')
   @ApiOperation({
-    summary: 'Override the category of a specific transaction',
+    summary: 'Manually set the category of a specific transaction',
     description:
       'Manually set a category for a transaction. This override takes precedence over the Mono-assigned category ' +
       'and will persist through future syncs.',

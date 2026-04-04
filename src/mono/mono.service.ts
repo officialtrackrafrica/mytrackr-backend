@@ -480,8 +480,6 @@ export class MonoService {
           'narration',
           'amount',
           'type',
-          'category',
-          'subCategory',
           'currency',
           'balance',
           'date',
@@ -677,10 +675,12 @@ export class MonoService {
     }
 
     transaction.manualCategory = newCategory;
+    transaction.manualSubCategory = subCategoryName;
     transaction.category = newCategory;
     transaction.categoryId = category.id;
     transaction.subCategory = subCategoryName;
     transaction.subCategoryId = subCategoryId;
+    transaction.isCategorised = true;
     transaction.categorySource = CategorySource.MANUAL;
 
     await this.transactionRepository.save(transaction);

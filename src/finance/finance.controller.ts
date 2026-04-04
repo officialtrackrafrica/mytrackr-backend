@@ -614,7 +614,7 @@ export class FinanceController {
   }
 
   @Post('transactions/upload-pdf')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10_000_000 } }))
   @ApiOperation({
     summary: 'Upload bank transactions via PDF',
     description:
@@ -626,24 +626,14 @@ export class FinanceController {
       type: 'object',
       properties: {
         file: { type: 'string', format: 'binary', description: 'PDF file' },
-        bankAccountId: {
-          type: 'string',
-          description: 'Optional bank account ID to link transactions to',
-        },
       },
       required: ['file'],
     },
   })
-  @ApiQuery({
-    name: 'bankAccountId',
-    required: false,
-    type: String,
-    description: 'Bank account UUID to link uploaded transactions to',
-  })
   @ApiResponse({
     status: 201,
     description: 'PDF processed — shows imported, skipped, and errors',
-    type: CsvUploadResponseDto, // Reusing CSV response DTO as it has the same fields
+    type: CsvUploadResponseDto,
   })
   @ApiResponse({
     status: 400,
@@ -653,7 +643,6 @@ export class FinanceController {
   async uploadPdf(
     @Req() req: any,
     @UploadedFile() file: Express.Multer.File,
-    @Query('bankAccountId') bankAccountId?: string,
   ) {
     if (!file) {
       throw AppException.badRequest(
@@ -661,6 +650,10 @@ export class FinanceController {
         'PDF_NO_FILE',
       );
     }
+
+    this.logger.log(
+      `PDF upload received: ${file.originalname} (${file.size} bytes)`,
+    );
 
     if (!file.originalname.toLowerCase().endsWith('.pdf')) {
       throw AppException.badRequest(
@@ -677,7 +670,6 @@ export class FinanceController {
       file.buffer,
       businessId,
       req.user.id,
-      bankAccountId,
     );
   }
 

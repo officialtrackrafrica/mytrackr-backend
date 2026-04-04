@@ -370,13 +370,13 @@ export class AuthController {
     @Body() body: Partial<RefreshDto>,
   ): Promise<RefreshResponseDto> {
     try {
-      const refreshToken = req.cookies?.refreshToken || body.refreshToken;
+      const refreshToken = req.cookies?.refreshToken || body?.refreshToken;
       if (!refreshToken) {
         throw new AuthError('TOKEN_MISSING', 'Refresh token is required', 401);
       }
       const result = await this.authService.refreshToken({
         refreshToken,
-        deviceId: body.deviceId,
+        deviceId: body?.deviceId,
       });
       setCookies(res, {
         accessToken: result.accessToken!,

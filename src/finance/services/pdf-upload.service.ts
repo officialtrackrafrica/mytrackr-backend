@@ -32,15 +32,28 @@ export class PdfUploadService {
     fileBuffer: Buffer,
     businessId: string,
     userId: string,
-    bankAccountId?: string,
   ): Promise<{ imported: number; skipped: number; errors: string[] }> {
+    this.logger.log(
+      `Starting PDF parse — buffer size: ${fileBuffer.length} bytes`,
+    );
+
     let data: any;
     try {
-      data = await pdf(fileBuffer);
+      // Wrap pdf-parse in a timeout to prevent indefinite hangs
+      const TIMEOUT_MS = 30_000;
+      data = await Promise.race([
+        pdf(fileBuffer),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error('PDF parsing timed out after 30 seconds')),
+            TIMEOUT_MS,
+          ),
+        ),
+      ]);
     } catch (err: any) {
       this.logger.error(`PDF parse error: ${err.message}`);
       throw new BadRequestException(
-        'Could not parse the PDF file. Please ensure it is a valid, text-searchable PDF.',
+        `Could not parse the PDF file: ${err.message}. Please ensure it is a valid, text-searchable PDF.`,
       );
     }
 
@@ -51,11 +64,17 @@ export class PdfUploadService {
       );
     }
 
+    this.logger.log(
+      `PDF text extracted — ${text.length} chars. Parsing transaction rows...`,
+    );
+
     const lines = text
       .split('\n')
       .map((l: string) => l.trim())
       .filter((l: string) => l.length > 0);
     const parsedRows: ParsedRow[] = this.extractTransactions(lines);
+
+    this.logger.log(`Detected ${parsedRows.length} transaction rows`);
 
     if (parsedRows.length === 0) {
       throw new BadRequestException(
@@ -63,12 +82,11 @@ export class PdfUploadService {
       );
     }
 
-    // Save to DB (reusing logic from CSV)
+    // Save to DB
     const imported = await this.saveTransactions(
       parsedRows,
       businessId,
       userId,
-      bankAccountId,
     );
 
     return {
@@ -240,7 +258,6 @@ export class PdfUploadService {
     rows: ParsedRow[],
     businessId: string,
     userId: string,
-    bankAccountId?: string,
   ): Promise<number> {
     let imported = 0;
 
@@ -254,7 +271,6 @@ export class PdfUploadService {
         externalId: row.reference || undefined,
         businessId,
         userId,
-        bankAccountId: bankAccountId || undefined,
         isCategorised: false,
       });
 

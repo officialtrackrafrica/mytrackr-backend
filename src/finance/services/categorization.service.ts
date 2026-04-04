@@ -140,13 +140,15 @@ export class CategorizationService {
         }
 
         // Exists but with a different (or null) businessId → re-claim it
-        tx = this.transactionRepository.create({
+        const fullTx = await this.transactionRepository.findOneBy({
           id: existing.id,
-          ...dto,
-          businessId: businessId || undefined,
-          userId: userId || undefined,
-          isCategorised: false,
         });
+        if (!fullTx) continue;
+
+        fullTx.businessId = businessId as any;
+        fullTx.userId = userId as any;
+        fullTx.isCategorised = false;
+        tx = fullTx;
         transactionsToUpdate.push(tx);
       } else {
         // Brand-new transaction
@@ -270,6 +272,78 @@ export class CategorizationService {
     );
 
     return updatedCount;
+  }
+
+  /**
+   * Repair Orphaned Transactions — Fixes ALL transactions for a user that
+   * are missing a businessId or are uncategorised.
+   *
+   * This is the nuclear fix for the zero-value reports issue. It:
+   *  1. Finds every transaction belonging to the user (by userId or externalId)
+   *  2. Assigns the correct businessId
+   *  3. Re-runs the categorisation pipeline on uncategorised ones
+   */
+  async repairOrphanedTransactions(
+    businessId: string,
+    userId: string,
+  ): Promise<{ repaired: number; categorised: number }> {
+    // Find ALL transactions for this user, regardless of businessId
+    const orphaned = await this.transactionRepository.find({
+      where: [
+        { userId, businessId: null as any },
+        { userId, isCategorised: false },
+      ],
+    });
+
+    if (orphaned.length === 0) {
+      this.logger.log(
+        `Repair: No orphaned transactions found for user ${userId}`,
+      );
+      return { repaired: 0, categorised: 0 };
+    }
+
+    this.logger.log(
+      `Repair: Found ${orphaned.length} orphaned/uncategorised transactions for user ${userId}`,
+    );
+
+    let repaired = 0;
+    let categorised = 0;
+
+    for (const tx of orphaned) {
+      // Fix businessId
+      if (!tx.businessId || tx.businessId !== businessId) {
+        tx.businessId = businessId;
+        repaired++;
+      }
+
+      // Fix categorisation
+      if (!tx.isCategorised) {
+        const description = tx.description || tx.name || '';
+        await this.applyAiPrediction(tx, description, userId);
+
+        if (!tx.isCategorised) {
+          tx.category =
+            tx.direction === TransactionDirection.CREDIT
+              ? TransactionCategory.INCOME
+              : TransactionCategory.EXPENSE;
+
+          const cat = await this.categoryRepo.findOne({
+            where: { type: tx.category as any },
+          });
+          if (cat) tx.categoryId = cat.id;
+          tx.isCategorised = true;
+        }
+        categorised++;
+      }
+    }
+
+    await this.transactionRepository.save(orphaned, { chunk: 100 });
+
+    this.logger.log(
+      `Repair complete: ${repaired} re-linked, ${categorised} categorised`,
+    );
+
+    return { repaired, categorised };
   }
 
   /**

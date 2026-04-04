@@ -295,6 +295,29 @@ export class FinanceController {
     return this.categorizationService.listCategories(businessId);
   }
 
+  // --- Transaction Repair ---
+
+  @Post('transactions/repair')
+  @ApiOperation({
+    summary: 'Repair orphaned transactions',
+    description:
+      'Fixes all transactions that are missing a businessId or are uncategorised. ' +
+      'Call this once to fix zero-value reports after linking a bank account.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Repair results',
+  })
+  async repairTransactions(@Req() req: any) {
+    const businessId = await this.businessService.getBusinessIdForUser(
+      req.user.id,
+    );
+    return this.categorizationService.repairOrphanedTransactions(
+      businessId,
+      req.user.id,
+    );
+  }
+
   // --- Categorization Rules ---
 
   // @Get('categorization-rules')

@@ -42,17 +42,17 @@ export class TransactionSyncService {
       return { synced: 0, skipped: 'MonoAccount not found' };
     }
 
-    let businessId = monoAccount.businessId || null;
     const userId = monoAccount.user ? monoAccount.user.id : null;
 
-    // If the MonoAccount doesn't have an explicit businessId, resolve it
-    // from the user's business profile so transactions are tagged correctly
-    // for P&L and analytics reports.
-    if (!businessId && userId) {
+    // Always resolve businessId from the user's business profile.
+    // Mono does NOT provide a businessId — the user's profile is the
+    // single source of truth for associating transactions with a business.
+    let businessId: string | null = null;
+    if (userId) {
       try {
         businessId = await this.businessService.getBusinessIdForUser(userId);
         this.logger.log(
-          `Auto-resolved businessId=${businessId} from user ${userId} for MonoAccount ${monoAccountId}`,
+          `Resolved businessId=${businessId} from user ${userId} for MonoAccount ${monoAccountId}`,
         );
       } catch {
         this.logger.warn(

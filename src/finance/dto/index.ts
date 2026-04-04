@@ -413,7 +413,7 @@ export class AccountCategoryResponseDto {
   @ApiProperty({ example: '71cc0462-9eef-471f-b8dd-61df76f281a2' })
   id: string;
 
-  @ApiProperty({ example: 'Expenses (Profit Statement)' })
+  @ApiProperty({ example: 'Expenses' })
   name: string;
 
   @ApiProperty({ enum: AccountCategoryType })

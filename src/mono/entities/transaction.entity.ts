@@ -34,17 +34,17 @@ export class Transaction {
   @Column()
   type: string;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, type: 'varchar' })
   category: string | null;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, type: 'varchar' })
   subCategory: string | null;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, type: 'uuid' })
   @Index('IDX_mono_tx_category_id')
   categoryId: string | null;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, type: 'uuid' })
   @Index('IDX_mono_tx_subcategory_id')
   subCategoryId: string | null;
 

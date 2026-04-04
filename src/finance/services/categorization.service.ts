@@ -11,9 +11,7 @@ import {
   MatchType,
 } from '../entities/categorization-rule.entity';
 import { AiCategorizationService } from '../../categorization/categorization.service';
-import {
-  AccountCategory,
-} from '../entities/account-category.entity';
+import { AccountCategory } from '../entities/account-category.entity';
 import { AccountSubCategory } from '../entities/account-subcategory.entity';
 
 export interface RawTransactionDto {
@@ -83,26 +81,55 @@ export class CategorizationService {
       .map((dto) => dto.externalId)
       .filter((id) => id != null);
 
-    let existingExternalIds = new Set<string>();
+    let existingMap = new Map<
+      string,
+      { id: string; businessId: string | null }
+    >();
     if (dedupExternalIds.length > 0) {
       const existing = await this.transactionRepository.find({
         where: { externalId: In(dedupExternalIds) },
-        select: ['externalId'],
+        select: ['id', 'externalId', 'businessId'],
       });
-      existingExternalIds = new Set(existing.map((e) => e.externalId));
+      existingMap = new Map(
+        existing.map((e) => [
+          e.externalId,
+          { id: e.id, businessId: e.businessId },
+        ]),
+      );
     }
 
     const transactionsToInsert: Transaction[] = [];
+    const transactionsToUpdate: Transaction[] = [];
 
     for (const dto of dtos) {
-      if (dto.externalId && existingExternalIds.has(dto.externalId)) {
-        continue;
-      }
+      let tx: Transaction;
+      const existing = dto.externalId ? existingMap.get(dto.externalId) : null;
 
-      const tx = this.transactionRepository.create({
-        ...dto,
-        isCategorised: false,
-      });
+      if (existing) {
+        // If it already has the same businessId (or both are null), skip it
+        if (existing.businessId === (businessId || null)) {
+          continue;
+        }
+
+        // If it exists but has no businessId and we now HAVE one, re-claim it
+        tx = this.transactionRepository.create({
+          id: existing.id,
+          ...dto,
+          businessId: businessId || undefined,
+          userId: userId || undefined,
+          isCategorised: false, // Force re-categorization with new business context
+        });
+        transactionsToUpdate.push(tx);
+      } else {
+        tx = this.transactionRepository.create({
+          ...dto,
+          businessId: businessId || undefined,
+          userId: userId || undefined,
+          isCategorised: false,
+        });
+        transactionsToInsert.push(tx);
+        newTransactionsCount++;
+      }
 
       // ── Step 1: Rule-based matching ────────────────────────────────────────
       this.applyRules(tx, activeRules);
@@ -140,6 +167,15 @@ export class CategorizationService {
       await this.transactionRepository.save(transactionsToInsert, {
         chunk: 100,
       });
+    }
+
+    if (transactionsToUpdate.length > 0) {
+      await this.transactionRepository.save(transactionsToUpdate, {
+        chunk: 100,
+      });
+      this.logger.log(
+        `Updated ${transactionsToUpdate.length} existing transactions with business context (business=${businessId})`,
+      );
     }
 
     this.logger.log(

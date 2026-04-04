@@ -11,7 +11,6 @@ import {
 } from './entities';
 import { Business } from '../business/entities/business.entity';
 import { AuthService, SessionService, RolesService } from './services';
-import { MfaService } from './services/mfa.service';
 import {
   AuthController,
   SessionController,
@@ -19,7 +18,6 @@ import {
   RolesController,
   AdminController,
 } from './controllers';
-import { MfaController } from './controllers/mfa.controller';
 import { JwtStrategy, GoogleStrategy } from './strategies';
 import { JwtAuthGuard } from './guards';
 import { SecurityModule } from '../security/security.module';
@@ -53,7 +51,6 @@ import { StorageModule } from '../storage/storage.module';
     UserController,
     RolesController,
     AdminController,
-    MfaController,
   ],
   providers: [
     AuthService,
@@ -62,7 +59,6 @@ import { StorageModule } from '../storage/storage.module';
     GoogleStrategy,
     JwtAuthGuard,
     RolesService,
-    MfaService,
     TokenBlacklistService,
   ],
   exports: [

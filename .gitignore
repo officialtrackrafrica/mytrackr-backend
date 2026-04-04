@@ -9,6 +9,7 @@ logs
 *.log
 *.txt
 !categorization-engine/requirements.txt
+!ocr-service/requirements.txt
 *.md
 npm-debug.log*
 pnpm-debug.log*

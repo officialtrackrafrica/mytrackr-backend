@@ -6,6 +6,7 @@ import {
   Transaction,
   TransactionDirection,
 } from '../entities/transaction.entity';
+import { OcrService } from './ocr.service';
 
 interface ParsedRow {
   date: string;
@@ -23,10 +24,28 @@ export class PdfUploadService {
   constructor(
     @InjectRepository(Transaction)
     private readonly transactionRepository: Repository<Transaction>,
+    private readonly ocrService: OcrService,
   ) {}
 
   /**
+   * Extract text from PDF using pdf-parse library.
+   */
+  private async extractPdfText(buffer: Buffer): Promise<{ text: string }> {
+    const TIMEOUT_MS = 30_000;
+    return Promise.race([
+      pdf(buffer),
+      new Promise<{ text: string }>((_, reject) =>
+        setTimeout(
+          () => reject(new Error('PDF parsing timed out after 30 seconds')),
+          TIMEOUT_MS,
+        ),
+      ),
+    ]);
+  }
+
+  /**
    * Parse a PDF buffer and create Transaction entities.
+   * Falls back to OCR if standard text extraction fails.
    */
   async processPdf(
     fileBuffer: Buffer,
@@ -37,35 +56,32 @@ export class PdfUploadService {
       `Starting PDF parse — buffer size: ${fileBuffer.length} bytes`,
     );
 
-    let data: any;
+    let text: string | null = null;
+    let usedOcr = false;
+
+    // Try standard text extraction first
     try {
-      // Wrap pdf-parse in a timeout to prevent indefinite hangs
-      const TIMEOUT_MS = 30_000;
-      data = await Promise.race([
-        pdf(fileBuffer),
-        new Promise((_, reject) =>
-          setTimeout(
-            () => reject(new Error('PDF parsing timed out after 30 seconds')),
-            TIMEOUT_MS,
-          ),
-        ),
-      ]);
+      const data = await this.extractPdfText(fileBuffer);
+      text = data.text;
     } catch (err: any) {
-      this.logger.error(`PDF parse error: ${err.message}`);
-      throw new BadRequestException(
-        `Could not parse the PDF file: ${err.message}. Please ensure it is a valid, text-searchable PDF.`,
-      );
+      this.logger.warn(`Standard PDF extraction failed: ${err.message}`);
     }
 
-    const text = data.text;
+    // Fallback to OCR if no text extracted
     if (!text || text.trim().length === 0) {
-      throw new BadRequestException(
-        'PDF file appears to be empty or contains no extractable text (it might be a scanned image).',
-      );
+      this.logger.log('Attempting OCR fallback for scanned/image-based PDF...');
+      text = await this.ocrService.extractTextFromPdf(fileBuffer);
+      usedOcr = true;
+
+      if (!text || text.trim().length === 0) {
+        throw new BadRequestException(
+          'PDF file appears to be empty or contains no extractable text (even with OCR). Please ensure it is a valid bank statement.',
+        );
+      }
     }
 
     this.logger.log(
-      `PDF text extracted — ${text.length} chars. Parsing transaction rows...`,
+      `PDF text extracted (${usedOcr ? 'via OCR' : 'standard'}) — ${text.length} chars. Parsing transaction rows...`,
     );
 
     const lines = text

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ConfigModule } from '@nestjs/config';
 import { BusinessModule } from '../business/business.module';
 import { Asset } from './entities/asset.entity';
 import { Liability } from './entities/liability.entity';
@@ -12,6 +13,7 @@ import { AccountSubCategory } from './entities/account-subcategory.entity';
 import { CategorizationService } from './services/categorization.service';
 import { CsvUploadService } from './services/csv-upload.service';
 import { PdfUploadService } from './services/pdf-upload.service';
+import { OcrService } from './services/ocr.service';
 import { BankAccountService } from './services/bank-account.service';
 import { FinanceController } from './finance.controller';
 import { PaymentsModule } from '../payments/payments.module';
@@ -33,12 +35,14 @@ import { MonoModule } from '../mono/mono.module';
     PaymentsModule,
     CategorizationModule,
     forwardRef(() => MonoModule),
+    ConfigModule,
   ],
   controllers: [FinanceController],
   providers: [
     CategorizationService,
     CsvUploadService,
     PdfUploadService,
+    OcrService,
     BankAccountService,
   ],
   exports: [
@@ -46,6 +50,7 @@ import { MonoModule } from '../mono/mono.module';
     CategorizationService,
     CsvUploadService,
     PdfUploadService,
+    OcrService,
     BankAccountService,
   ],
 })

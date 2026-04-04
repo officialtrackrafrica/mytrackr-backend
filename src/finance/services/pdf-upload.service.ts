@@ -69,19 +69,20 @@ export class PdfUploadService {
 
     // Fallback to OCR if no text extracted
     if (!text || text.trim().length === 0) {
-      this.logger.log('Attempting OCR fallback for scanned/image-based PDF...');
+      this.logger.log('Fallback: Attempting robust extraction via OCR service...');
       text = await this.ocrService.extractTextFromPdf(fileBuffer);
-      usedOcr = true;
 
       if (!text || text.trim().length === 0) {
+        this.logger.error('Hybrid extraction failed: No text retrieved from either pdf-parse or OCR service.');
         throw new BadRequestException(
           'PDF file appears to be empty or contains no extractable text (even with OCR). Please ensure it is a valid bank statement.',
         );
       }
+      usedOcr = true;
     }
 
     this.logger.log(
-      `PDF text extracted (${usedOcr ? 'via OCR' : 'standard'}) — ${text.length} chars. Parsing transaction rows...`,
+      `Success: PDF text retrieved (${usedOcr ? 'via OCR Service' : 'via pdf-parse'}) — ${text.length} characters found.`,
     );
 
     const lines = text

@@ -7,13 +7,14 @@ import io
 import os
 import logging
 import base64
+import numpy as np
 from typing import Optional
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="MyTrackr OCR Service", version="1.0.0")
+app = FastAPI(title="MyTrackr OCR Service", version="1.0.1")
 
 # Initialize PaddleOCR (lazy load on first request)
 ocr_engine: Optional[PaddleOCR] = None
@@ -24,7 +25,6 @@ def get_ocr_engine() -> PaddleOCR:
     global ocr_engine
     if ocr_engine is None:
         logger.info("Initializing PaddleOCR engine...")
-        # lang='en' for English, use_angle_cls=True for orientation detection
         # use_gpu=False for CPU-only mode (set True if GPU available)
         use_gpu = os.getenv("USE_GPU", "false").lower() == "true"
         ocr_engine = PaddleOCR(
@@ -36,6 +36,23 @@ def get_ocr_engine() -> PaddleOCR:
         )
         logger.info("PaddleOCR engine initialized successfully")
     return ocr_engine
+
+
+def extract_text_directly(pdf_bytes: bytes) -> str:
+    """
+    Attempt to extract text directly from the PDF structure using PyMuPDF.
+    This is much faster and more accurate for searchable PDFs.
+    """
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        full_text = ""
+        for page in doc:
+            full_text += page.get_text() + "\n"
+        doc.close()
+        return full_text.strip()
+    except Exception as e:
+        logger.warning(f"Direct text extraction failed: {e}")
+        return ""
 
 
 def pdf_to_images(pdf_bytes: bytes) -> list:
@@ -55,7 +72,7 @@ def pdf_to_images(pdf_bytes: bytes) -> list:
             images.append(img)
         
         doc.close()
-        logger.info(f"Extracted {len(images)} pages from PDF")
+        logger.info(f"Rendered {len(images)} pages from PDF for OCR")
         return images
     except Exception as e:
         logger.error(f"Error converting PDF to images: {e}")
@@ -65,7 +82,6 @@ def pdf_to_images(pdf_bytes: bytes) -> list:
 def extract_text_from_image(ocr: PaddleOCR, image: Image.Image) -> str:
     """Extract text from a single image using PaddleOCR."""
     # Convert PIL to numpy array
-    import numpy as np
     img_array = np.array(image)
     
     # Run OCR
@@ -91,16 +107,16 @@ async def health_check():
     return {
         "status": "healthy",
         "engine_ready": engine_ready,
-        "version": "1.0.0"
+        "version": "1.0.1"
     }
 
 
 @app.post("/ocr/pdf")
 async def ocr_pdf(file: UploadFile = File(...)):
     """
-    Extract text from a PDF file using PaddleOCR.
-    
-    Returns the extracted text from all pages.
+    Hybrid text extraction from a PDF file.
+    1. Try direct extraction (fast, accurate for searchable PDFs).
+    2. Fallback to PaddleOCR if no text is found (for scanned/image PDFs).
     """
     try:
         # Read file
@@ -112,7 +128,24 @@ async def ocr_pdf(file: UploadFile = File(...)):
         # Check file size (limit to 50MB)
         if len(pdf_bytes) > 50 * 1024 * 1024:
             raise HTTPException(status_code=413, detail="File too large (max 50MB)")
+
+        # --- Phase 1: Direct Extraction ---
+        logger.info(f"Attempting direct text extraction for {file.filename}...")
+        direct_text = extract_text_directly(pdf_bytes)
         
+        # If we got significant text (at least 100 chars), return it immediately
+        if len(direct_text) > 100:
+            logger.info(f"Direct extraction successful ({len(direct_text)} chars). Skipping OCR.")
+            return JSONResponse(content={
+                "success": True,
+                "text": direct_text,
+                "method": "direct",
+                "message": "Text extracted directly from PDF structure"
+            })
+            
+        logger.info("Direct extraction returned minimal text. Falling back to full OCR...")
+
+        # --- Phase 2: OCR Fallback ---
         # Get OCR engine
         ocr = get_ocr_engine()
         
@@ -125,7 +158,7 @@ async def ocr_pdf(file: UploadFile = File(...)):
         # Extract text from each page
         all_text = []
         for i, image in enumerate(images):
-            logger.info(f"Processing page {i+1}/{len(images)}")
+            logger.info(f"OCR processing page {i+1}/{len(images)}")
             page_text = extract_text_from_image(ocr, image)
             all_text.append(page_text)
         
@@ -135,6 +168,7 @@ async def ocr_pdf(file: UploadFile = File(...)):
         return JSONResponse(content={
             "success": True,
             "text": full_text,
+            "method": "ocr",
             "pages": len(images),
             "message": "OCR completed successfully"
         })
@@ -172,6 +206,7 @@ async def ocr_image(file: UploadFile = File(...)):
         return JSONResponse(content={
             "success": True,
             "text": text,
+            "method": "ocr",
             "message": "OCR completed successfully"
         })
         

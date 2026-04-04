@@ -57,7 +57,7 @@ services:
       dockerfile: ./categorization-engine/Dockerfile
     container_name: mytrackr-categorization-engine
     ports:
-      - '50051:50051'
+      - '127.0.0.1:50051:50051'
     volumes:
       - categorization_engine_data:/app/data
 
@@ -83,7 +83,7 @@ services:
     image: redis:7-alpine
     container_name: mytrackr-redis
     ports:
-      - '6379:6379'
+      - '127.0.0.1:6379:6379'
     volumes:
       - redis_data:/data
     healthcheck:
@@ -96,8 +96,8 @@ services:
     image: mailhog/mailhog:latest
     container_name: mytrackr-mailhog
     ports:
-      - '1025:1025'
-      - '8025:8025'
+      - '127.0.0.1:1025:1025'
+      - '127.0.0.1:8025:8025'
 
 volumes:
   postgres_data:

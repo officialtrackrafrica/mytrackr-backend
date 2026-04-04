@@ -20,6 +20,14 @@ export enum TransactionDirection {
   DEBIT = 'DEBIT',
 }
 
+export enum CategorySource {
+  MONO = 'MONO',
+  AI = 'AI',
+  RULE = 'RULE',
+  HEURISTIC = 'HEURISTIC',
+  MANUAL = 'MANUAL',
+}
+
 export const TransactionCategory = {
   INCOME: 'INCOME',
   COGS: 'COGS',
@@ -72,6 +80,30 @@ export class Transaction {
 
   @Column({ nullable: true })
   subCategory: string;
+
+  @Column({ nullable: true })
+  monoCategory: string;
+
+  @Column({ nullable: true })
+  aiCategory: string;
+
+  @Column({ nullable: true })
+  manualCategory: string;
+
+  @Column({ nullable: true })
+  manualSubCategory: string;
+
+  @Column({ nullable: true, type: 'varchar' })
+  ruleCategory: string | null;
+
+  @Column({ nullable: true, type: 'varchar' })
+  ruleSubCategory: string | null;
+
+  @Column({ nullable: true, type: 'varchar' })
+  heuristicCategory: string | null;
+
+  @Column({ type: 'enum', enum: CategorySource, default: CategorySource.MONO })
+  categorySource: CategorySource;
 
   @ManyToOne(() => AccountCategory, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'categoryId' })

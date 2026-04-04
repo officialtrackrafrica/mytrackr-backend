@@ -11,6 +11,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   TransactionCategory,
   TransactionDirection,
+  CategorySource,
 } from '../entities/transaction.entity';
 import { AssetCategory } from '../entities/asset.entity';
 import { LiabilityType, LiabilityStatus } from '../entities/liability.entity';
@@ -356,6 +357,15 @@ export class TransactionResponseDto {
   @ApiPropertyOptional({ enum: TransactionCategory })
   category?: TransactionCategory;
   @ApiPropertyOptional() subCategory?: string;
+  @ApiPropertyOptional() monoCategory?: string;
+  @ApiPropertyOptional() aiCategory?: string;
+  @ApiPropertyOptional() manualCategory?: string;
+  @ApiPropertyOptional() manualSubCategory?: string;
+  @ApiPropertyOptional() ruleCategory?: string;
+  @ApiPropertyOptional() ruleSubCategory?: string;
+  @ApiPropertyOptional() heuristicCategory?: string;
+  @ApiPropertyOptional({ enum: CategorySource })
+  categorySource?: CategorySource;
   @ApiPropertyOptional() notes?: string;
   @ApiProperty() businessId: string;
   @ApiPropertyOptional() bankAccountId?: string;

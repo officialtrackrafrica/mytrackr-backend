@@ -3,6 +3,7 @@ import { MonoService } from './mono.service';
 import { MonoController } from './mono.controller';
 import { TransactionSyncService } from './services/transaction-sync.service';
 
+import { forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from '../auth/entities/user.entity';
 import { MonoAccount } from './entities/mono-account.entity';
@@ -14,6 +15,9 @@ import { BusinessModule } from '../business/business.module';
 import { AccountCategory } from '../finance/entities/account-category.entity';
 import { AccountSubCategory } from '../finance/entities/account-subcategory.entity';
 
+import { MonoFinanceController } from './mono-finance.controller';
+import { MonoAdminController } from './mono-admin.controller';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -23,13 +27,13 @@ import { AccountSubCategory } from '../finance/entities/account-subcategory.enti
       AccountCategory,
       AccountSubCategory,
     ]),
-    FinanceModule,
+    forwardRef(() => FinanceModule),
     PaymentsModule,
     CategorizationModule,
     BusinessModule,
   ],
   providers: [MonoService, TransactionSyncService],
-  controllers: [MonoController],
+  controllers: [MonoController, MonoFinanceController, MonoAdminController],
   exports: [MonoService, TransactionSyncService],
 })
 export class MonoModule {}

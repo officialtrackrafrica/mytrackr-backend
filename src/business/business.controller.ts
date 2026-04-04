@@ -18,13 +18,9 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards';
 import { BusinessService } from './services/business.service';
-import {
-  UpdateBusinessDto,
-  BusinessResponseDto,
-} from './dto';
+import { UpdateBusinessDto, BusinessResponseDto } from './dto';
 import { SWAGGER_TAGS } from '../common/docs';
 import { ErrorResponseDto } from '../common/errors';
-
 
 @ApiTags(SWAGGER_TAGS[4].name)
 @Controller('businesses')
@@ -34,10 +30,10 @@ export class BusinessController {
   constructor(private readonly businessService: BusinessService) {}
 
   @Get('my-business')
-  @ApiOperation({ summary: 'Get the authenticated user\'s business' })
+  @ApiOperation({ summary: "Get the authenticated user's business" })
   @ApiResponse({
     status: 200,
-    description: 'User\'s business',
+    description: "User's business",
     type: BusinessResponseDto,
   })
   @ApiResponse({

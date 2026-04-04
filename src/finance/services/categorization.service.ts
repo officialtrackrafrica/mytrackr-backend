@@ -5,6 +5,7 @@ import {
   Transaction,
   TransactionCategory,
   TransactionDirection,
+  CategorySource,
 } from '../entities/transaction.entity';
 import {
   CategorizationRule,
@@ -24,6 +25,7 @@ export interface RawTransactionDto {
   amount: number;
   direction: TransactionDirection;
   description: string;
+  monoCategory?: string;
   valueDate?: Date;
 }
 
@@ -115,21 +117,48 @@ export class CategorizationService {
           });
           if (full && !full.isCategorised) {
             tx = full;
-            // Re-run categorisation pipeline on this existing transaction
-            this.applyRules(tx, activeRules);
+            // ── Step 0: Preserve Manual if present ───────────────────────────
+            if (
+              tx.categorySource === CategorySource.MANUAL &&
+              tx.manualCategory
+            ) {
+              tx.category = tx.manualCategory;
+              tx.subCategory = tx.manualSubCategory;
+              tx.isCategorised = true;
+            }
+
+            // ── Step 1: Rule-based matching ──────────────────────────────────
+            if (!tx.isCategorised) {
+              this.applyRules(tx, activeRules);
+            }
+
+            // ── Step 2: AI prediction ───────────────────────────────────────
             if (!tx.isCategorised) {
               await this.applyAiPrediction(tx, dto.description, userId ?? '');
             }
+
+            // ── Step 3: Mono default category ───────────────────────────────
+            if (!tx.isCategorised && dto.monoCategory) {
+              tx.category = dto.monoCategory;
+              tx.categorySource = CategorySource.MONO;
+              tx.isCategorised = true;
+            }
+
+            // ── Step 4: Direction-based heuristic fallback ───────────────────
             if (!tx.isCategorised) {
               tx.category =
                 dto.direction === TransactionDirection.CREDIT
                   ? TransactionCategory.INCOME
                   : TransactionCategory.EXPENSE;
+
               const cat = await this.categoryRepo.findOne({
                 where: { type: tx.category as any },
               });
               if (cat) tx.categoryId = cat.id;
+
+              tx.heuristicCategory = tx.category;
               tx.isCategorised = true;
+              tx.categorySource = CategorySource.HEURISTIC;
               this.logger.debug(
                 `Heuristic fallback applied to existing tx "${dto.description}": ${tx.category}`,
               );
@@ -156,6 +185,7 @@ export class CategorizationService {
           ...dto,
           businessId: businessId || undefined,
           userId: userId || undefined,
+          monoCategory: dto.monoCategory || undefined,
           isCategorised: false,
         });
         transactionsToInsert.push(tx);
@@ -170,7 +200,17 @@ export class CategorizationService {
         await this.applyAiPrediction(tx, dto.description, userId ?? '');
       }
 
-      // ── Step 3: Direction-based heuristic fallback ─────────────────────────
+      // ── Step 3: Mono default category ─────────────────────────────────────
+      if (!tx.isCategorised && dto.monoCategory) {
+        tx.category = dto.monoCategory;
+        tx.categorySource = CategorySource.MONO;
+        tx.isCategorised = true;
+        this.logger.debug(
+          `Mono's default category applied to "${dto.description}": ${tx.category}`,
+        );
+      }
+
+      // ── Step 4: Direction-based heuristic fallback ─────────────────────────
       // Guarantees isCategorised = true so reports are never empty.
       if (!tx.isCategorised) {
         tx.category =
@@ -184,7 +224,9 @@ export class CategorizationService {
         });
         if (cat) tx.categoryId = cat.id;
 
+        tx.heuristicCategory = tx.category;
         tx.isCategorised = true;
+        tx.categorySource = CategorySource.HEURISTIC;
         this.logger.debug(
           `Heuristic fallback applied to "${dto.description}": ${tx.category}`,
         );
@@ -259,7 +301,9 @@ export class CategorizationService {
         });
         if (cat) tx.categoryId = cat.id;
 
+        tx.heuristicCategory = tx.category;
         tx.isCategorised = true;
+        tx.categorySource = CategorySource.HEURISTIC;
       }
 
       updatedCount++;
@@ -331,7 +375,9 @@ export class CategorizationService {
             where: { type: tx.category as any },
           });
           if (cat) tx.categoryId = cat.id;
+          tx.heuristicCategory = tx.category;
           tx.isCategorised = true;
+          tx.categorySource = CategorySource.HEURISTIC;
         }
         categorised++;
       }
@@ -411,6 +457,9 @@ export class CategorizationService {
           tx.isCategorised = true;
         }
 
+        tx.aiCategory = predicted.category;
+        tx.categorySource = CategorySource.AI;
+
         this.logger.debug(
           `AI auto-applied "${predicted.category}" (${(predicted.confidence * 100).toFixed(1)}%) to: "${description}"`,
         );
@@ -419,6 +468,8 @@ export class CategorizationService {
         // so the user is nudged to review it.
         // We use the `notes` field to carry the suggestion without polluting
         // the real category column.
+        // low confidence -> still preserve the ai prediction explicitly!
+        tx.aiCategory = predicted.category;
         tx.notes = `AI suggestion: ${predicted.category} (${(predicted.confidence * 100).toFixed(1)}% confidence)`;
         this.logger.debug(
           `AI suggestion stored (low confidence ${(predicted.confidence * 100).toFixed(1)}%) for: "${description}"`,
@@ -463,7 +514,10 @@ export class CategorizationService {
       if (isMatch) {
         tx.category = rule.category as TransactionCategory;
         tx.subCategory = rule.subCategory;
+        tx.ruleCategory = rule.category;
+        tx.ruleSubCategory = rule.subCategory;
         tx.ruleId = rule.id;
+        tx.categorySource = CategorySource.RULE;
         tx.isCategorised = true;
         break;
       }
@@ -507,6 +561,7 @@ export class CategorizationService {
       category: rule.category as TransactionCategory,
       subCategory: rule.subCategory,
       ruleId: rule.id,
+      categorySource: CategorySource.RULE,
       isCategorised: true,
     });
 

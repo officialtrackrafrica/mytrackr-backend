@@ -69,4 +69,3 @@ export class BusinessResponseDto {
   @ApiProperty({ description: 'Last updated timestamp' })
   updatedAt: Date;
 }
-

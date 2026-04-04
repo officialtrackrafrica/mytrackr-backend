@@ -24,6 +24,7 @@ import { TransactionSyncService } from './services/transaction-sync.service';
 import { BusinessService } from '../business/services/business.service';
 import { AccountCategory } from '../finance/entities/account-category.entity';
 import { AccountSubCategory } from '../finance/entities/account-subcategory.entity';
+import { CategorySource } from '../finance/entities/transaction.entity';
 import { Brackets } from 'typeorm';
 
 @Injectable()
@@ -449,7 +450,9 @@ export class MonoService {
             ? predicted.category
             : tx.category || null;
         const finalCategorySource =
-          predicted.category !== 'Uncategorized' ? 'auto' : 'mono';
+          predicted.category !== 'Uncategorized'
+            ? CategorySource.AI
+            : CategorySource.MONO;
 
         return this.transactionRepository.create({
           monoTransactionId: tx.id,
@@ -678,7 +681,7 @@ export class MonoService {
     transaction.categoryId = category.id;
     transaction.subCategory = subCategoryName;
     transaction.subCategoryId = subCategoryId;
-    transaction.categorySource = 'manual';
+    transaction.categorySource = CategorySource.MANUAL;
 
     await this.transactionRepository.save(transaction);
 
@@ -721,10 +724,12 @@ export class MonoService {
     }
 
     transaction.manualCategory = null;
+    transaction.manualSubCategory = null;
+    transaction.isCategorised = false;
+    transaction.categorySource = CategorySource.MONO; // Reset to default
     transaction.categoryId = null;
     transaction.subCategory = null;
     transaction.subCategoryId = null;
-    transaction.categorySource = 'mono';
     await this.transactionRepository.save(transaction);
 
     return {

@@ -151,6 +151,7 @@ export class TransactionSyncService {
           ? TransactionDirection.CREDIT
           : TransactionDirection.DEBIT,
       description: mt.narration,
+      monoCategory: mt.category || undefined,
     }));
 
     const synced = await this.categorizationService.ingestTransactions(

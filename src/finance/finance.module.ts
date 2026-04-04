@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BusinessModule } from '../business/business.module';
 import { Asset } from './entities/asset.entity';
@@ -15,6 +16,7 @@ import { BankAccountService } from './services/bank-account.service';
 import { FinanceController } from './finance.controller';
 import { PaymentsModule } from '../payments/payments.module';
 import { CategorizationModule } from '../categorization/categorization.module';
+import { MonoModule } from '../mono/mono.module';
 
 @Module({
   imports: [
@@ -30,6 +32,7 @@ import { CategorizationModule } from '../categorization/categorization.module';
     BusinessModule,
     PaymentsModule,
     CategorizationModule,
+    forwardRef(() => MonoModule),
   ],
   controllers: [FinanceController],
   providers: [

@@ -9,6 +9,7 @@ import {
   Unique,
 } from 'typeorm';
 import { MonoAccount } from './mono-account.entity';
+import { CategorySource } from '../../finance/entities/transaction.entity';
 
 @Entity('mono_transactions')
 @Unique('UQ_mono_tx_per_account', ['monoTransactionId', 'monoAccount'])
@@ -51,9 +52,23 @@ export class Transaction {
   @Column({ nullable: true, type: 'varchar' })
   manualCategory: string | null;
 
-  @Column({ default: 'mono' })
-  categorySource: string; // 'mono' | 'manual'
+  @Column({ nullable: true, type: 'varchar' })
+  manualSubCategory: string | null;
 
+  @Column({ nullable: true, type: 'varchar' })
+  aiCategory: string | null;
+
+  @Column({ nullable: true, type: 'varchar' })
+  ruleCategory: string | null;
+
+  @Column({ nullable: true, type: 'varchar' })
+  ruleSubCategory: string | null;
+
+  @Column({ nullable: true, type: 'varchar' })
+  heuristicCategory: string | null;
+
+  @Column({ type: 'enum', enum: CategorySource, default: CategorySource.MONO })
+  categorySource: CategorySource;
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, any>;
 
@@ -65,6 +80,9 @@ export class Transaction {
 
   @Column({ type: 'timestamptz' })
   date: Date;
+
+  @Column({ default: false })
+  isCategorised: boolean;
 
   @CreateDateColumn()
   createdAt: Date;

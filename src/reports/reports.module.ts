@@ -19,7 +19,12 @@ import { BusinessModule } from '../business/business.module';
     BusinessModule,
   ],
   controllers: [ReportsController],
-  providers: [PnlService, CashFlowService, BalanceSheetService, AnalyticsService],
+  providers: [
+    PnlService,
+    CashFlowService,
+    BalanceSheetService,
+    AnalyticsService,
+  ],
   exports: [PnlService, CashFlowService, BalanceSheetService, AnalyticsService],
 })
 export class ReportsModule {}

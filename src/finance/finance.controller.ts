@@ -47,13 +47,13 @@ import {
   UpdateAssetDto,
   CreateLiabilityDto,
   UpdateLiabilityDto,
-  // CreateCategorizationRuleDto,
-  // UpdateCategorizationRuleDto,
+  CreateCategorizationRuleDto,
+  UpdateCategorizationRuleDto,
   CreateTransactionDto,
   AssetResponseDto,
   LiabilityResponseDto,
-  // CategorizationRuleResponseDto,
-  // RuleCreateResponseDto,
+  CategorizationRuleResponseDto,
+  RuleCreateResponseDto,
   TransactionResponseDto,
   ArchiveMessageResponseDto,
   CsvUploadResponseDto,
@@ -320,99 +320,99 @@ export class FinanceController {
 
   // --- Categorization Rules ---
 
-  // @Get('categorization-rules')
-  // @ApiOperation({
-  //   summary: "List categorization rules for the user's business",
-  // })
-  // @ApiResponse({
-  //   status: 200,
-  //   description: 'List of categorization rules',
-  //   type: [CategorizationRuleResponseDto],
-  // })
-  // async listRules(@Req() req: any) {
-  //   const businessId = await this.businessService.getBusinessIdForUser(
-  //     req.user.id,
-  //   );
-  //   return this.ruleRepository.find({
-  //     where: { businessId },
-  //     order: { priority: 'ASC' },
-  //   });
-  // }
+  @Get('categorization-rules')
+  @ApiOperation({
+    summary: "List categorization rules for the user's business",
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of categorization rules',
+    type: [CategorizationRuleResponseDto],
+  })
+  async listRules(@Req() req: any) {
+    const businessId = await this.businessService.getBusinessIdForUser(
+      req.user.id,
+    );
+    return this.ruleRepository.find({
+      where: { businessId },
+      order: { priority: 'ASC' },
+    });
+  }
 
-  // @Post('categorization-rules')
-  // @ApiOperation({ summary: 'Create a categorization rule' })
-  // @ApiResponse({
-  //   status: 201,
-  //   description: 'Rule created',
-  //   type: RuleCreateResponseDto,
-  // })
-  // @ApiResponse({
-  //   status: 400,
-  //   description: 'Validation error',
-  //   type: ErrorResponseDto,
-  // })
-  // async createRule(@Body() dto: CreateCategorizationRuleDto) {
-  //   const rule = this.ruleRepository.create(dto);
-  //   const savedRule = await this.ruleRepository.save(rule);
+  @Post('categorization-rules')
+  @ApiOperation({ summary: 'Create a categorization rule' })
+  @ApiResponse({
+    status: 201,
+    description: 'Rule created',
+    type: RuleCreateResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation error',
+    type: ErrorResponseDto,
+  })
+  async createRule(@Body() dto: CreateCategorizationRuleDto) {
+    const rule = this.ruleRepository.create(dto);
+    const savedRule = await this.ruleRepository.save(rule);
 
-  //   const affected =
-  //     await this.categorizationService.applyRuleRetroactively(savedRule);
-  //   this.logger.log(
-  //     `Rule ${savedRule.id} applied retroactively to ${affected} transactions`,
-  //   );
+    const affected =
+      await this.categorizationService.applyRuleRetroactively(savedRule);
+    this.logger.log(
+      `Rule ${savedRule.id} applied retroactively to ${affected} transactions`,
+    );
 
-  //   return { rule: savedRule, retroactivelyApplied: affected };
-  // }
+    return { rule: savedRule, retroactivelyApplied: affected };
+  }
 
-  // @Patch('categorization-rules/:id')
-  // @ApiOperation({ summary: 'Update a categorization rule' })
-  // @ApiResponse({
-  //   status: 200,
-  //   description: 'Rule updated',
-  //   type: CategorizationRuleResponseDto,
-  // })
-  // @ApiResponse({
-  //   status: 404,
-  //   description: 'Rule not found',
-  //   type: ErrorResponseDto,
-  // })
-  // @ApiResponse({
-  //   status: 400,
-  //   description: 'Validation error',
-  //   type: ErrorResponseDto,
-  // })
-  // async updateRule(
-  //   @Param('id', ParseUUIDPipe) id: string,
-  //   @Body() dto: UpdateCategorizationRuleDto,
-  // ) {
-  //   const rule = await this.ruleRepository.findOneBy({ id });
-  //   if (!rule) {
-  //     throw AppException.notFound('Rule not found', 'FINANCE_RULE_NOT_FOUND');
-  //   }
-  //   await this.ruleRepository.update(id, dto);
-  //   return this.ruleRepository.findOneBy({ id });
-  // }
+  @Patch('categorization-rules/:id')
+  @ApiOperation({ summary: 'Update a categorization rule' })
+  @ApiResponse({
+    status: 200,
+    description: 'Rule updated',
+    type: CategorizationRuleResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Rule not found',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation error',
+    type: ErrorResponseDto,
+  })
+  async updateRule(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateCategorizationRuleDto,
+  ) {
+    const rule = await this.ruleRepository.findOneBy({ id });
+    if (!rule) {
+      throw AppException.notFound('Rule not found', 'FINANCE_RULE_NOT_FOUND');
+    }
+    await this.ruleRepository.update(id, dto);
+    return this.ruleRepository.findOneBy({ id });
+  }
 
-  // @Delete('categorization-rules/:id')
-  // @ApiOperation({ summary: 'Deactivate a categorization rule' })
-  // @ApiResponse({
-  //   status: 200,
-  //   description: 'Rule deactivated',
-  //   type: ArchiveMessageResponseDto,
-  // })
-  // @ApiResponse({
-  //   status: 404,
-  //   description: 'Rule not found',
-  //   type: ErrorResponseDto,
-  // })
-  // async deactivateRule(@Param('id', ParseUUIDPipe) id: string) {
-  //   const rule = await this.ruleRepository.findOneBy({ id });
-  //   if (!rule) {
-  //     throw AppException.notFound('Rule not found', 'FINANCE_RULE_NOT_FOUND');
-  //   }
-  //   await this.ruleRepository.update(id, { isActive: false });
-  //   return { message: 'Rule deactivated' };
-  // }
+  @Delete('categorization-rules/:id')
+  @ApiOperation({ summary: 'Deactivate a categorization rule' })
+  @ApiResponse({
+    status: 200,
+    description: 'Rule deactivated',
+    type: ArchiveMessageResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Rule not found',
+    type: ErrorResponseDto,
+  })
+  async deactivateRule(@Param('id', ParseUUIDPipe) id: string) {
+    const rule = await this.ruleRepository.findOneBy({ id });
+    if (!rule) {
+      throw AppException.notFound('Rule not found', 'FINANCE_RULE_NOT_FOUND');
+    }
+    await this.ruleRepository.update(id, { isActive: false });
+    return { message: 'Rule deactivated' };
+  }
 
   // --- Transactions ---
 
@@ -525,7 +525,7 @@ export class FinanceController {
 
   @Post('transactions/retroactive-ai-sync')
   @ApiOperation({
-    summary: 'Retroactive AI categorisation sync',
+    summary: 'Initialize AI categorisation sync',
     description:
       'Runs AI prediction (+ direction fallback) over all uncategorised ' +
       'transactions for the current business, instantly populating reports.',

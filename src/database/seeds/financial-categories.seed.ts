@@ -23,17 +23,17 @@ export class FinancialCategoriesSeed {
 
     const categories = [
       {
-        name: 'Income (Profit Statement)',
+        name: 'Income',
         type: AccountCategoryType.INCOME,
         subs: ['Money from sales', 'Gifted money', 'Other money inflow'],
       },
       {
-        name: 'Selling/Production Cost (Profit Statement)',
+        name: 'Selling/Production Cost',
         type: AccountCategoryType.COGS,
         subs: ['Goods Purchased', 'Packaging Cost', 'Distribution Cost'],
       },
       {
-        name: 'Expenses (Profit Statement)',
+        name: 'Expenses',
         type: AccountCategoryType.EXPENSE,
         subs: [
           'Rent',

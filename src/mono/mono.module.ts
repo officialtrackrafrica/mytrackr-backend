@@ -11,10 +11,18 @@ import { FinanceModule } from '../finance/finance.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { CategorizationModule } from '../categorization/categorization.module';
 import { BusinessModule } from '../business/business.module';
+import { AccountCategory } from '../finance/entities/account-category.entity';
+import { AccountSubCategory } from '../finance/entities/account-subcategory.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, MonoAccount, Transaction]),
+    TypeOrmModule.forFeature([
+      User,
+      MonoAccount,
+      Transaction,
+      AccountCategory,
+      AccountSubCategory,
+    ]),
     FinanceModule,
     PaymentsModule,
     CategorizationModule,

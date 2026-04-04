@@ -35,7 +35,18 @@ export class Transaction {
   type: string;
 
   @Column({ nullable: true })
-  category: string;
+  category: string | null;
+
+  @Column({ nullable: true })
+  subCategory: string | null;
+
+  @Column({ nullable: true })
+  @Index('IDX_mono_tx_category_id')
+  categoryId: string | null;
+
+  @Column({ nullable: true })
+  @Index('IDX_mono_tx_subcategory_id')
+  subCategoryId: string | null;
 
   @Column({ nullable: true, type: 'varchar' })
   manualCategory: string | null;

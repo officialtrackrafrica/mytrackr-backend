@@ -8,5 +8,5 @@ export class ResendVerificationDto {
   })
   @IsString()
   @IsNotEmpty()
-  emailOrPhone: string;
+  email: string;
 }

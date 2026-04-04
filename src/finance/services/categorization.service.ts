@@ -107,9 +107,39 @@ export class CategorizationService {
 
       if (existing) {
         if (existing.businessId === (businessId || null)) {
+          // Already exists with the same business context.
+          // Check if it still needs categorisation (e.g. from a previous
+          // sync that failed AI / had no rules).
+          const full = await this.transactionRepository.findOneBy({
+            id: existing.id,
+          });
+          if (full && !full.isCategorised) {
+            tx = full;
+            // Re-run categorisation pipeline on this existing transaction
+            this.applyRules(tx, activeRules);
+            if (!tx.isCategorised) {
+              await this.applyAiPrediction(tx, dto.description, userId ?? '');
+            }
+            if (!tx.isCategorised) {
+              tx.category =
+                dto.direction === TransactionDirection.CREDIT
+                  ? TransactionCategory.INCOME
+                  : TransactionCategory.EXPENSE;
+              const cat = await this.categoryRepo.findOne({
+                where: { type: tx.category as any },
+              });
+              if (cat) tx.categoryId = cat.id;
+              tx.isCategorised = true;
+              this.logger.debug(
+                `Heuristic fallback applied to existing tx "${dto.description}": ${tx.category}`,
+              );
+            }
+            transactionsToUpdate.push(tx);
+          }
           continue;
         }
 
+        // Exists but with a different (or null) businessId → re-claim it
         tx = this.transactionRepository.create({
           id: existing.id,
           ...dto,
@@ -119,6 +149,7 @@ export class CategorizationService {
         });
         transactionsToUpdate.push(tx);
       } else {
+        // Brand-new transaction
         tx = this.transactionRepository.create({
           ...dto,
           businessId: businessId || undefined,
@@ -156,9 +187,6 @@ export class CategorizationService {
           `Heuristic fallback applied to "${dto.description}": ${tx.category}`,
         );
       }
-
-      transactionsToInsert.push(tx);
-      newTransactionsCount++;
     }
 
     if (transactionsToInsert.length > 0) {

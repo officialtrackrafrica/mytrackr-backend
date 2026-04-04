@@ -220,7 +220,7 @@ export class MonoController {
     return this.monoService.updateTransactionCategory(
       req.user.id,
       transactionId,
-      dto.category,
+      dto,
     );
   }
 

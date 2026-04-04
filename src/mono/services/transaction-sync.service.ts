@@ -9,6 +9,7 @@ import {
 } from '../../finance/services/categorization.service';
 import { TransactionDirection } from '../../finance/entities/transaction.entity';
 import { BankAccount } from '../../finance/entities/bank-account.entity';
+import { BusinessService } from '../../business/services/business.service';
 
 @Injectable()
 export class TransactionSyncService {
@@ -22,6 +23,7 @@ export class TransactionSyncService {
     @InjectRepository(BankAccount)
     private readonly bankAccountRepository: Repository<BankAccount>,
     private readonly categorizationService: CategorizationService,
+    private readonly businessService: BusinessService,
   ) {}
 
   async syncAccountTransactions(monoAccountId: string): Promise<{
@@ -40,8 +42,24 @@ export class TransactionSyncService {
       return { synced: 0, skipped: 'MonoAccount not found' };
     }
 
-    const businessId = monoAccount.businessId || null;
+    let businessId = monoAccount.businessId || null;
     const userId = monoAccount.user ? monoAccount.user.id : null;
+
+    // If the MonoAccount doesn't have an explicit businessId, resolve it
+    // from the user's business profile so transactions are tagged correctly
+    // for P&L and analytics reports.
+    if (!businessId && userId) {
+      try {
+        businessId = await this.businessService.getBusinessIdForUser(userId);
+        this.logger.log(
+          `Auto-resolved businessId=${businessId} from user ${userId} for MonoAccount ${monoAccountId}`,
+        );
+      } catch {
+        this.logger.warn(
+          `User ${userId} has no business profile — transactions will have null businessId`,
+        );
+      }
+    }
 
     // Use providerAccountId as a unique identifier for the lookup
     let bankAccount = await this.bankAccountRepository.findOne({

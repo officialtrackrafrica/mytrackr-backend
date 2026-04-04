@@ -10,8 +10,9 @@ import { ConfigService } from '@nestjs/config';
 import {
   InitiateAccountDto,
   ReauthAccountDto,
-} from './dto/initiate-account.dto';
-import { CreditworthinessDto } from './dto/creditworthiness.dto';
+  UpdateTransactionCategoryDto,
+  CreditworthinessDto,
+} from './dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThanOrEqual, MoreThanOrEqual, Between } from 'typeorm';
 import { MonoAccount } from './entities/mono-account.entity';
@@ -21,6 +22,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { AiCategorizationService } from '../categorization/categorization.service';
 import { TransactionSyncService } from './services/transaction-sync.service';
 import { BusinessService } from '../business/services/business.service';
+import { AccountCategory } from '../finance/entities/account-category.entity';
+import { AccountSubCategory } from '../finance/entities/account-subcategory.entity';
+import { Brackets } from 'typeorm';
 
 @Injectable()
 export class MonoService {
@@ -35,6 +39,10 @@ export class MonoService {
     private monoAccountRepository: Repository<MonoAccount>,
     @InjectRepository(Transaction)
     private transactionRepository: Repository<Transaction>,
+    @InjectRepository(AccountCategory)
+    private categoryRepo: Repository<AccountCategory>,
+    @InjectRepository(AccountSubCategory)
+    private subCategoryRepo: Repository<AccountSubCategory>,
     private readonly aiCategorizationService: AiCategorizationService,
     private readonly transactionSyncService: TransactionSyncService,
     private readonly businessService: BusinessService,
@@ -450,6 +458,7 @@ export class MonoService {
           amount: tx.amount,
           type: tx.type,
           category: finalCategory,
+          subCategory: tx.sub_category || null,
           categorySource: finalCategorySource,
           currency: tx.currency || 'NGN',
           balance: tx.balance,
@@ -469,6 +478,7 @@ export class MonoService {
           'amount',
           'type',
           'category',
+          'subCategory',
           'currency',
           'balance',
           'date',
@@ -595,8 +605,9 @@ export class MonoService {
   async updateTransactionCategory(
     userId: string,
     transactionId: string,
-    newCategory: string,
+    dto: UpdateTransactionCategoryDto,
   ) {
+    const newCategory = dto.category;
     const transaction = await this.transactionRepository.findOne({
       where: { id: transactionId },
       relations: ['monoAccount', 'monoAccount.user'],
@@ -612,8 +623,63 @@ export class MonoService {
       );
     }
 
+    const businessId = await this.businessService.getBusinessIdForUser(userId);
+
+    // Validate Category
+    const category = await this.categoryRepo
+      .createQueryBuilder('cat')
+      .where('cat.name = :name', { name: newCategory })
+      .andWhere(
+        new Brackets((qb) => {
+          qb.where('cat.isSystem = :isSystem', { isSystem: true });
+          if (businessId) {
+            qb.orWhere('cat.businessId = :businessId', { businessId });
+          }
+        }),
+      )
+      .getOne();
+
+    if (!category) {
+      throw new BadRequestException(
+        `Invalid category: ${newCategory}. Please select a valid category from your taxonomy.`,
+      );
+    }
+
+    // Validate Sub-Category if provided
+    let subCategoryId: string | null = null;
+    let subCategoryName: string | null = null;
+
+    if (dto.subCategory) {
+      const sub = await this.subCategoryRepo
+        .createQueryBuilder('sub')
+        .where('sub.name = :name', { name: dto.subCategory })
+        .andWhere('sub.categoryId = :categoryId', { categoryId: category.id })
+        .andWhere(
+          new Brackets((qb) => {
+            qb.where('sub.isSystem = :isSystem', { isSystem: true });
+            if (businessId) {
+              qb.orWhere('sub.businessId = :businessId', { businessId });
+            }
+          }),
+        )
+        .getOne();
+
+      if (!sub) {
+        throw new BadRequestException(
+          `Invalid sub-category "${dto.subCategory}" for category "${newCategory}".`,
+        );
+      }
+      subCategoryId = sub.id;
+      subCategoryName = sub.name;
+    }
+
     transaction.manualCategory = newCategory;
+    transaction.category = newCategory;
+    transaction.categoryId = category.id;
+    transaction.subCategory = subCategoryName;
+    transaction.subCategoryId = subCategoryId;
     transaction.categorySource = 'manual';
+
     await this.transactionRepository.save(transaction);
 
     if (transaction.monoAccount?.user?.id) {
@@ -630,8 +696,10 @@ export class MonoService {
 
     return {
       id: transaction.id,
-      category: transaction.manualCategory,
-      originalCategory: transaction.category,
+      category: transaction.category,
+      categoryId: transaction.categoryId,
+      subCategory: transaction.subCategory,
+      subCategoryId: transaction.subCategoryId,
       categorySource: transaction.categorySource,
     };
   }
@@ -653,12 +721,16 @@ export class MonoService {
     }
 
     transaction.manualCategory = null;
+    transaction.categoryId = null;
+    transaction.subCategory = null;
+    transaction.subCategoryId = null;
     transaction.categorySource = 'mono';
     await this.transactionRepository.save(transaction);
 
     return {
       id: transaction.id,
       category: transaction.category,
+      subCategory: transaction.subCategory,
       categorySource: transaction.categorySource,
     };
   }

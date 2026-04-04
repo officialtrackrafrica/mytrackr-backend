@@ -182,7 +182,7 @@ export class AuthController {
     @Body() dto: ResendVerificationDto,
   ): Promise<{ message: string }> {
     try {
-      return await this.authService.resendVerification(dto.emailOrPhone);
+      return await this.authService.resendVerification(dto.email);
     } catch (error) {
       if (error instanceof AuthError) {
         throw new HttpException(

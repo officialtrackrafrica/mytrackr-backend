@@ -29,7 +29,6 @@ import {
   RefreshDto,
   LoginResponseDto,
   RefreshResponseDto,
-  VerifyMfaDto,
   RegisterResponseDto,
   VerifyRegistrationDto,
   ResendVerificationDto,
@@ -307,6 +306,7 @@ export class AuthController {
     }
   }
 
+  /* MFA is disabled for now
   @Post('verify-mfa')
   @RateLimit({ windowMs: 60 * 60 * 1000, max: 100 })
   @Throttle({ default: { ttl: 60 * 60 * 1000, limit: 100 } })
@@ -319,7 +319,7 @@ export class AuthController {
   })
   @ApiResponse({ status: 401, description: 'Invalid MFA token' })
   async verifyMfa(
-    @Body() verifyMfaDto: VerifyMfaDto,
+    @Body() verifyMfaDto: any,
     @Res({ passthrough: true }) res: ExpressResponse,
   ): Promise<LoginResponseDto> {
     try {
@@ -353,6 +353,7 @@ export class AuthController {
       );
     }
   }
+  */
 
   @Post('refresh')
   @ApiOperation({ summary: 'Refresh access token using refresh token cookie' })

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, HttpStatus } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
@@ -7,7 +7,7 @@ import { User } from '../entities';
 import { Business } from '../../business/entities/business.entity';
 import { SessionService } from './session.service';
 import { RolesService } from './roles.service';
-import { MfaService } from './mfa.service';
+// import { MfaService } from './mfa.service';
 import { EncryptionService } from '../../security/encryption.service';
 import { StorageService } from '../../storage/storage.service';
 import { EmailService } from '../../email/email.service';
@@ -56,7 +56,7 @@ export class AuthService {
     private sessionService: SessionService,
     private encryptionService: EncryptionService,
     private rolesService: RolesService,
-    private mfaService: MfaService,
+    // private mfaService: MfaService,
     private storageService: StorageService,
     private emailService: EmailService,
   ) {}
@@ -139,6 +139,7 @@ export class AuthService {
       });
     }
 
+    /* MFA is disabled for now to fix startup issues
     if (user.securitySettings?.mfaEnabled) {
       const session = await this.sessionService.createSession(
         user.id,
@@ -150,6 +151,7 @@ export class AuthService {
         mfaSessionId: session.id,
       };
     }
+    */
 
     await this.sessionService.revokeAndBlacklistAllForUser(user.id);
 
@@ -705,37 +707,15 @@ export class AuthService {
     };
   }
 
-  async verifyMfaLogin(
-    sessionId: string,
-    token: string,
+  verifyMfaLogin(
+    _sessionId: string,
+    _token: string,
   ): Promise<LoginResponseDto> {
-    const session = await this.sessionService.getSession(sessionId);
-    if (!session) {
-      throw new AuthError('INVALID_SESSION', 'Invalid MFA session', 400);
-    }
-
-    const isValid = await this.mfaService.verifyToken(session.userId, token);
-    if (!isValid) {
-      throw new AuthError(
-        'INVALID_MFA_TOKEN',
-        'Invalid verification code',
-        401,
-      );
-    }
-
-    const tokens = await this.generateTokens(session.userId, session.id);
-
-    const user = await this.usersRepository.findOne({
-      where: { id: session.userId },
-    });
-
-    return {
-      requiresMFA: false,
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      user: user ? this.sanitizeUser(user) : undefined,
-      expiresIn: tokens.expiresIn,
-    };
+    throw new AuthError(
+      'MFA_DISABLED',
+      'MFA is currently disabled on the platform',
+      HttpStatus.NOT_IMPLEMENTED,
+    );
   }
 
   async blacklistToken(jti: string): Promise<void> {

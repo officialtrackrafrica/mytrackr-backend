@@ -106,18 +106,16 @@ export class CategorizationService {
       const existing = dto.externalId ? existingMap.get(dto.externalId) : null;
 
       if (existing) {
-        // If it already has the same businessId (or both are null), skip it
         if (existing.businessId === (businessId || null)) {
           continue;
         }
 
-        // If it exists but has no businessId and we now HAVE one, re-claim it
         tx = this.transactionRepository.create({
           id: existing.id,
           ...dto,
           businessId: businessId || undefined,
           userId: userId || undefined,
-          isCategorised: false, // Force re-categorization with new business context
+          isCategorised: false,
         });
         transactionsToUpdate.push(tx);
       } else {

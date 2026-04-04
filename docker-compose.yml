@@ -64,7 +64,8 @@ services:
 
   ocr-service:
     build:
-      context: ./ocr-service
+      context: .
+      dockerfile: ./ocr-service/Dockerfile
     container_name: mytrackr-ocr
     ports:
       - '127.0.0.1:8000:8000'

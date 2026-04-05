@@ -1,20 +1,20 @@
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsUUID } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateTransactionCategoryDto {
-  @ApiProperty({
-    description: 'The category to assign to this transaction',
-    example: 'Food & Dining',
+  @ApiPropertyOptional({
+    description: 'Category UUID from GET /finance/categories',
+    example: '350ff699-3246-45ca-ab04-77737f1464a3',
   })
-  @IsString()
-  @IsNotEmpty()
-  category: string;
+  @IsOptional()
+  @IsUUID()
+  categoryId?: string;
 
   @ApiPropertyOptional({
-    description: 'The sub-category to assign to this transaction',
-    example: 'Restaurants',
+    description: 'Sub-category UUID from GET /finance/categories',
+    example: '70995007-fd9e-4cbe-9645-da0ddb14b4dd',
   })
-  @IsString()
   @IsOptional()
-  subCategory?: string;
+  @IsUUID()
+  subCategoryId?: string;
 }

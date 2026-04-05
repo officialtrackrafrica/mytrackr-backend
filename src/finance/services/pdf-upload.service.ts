@@ -67,7 +67,6 @@ export class PdfUploadService {
       this.logger.warn(`Standard PDF extraction failed: ${err.message}`);
     }
 
-    // Fallback to OCR (Tesseract — lightweight) if no text extracted
     if (!text || text.trim().length === 0) {
       this.logger.log(
         'Fallback: Attempting OCR extraction via Tesseract service...',
@@ -124,81 +123,106 @@ export class PdfUploadService {
     };
   }
 
+  private pushAccessRow(
+    rows: ParsedRow[],
+    dateStr: string,
+    desc: string,
+    debitStr: string,
+    creditStr: string,
+  ) {
+    if (desc.includes('Opening Balance') || desc.includes('Closing Balance'))
+      return;
+    const dVal = debitStr === '-' ? 0 : this.parseAmount(debitStr);
+    const cVal = creditStr === '-' ? 0 : this.parseAmount(creditStr);
+
+    if (cVal > 0) {
+      rows.push({
+        date: this.formatDate(dateStr),
+        amount: cVal,
+        direction: TransactionDirection.CREDIT,
+        description: desc.trim(),
+      });
+    } else if (dVal > 0) {
+      rows.push({
+        date: this.formatDate(dateStr),
+        amount: dVal,
+        direction: TransactionDirection.DEBIT,
+        description: desc.trim(),
+        name: this.extractName(desc),
+      });
+    }
+  }
+
   /**
-   * Extract transaction rows using regex patterns.
+   * Extract transaction rows using single-line and multi-line state machines.
    */
   private extractTransactions(lines: string[]): ParsedRow[] {
     const rows: ParsedRow[] = [];
 
-    // Common patterns for Nigerian Banks (updated to handle optional trailing balances)
-
-    // 1. GTBank Sample: 10-MAR-2025 TRANS DESCRIPTION 5,000.00 0.00 45,000.00
-    // Matches: Date(DD-MMM-YYYY or DD MMM YY), Description, Debit, Credit, [Optional Balance]
+    // General patterns
     const gtPattern =
       /^(\d{1,2}[-\s][A-Za-z]{3}[-\s]\d{2,4})\s+(.+?)\s+([-\d,]+\.\d{2})\s+([-\d,]+\.\d{2})(?:\s+[-\d,]+\.\d{2})?(?:\s*(?:CR|DR))?\s*$/i;
-
-    // 2. Zenith/Access Sample: 10/03/2025 NARRATION 10,000.00 CR 45,000.00
-    // Matches: Date(DD/MM/YYYY), Description, Amount, [Optional CR/DR], [Optional Balance]
     const genericPattern =
       /^(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s+(.+?)\s+([-\d,]+\.\d{2})\s*(CR|DR)?(?:\s+[-\d,]+\.\d{2})?(?:\s*(?:CR|DR))?\s*$/i;
-
-    // 3. Another common format: 10-MAR-2025 DESCRIPTION 10,000.00 -5,000.00 (Amount + Balance)
     const dashPattern =
       /^(\d{1,2}[-\s][A-Za-z]{3}[-\s]\d{2,4})\s+(.+?)\s+([-\d,]+\.\d{2})(?:\s+[-\d,]+\.\d{2})?\s*$/i;
 
-    for (const line of lines) {
-      // Try GTBank pattern
-      const gtMatch = line.match(gtPattern);
-      if (gtMatch) {
-        const [, date, desc, debit, credit] = gtMatch;
-        const dVal = this.parseAmount(debit);
-        const cVal = this.parseAmount(credit);
+    // Access Bank Spaceless format
+    // Single line: Date[Date]Description[Debit][Credit][Balance]
+    const accessSingleLine =
+      /^(\d{1,2}-[A-Za-z]{3}-\d{2,4})(?:\d{1,2}-[A-Za-z]{3}-\d{2,4})?(.*?)([\d,]+\.\d{2}|-)([\d,]+\.\d{2}|-)([\d,]+\.\d{2}|-)$/i;
+    const accessDateStart =
+      /^(\d{1,2}-[A-Za-z]{3}-\d{2,4})(?:\d{1,2}-[A-Za-z]{3}-\d{2,4})?(.*)$/i;
+    const accessAmountsEnd =
+      /^([\d,]+\.\d{2}|-)([\d,]+\.\d{2}|-)([\d,]+\.\d{2}|-)$/;
 
-        if (cVal > 0) {
-          rows.push({
-            date: this.formatDate(date),
-            amount: cVal,
-            direction: TransactionDirection.CREDIT,
-            description: desc.trim(),
-          });
-        } else if (dVal > 0) {
-          rows.push({
-            date: this.formatDate(date),
-            amount: dVal,
-            direction: TransactionDirection.DEBIT,
-            description: desc.trim(),
-            name: this.extractName(desc),
-          });
-        }
+    let pendingTx: { date: string; description: string } | null = null;
+
+    for (const line of lines) {
+      if (
+        line.includes('Opening Balance') ||
+        line.includes('Closing Balance') ||
+        line.includes('Cleared Balance')
+      ) {
+        pendingTx = null;
         continue;
       }
 
-      // Try Generic pattern (Date Narration Amount CR/DR)
+      // Try well-spaced GTBank pattern
+      const gtMatch = line.match(gtPattern);
+      if (gtMatch) {
+        const [, date, desc, debit, credit] = gtMatch;
+        this.pushAccessRow(rows, date, desc, debit, credit);
+        pendingTx = null;
+        continue;
+      }
+
+      // Try Zenith/Generic
       const genMatch = line.match(genericPattern);
       if (genMatch) {
         const [, date, desc, amountStr, indicator] = genMatch;
         const amount = this.parseAmount(amountStr);
-        if (amount === 0) continue;
+        if (amount > 0) {
+          let direction = TransactionDirection.DEBIT;
+          if (indicator?.toUpperCase() === 'CR')
+            direction = TransactionDirection.CREDIT;
+          else if (indicator?.toUpperCase() === 'DR')
+            direction = TransactionDirection.DEBIT;
+          else {
+            direction = amountStr.includes('-')
+              ? TransactionDirection.DEBIT
+              : TransactionDirection.CREDIT;
+          }
 
-        let direction = TransactionDirection.DEBIT;
-        if (indicator?.toUpperCase() === 'CR') {
-          direction = TransactionDirection.CREDIT;
-        } else if (indicator?.toUpperCase() === 'DR') {
-          direction = TransactionDirection.DEBIT;
-        } else {
-          // If no indicator, assume negative amounts are DEBIT
-          direction = amountStr.includes('-')
-            ? TransactionDirection.DEBIT
-            : TransactionDirection.CREDIT;
+          rows.push({
+            date: this.formatDate(date),
+            amount: Math.abs(amount),
+            direction,
+            description: desc.trim(),
+            name: this.extractName(desc),
+          });
         }
-
-        rows.push({
-          date: this.formatDate(date),
-          amount: Math.abs(amount),
-          direction,
-          description: desc.trim(),
-          name: this.extractName(desc),
-        });
+        pendingTx = null;
         continue;
       }
 
@@ -207,18 +231,63 @@ export class PdfUploadService {
       if (dashMatch) {
         const [, date, desc, amountStr] = dashMatch;
         const amount = this.parseAmount(amountStr);
-        if (amount === 0) continue;
+        if (amount !== 0) {
+          rows.push({
+            date: this.formatDate(date),
+            amount: Math.abs(amount),
+            direction:
+              amount < 0
+                ? TransactionDirection.DEBIT
+                : TransactionDirection.CREDIT,
+            description: desc.trim(),
+            name: this.extractName(desc),
+          });
+        }
+        pendingTx = null;
+        continue;
+      }
 
-        rows.push({
-          date: this.formatDate(date),
-          amount: Math.abs(amount),
-          direction:
-            amount < 0
-              ? TransactionDirection.DEBIT
-              : TransactionDirection.CREDIT,
-          description: desc.trim(),
-          name: this.extractName(desc),
-        });
+      // Try Access Bank compressed single-line
+      const accessSingleMatch = line.match(accessSingleLine);
+      if (accessSingleMatch && accessSingleMatch[2].trim() !== '') {
+        this.pushAccessRow(
+          rows,
+          accessSingleMatch[1],
+          accessSingleMatch[2],
+          accessSingleMatch[3],
+          accessSingleMatch[4],
+        );
+        pendingTx = null;
+        continue;
+      }
+
+      // Multiline Logic: Start of new transaction
+      const dateStartMatch = line.match(accessDateStart);
+      if (dateStartMatch) {
+        pendingTx = {
+          date: dateStartMatch[1],
+          description: dateStartMatch[2].trim(),
+        };
+        continue;
+      }
+
+      // Multiline Logic: End of transaction (amounts block)
+      const amountsEndMatch = line.match(accessAmountsEnd);
+      if (amountsEndMatch && pendingTx) {
+        this.pushAccessRow(
+          rows,
+          pendingTx.date,
+          pendingTx.description,
+          amountsEndMatch[1],
+          amountsEndMatch[2],
+        );
+        pendingTx = null;
+        continue;
+      }
+
+      // Multiline Logic: Continuation of description
+      if (pendingTx) {
+        pendingTx.description += ' ' + line.trim();
       }
     }
 

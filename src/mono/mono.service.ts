@@ -608,7 +608,6 @@ export class MonoService {
     transactionId: string,
     dto: UpdateTransactionCategoryDto,
   ) {
-    const newCategory = dto.category;
     const transaction = await this.transactionRepository.findOne({
       where: { id: transactionId },
       relations: ['monoAccount', 'monoAccount.user'],
@@ -624,62 +623,45 @@ export class MonoService {
       );
     }
 
-    const businessId = await this.businessService.getBusinessIdForUser(userId);
+    let { categoryId, subCategoryId } = dto;
+    let category: string | undefined;
+    let subCategory: string | undefined;
 
-    // Validate Category
-    const category = await this.categoryRepo
-      .createQueryBuilder('cat')
-      .where('cat.name = :name', { name: newCategory })
-      .andWhere(
-        new Brackets((qb) => {
-          qb.where('cat.isSystem = :isSystem', { isSystem: true });
-          if (businessId) {
-            qb.orWhere('cat.businessId = :businessId', { businessId });
-          }
-        }),
-      )
-      .getOne();
+    if (categoryId) {
+      const cat = await this.categoryRepo.findOneBy({ id: categoryId });
+      if (!cat) {
+        throw new BadRequestException('Invalid categoryId');
+      }
+      category = cat.type;
+    }
 
-    if (!category) {
+    if (subCategoryId) {
+      const sub = await this.subCategoryRepo.findOne({
+        where: { id: subCategoryId },
+        relations: ['category'],
+      });
+      if (!sub) {
+        throw new BadRequestException('Invalid subCategoryId');
+      }
+      subCategory = sub.name;
+      if (!categoryId) {
+        categoryId = sub.category.id;
+        category = sub.category.type;
+      }
+    }
+
+    if (!category && !subCategory) {
       throw new BadRequestException(
-        `Invalid category: ${newCategory}. Please select a valid category from your taxonomy.`,
+        'You must provide at least a categoryId or subCategoryId',
       );
     }
 
-    // Validate Sub-Category if provided
-    let subCategoryId: string | null = null;
-    let subCategoryName: string | null = null;
-
-    if (dto.subCategory) {
-      const sub = await this.subCategoryRepo
-        .createQueryBuilder('sub')
-        .where('sub.name = :name', { name: dto.subCategory })
-        .andWhere('sub.categoryId = :categoryId', { categoryId: category.id })
-        .andWhere(
-          new Brackets((qb) => {
-            qb.where('sub.isSystem = :isSystem', { isSystem: true });
-            if (businessId) {
-              qb.orWhere('sub.businessId = :businessId', { businessId });
-            }
-          }),
-        )
-        .getOne();
-
-      if (!sub) {
-        throw new BadRequestException(
-          `Invalid sub-category "${dto.subCategory}" for category "${newCategory}".`,
-        );
-      }
-      subCategoryId = sub.id;
-      subCategoryName = sub.name;
-    }
-
-    transaction.manualCategory = newCategory;
-    transaction.manualSubCategory = subCategoryName;
-    transaction.category = newCategory;
-    transaction.categoryId = category.id;
-    transaction.subCategory = subCategoryName;
-    transaction.subCategoryId = subCategoryId;
+    transaction.manualCategory = category;
+    transaction.manualSubCategory = subCategory as any;
+    transaction.category = category;
+    transaction.categoryId = categoryId as any;
+    transaction.subCategory = subCategory as any;
+    transaction.subCategoryId = subCategoryId as any;
     transaction.isCategorised = true;
     transaction.categorySource = CategorySource.MANUAL;
 

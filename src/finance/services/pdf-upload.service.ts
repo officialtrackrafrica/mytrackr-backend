@@ -69,11 +69,15 @@ export class PdfUploadService {
 
     // Fallback to OCR (Tesseract — lightweight) if no text extracted
     if (!text || text.trim().length === 0) {
-      this.logger.log('Fallback: Attempting OCR extraction via Tesseract service...');
+      this.logger.log(
+        'Fallback: Attempting OCR extraction via Tesseract service...',
+      );
       text = await this.ocrService.extractTextFromPdf(fileBuffer);
 
       if (!text || text.trim().length === 0) {
-        this.logger.error('No text retrieved from either pdf-parse or Tesseract OCR.');
+        this.logger.error(
+          'No text retrieved from either pdf-parse or Tesseract OCR.',
+        );
         throw new BadRequestException(
           'PDF file appears to be empty or contains no extractable text. Please ensure it is a valid bank statement.',
         );
@@ -84,6 +88,13 @@ export class PdfUploadService {
     this.logger.log(
       `Success: PDF text retrieved (${usedOcr ? 'via OCR Service' : 'via pdf-parse'}) — ${text.length} characters found.`,
     );
+
+    // --- RAW TEXT LOGGING START ---
+    this.logger.log(`\n\n========== RAW PDF TEXT PREVIEW ==========`);
+    // Print the first 2000 characters to prevent buffer overflow, but show enough to debug
+    console.log(text.substring(0, 2000));
+    this.logger.log(`========== END RAW PDF TEXT PREVIEW ==========\n\n`);
+    // --- RAW TEXT LOGGING END ---
 
     const lines = text
       .split('\n')
@@ -119,18 +130,21 @@ export class PdfUploadService {
   private extractTransactions(lines: string[]): ParsedRow[] {
     const rows: ParsedRow[] = [];
 
-    // Common patterns for Nigerian Banks
+    // Common patterns for Nigerian Banks (updated to handle optional trailing balances)
+
     // 1. GTBank Sample: 10-MAR-2025 TRANS DESCRIPTION 5,000.00 0.00 45,000.00
+    // Matches: Date(DD-MMM-YYYY or DD MMM YY), Description, Debit, Credit, [Optional Balance]
     const gtPattern =
-      /^(\d{1,2}-[A-Za-z]{3}-\d{4})\s+(.+?)\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})$/;
+      /^(\d{1,2}[-\s][A-Za-z]{3}[-\s]\d{2,4})\s+(.+?)\s+([-\d,]+\.\d{2})\s+([-\d,]+\.\d{2})(?:\s+[-\d,]+\.\d{2})?(?:\s*(?:CR|DR))?\s*$/i;
 
-    // 2. Zenith/Access Sample: 10/03/2025 NARRATION 10,000.00 CR
+    // 2. Zenith/Access Sample: 10/03/2025 NARRATION 10,000.00 CR 45,000.00
+    // Matches: Date(DD/MM/YYYY), Description, Amount, [Optional CR/DR], [Optional Balance]
     const genericPattern =
-      /^(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s+(.+?)\s+([\d,]+\.\d{2})\s*(CR|DR)?$/i;
+      /^(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s+(.+?)\s+([-\d,]+\.\d{2})\s*(CR|DR)?(?:\s+[-\d,]+\.\d{2})?(?:\s*(?:CR|DR))?\s*$/i;
 
-    // 3. Another common format: 10-MAR-2025 DESCRIPTION 10,000.00 -5,000.00
+    // 3. Another common format: 10-MAR-2025 DESCRIPTION 10,000.00 -5,000.00 (Amount + Balance)
     const dashPattern =
-      /^(\d{1,2}-[A-Za-z]{3}-\d{4})\s+(.+?)\s+(-?[\d,]+\.\d{2})$/;
+      /^(\d{1,2}[-\s][A-Za-z]{3}[-\s]\d{2,4})\s+(.+?)\s+([-\d,]+\.\d{2})(?:\s+[-\d,]+\.\d{2})?\s*$/i;
 
     for (const line of lines) {
       // Try GTBank pattern

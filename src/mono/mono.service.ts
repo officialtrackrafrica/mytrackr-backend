@@ -25,7 +25,6 @@ import { BusinessService } from '../business/services/business.service';
 import { AccountCategory } from '../finance/entities/account-category.entity';
 import { AccountSubCategory } from '../finance/entities/account-subcategory.entity';
 import { CategorySource } from '../finance/entities/transaction.entity';
-import { Brackets } from 'typeorm';
 
 @Injectable()
 export class MonoService {
@@ -623,9 +622,10 @@ export class MonoService {
       );
     }
 
-    let { categoryId, subCategoryId } = dto;
-    let category: string | undefined;
-    let subCategory: string | undefined;
+    let categoryId = dto.categoryId;
+    const subCategoryId = dto.subCategoryId;
+    let category: string | null = null;
+    let subCategory: string | null = null;
 
     if (categoryId) {
       const cat = await this.categoryRepo.findOneBy({ id: categoryId });
@@ -657,21 +657,21 @@ export class MonoService {
     }
 
     transaction.manualCategory = category;
-    transaction.manualSubCategory = subCategory as any;
+    transaction.manualSubCategory = subCategory;
     transaction.category = category;
-    transaction.categoryId = categoryId as any;
-    transaction.subCategory = subCategory as any;
-    transaction.subCategoryId = subCategoryId as any;
+    transaction.categoryId = categoryId || null;
+    transaction.subCategory = subCategory;
+    transaction.subCategoryId = subCategoryId || null;
     transaction.isCategorised = true;
     transaction.categorySource = CategorySource.MANUAL;
 
     await this.transactionRepository.save(transaction);
 
-    if (transaction.monoAccount?.user?.id) {
+    if (transaction.monoAccount?.user?.id && category) {
       this.aiCategorizationService
         .learnFeedback(
           transaction.narration,
-          newCategory,
+          category,
           transaction.monoAccount.user.id,
         )
         .catch((err) =>

@@ -69,15 +69,11 @@ services:
     container_name: mytrackr-ocr
     ports:
       - '127.0.0.1:8000:8000'
-    environment:
-      - USE_GPU=false
-    volumes:
-      - ocr_models_data:/root/.paddleocr
     deploy:
       resources:
         limits:
-          memory: 4G
-          cpus: '1.0'
+          memory: 512M
+          cpus: '0.5'
 
   db:
     image: postgres:15-alpine
@@ -87,7 +83,7 @@ services:
       - POSTGRES_PASSWORD=${DATABASE_PASSWORD}
       - POSTGRES_DB=${DATABASE_NAME}
     ports:
-      - '127.0.0.1:5432:5432'
+      - '127.0.0.1:5436:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -121,4 +117,3 @@ volumes:
   postgres_data:
   redis_data:
   categorization_engine_data:
-  ocr_models_data:

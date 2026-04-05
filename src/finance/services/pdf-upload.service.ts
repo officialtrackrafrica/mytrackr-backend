@@ -67,15 +67,15 @@ export class PdfUploadService {
       this.logger.warn(`Standard PDF extraction failed: ${err.message}`);
     }
 
-    // Fallback to OCR if no text extracted
+    // Fallback to OCR (Tesseract — lightweight) if no text extracted
     if (!text || text.trim().length === 0) {
-      this.logger.log('Fallback: Attempting robust extraction via OCR service...');
+      this.logger.log('Fallback: Attempting OCR extraction via Tesseract service...');
       text = await this.ocrService.extractTextFromPdf(fileBuffer);
 
       if (!text || text.trim().length === 0) {
-        this.logger.error('Hybrid extraction failed: No text retrieved from either pdf-parse or OCR service.');
+        this.logger.error('No text retrieved from either pdf-parse or Tesseract OCR.');
         throw new BadRequestException(
-          'PDF file appears to be empty or contains no extractable text (even with OCR). Please ensure it is a valid bank statement.',
+          'PDF file appears to be empty or contains no extractable text. Please ensure it is a valid bank statement.',
         );
       }
       usedOcr = true;

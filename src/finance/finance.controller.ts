@@ -32,7 +32,9 @@ import { BusinessService } from '../business/services/business.service';
 import { Asset } from './entities/asset.entity';
 import { Liability, LiabilityStatus } from './entities/liability.entity';
 import { CategorizationRule } from './entities/categorization-rule.entity';
-import { Transaction } from './entities/transaction.entity';
+import { Transaction, CategorySource } from './entities/transaction.entity';
+import { AccountCategory } from './entities/account-category.entity';
+import { AccountSubCategory } from './entities/account-subcategory.entity';
 import { CategorizationService } from './services/categorization.service';
 import { CsvUploadService } from './services/csv-upload.service';
 import { PdfUploadService } from './services/pdf-upload.service';
@@ -41,7 +43,6 @@ import { PlanGuard } from '../common/access-control/guards/plan.guard';
 import { RequirePlan } from '../common/access-control/decorators/require-plan.decorator';
 import { SWAGGER_TAGS } from '../common/docs';
 import { AppException, ErrorResponseDto } from '../common/errors';
-import { PublicPlan } from '../common/access-control/decorators/public-plan.decorator';
 import {
   CreateAssetDto,
   UpdateAssetDto,
@@ -50,6 +51,7 @@ import {
   CreateCategorizationRuleDto,
   UpdateCategorizationRuleDto,
   CreateTransactionDto,
+  UpdateTransactionDto,
   AssetResponseDto,
   LiabilityResponseDto,
   CategorizationRuleResponseDto,
@@ -82,6 +84,10 @@ export class FinanceController {
     private readonly ruleRepository: Repository<CategorizationRule>,
     @InjectRepository(Transaction)
     private readonly transactionRepository: Repository<Transaction>,
+    @InjectRepository(AccountCategory)
+    private readonly categoryRepository: Repository<AccountCategory>,
+    @InjectRepository(AccountSubCategory)
+    private readonly subCategoryRepository: Repository<AccountSubCategory>,
     private readonly categorizationService: CategorizationService,
     private readonly bankAccountService: BankAccountService,
   ) {}
@@ -437,15 +443,145 @@ export class FinanceController {
       req.user.id,
     );
 
+    // Resolve category/subcategory UUIDs to string names
+    let category: string | undefined;
+    let subCategory: string | undefined;
+    let categoryId: string | undefined = dto.categoryId;
+    const subCategoryId: string | undefined = dto.subCategoryId;
+
+    if (dto.categoryId) {
+      const cat = await this.categoryRepository.findOneBy({
+        id: dto.categoryId,
+      });
+      if (!cat) {
+        throw AppException.badRequest(
+          'Invalid categoryId — use GET /finance/categories to find valid IDs.',
+          'FINANCE_INVALID_CATEGORY',
+        );
+      }
+      category = cat.type;
+    }
+
+    if (dto.subCategoryId) {
+      const sub = await this.subCategoryRepository.findOne({
+        where: { id: dto.subCategoryId },
+        relations: ['category'],
+      });
+      if (!sub) {
+        throw AppException.badRequest(
+          'Invalid subCategoryId — use GET /finance/categories to find valid IDs.',
+          'FINANCE_INVALID_SUBCATEGORY',
+        );
+      }
+      subCategory = sub.name;
+      // If no categoryId was provided, auto-fill from the subcategory's parent
+      if (!categoryId) {
+        categoryId = sub.category.id;
+        category = sub.category.type;
+      }
+    }
+
     const transaction = this.transactionRepository.create({
-      ...dto,
+      date: new Date(dto.date),
+      name: dto.name,
+      amount: dto.amount,
+      direction: dto.direction,
+      description: dto.description,
+      notes: dto.notes,
       businessId,
       userId: req.user.id,
-      date: new Date(dto.date),
-      isCategorised: !!dto.category,
+      categoryId,
+      subCategoryId,
+      category,
+      subCategory,
+      manualCategory: category,
+      manualSubCategory: subCategory,
+      categorySource: category ? CategorySource.MANUAL : undefined,
+      isCategorised: !!category,
       bankAccountId: dto.bankAccountId || undefined,
     });
     return this.transactionRepository.save(transaction);
+  }
+
+  @Patch('transactions/:id')
+  @ApiOperation({ summary: 'Update a transaction (manual categorization)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Transaction updated',
+    type: TransactionResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Transaction not found',
+    type: ErrorResponseDto,
+  })
+  async updateTransaction(
+    @Req() req: any,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateTransactionDto,
+  ) {
+    const businessId = await this.businessService.getBusinessIdForUser(
+      req.user.id,
+    );
+    const tx = await this.transactionRepository.findOneBy({ id, businessId });
+    if (!tx) {
+      throw AppException.notFound(
+        'Transaction not found',
+        'FINANCE_TRANSACTION_NOT_FOUND',
+      );
+    }
+
+    let categoryId = dto.categoryId;
+    const subCategoryId = dto.subCategoryId;
+    let category: string | undefined;
+    let subCategory: string | undefined;
+
+    if (categoryId) {
+      const cat = await this.categoryRepository.findOneBy({ id: categoryId });
+      if (!cat) {
+        throw AppException.badRequest(
+          'Invalid categoryId',
+          'FINANCE_INVALID_CATEGORY',
+        );
+      }
+      category = cat.type;
+    }
+
+    if (subCategoryId) {
+      const sub = await this.subCategoryRepository.findOne({
+        where: { id: subCategoryId },
+        relations: ['category'],
+      });
+      if (!sub) {
+        throw AppException.badRequest(
+          'Invalid subCategoryId',
+          'FINANCE_INVALID_SUBCATEGORY',
+        );
+      }
+      subCategory = sub.name;
+      if (!categoryId) {
+        categoryId = sub.category.id;
+        category = sub.category.type;
+      }
+    }
+
+    if (category && categoryId) {
+      tx.categoryId = categoryId as any;
+      tx.subCategoryId = subCategoryId as any;
+      tx.category = category;
+      tx.subCategory = subCategory as any;
+      tx.manualCategory = category;
+      tx.manualSubCategory = subCategory as any;
+      tx.categorySource = CategorySource.MANUAL;
+      tx.isCategorised = true;
+    }
+
+    if (dto.notes !== undefined) {
+      tx.notes = dto.notes;
+    }
+
+    await this.transactionRepository.save(tx);
+    return this.transactionRepository.findOneBy({ id });
   }
 
   @Get('transactions')
@@ -614,7 +750,9 @@ export class FinanceController {
   }
 
   @Post('transactions/upload-pdf')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10_000_000 } }))
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 10_000_000 } }),
+  )
   @ApiOperation({
     summary: 'Upload bank transactions via PDF',
     description:
@@ -640,10 +778,7 @@ export class FinanceController {
     description: 'Invalid PDF or no searchable text found',
     type: ErrorResponseDto,
   })
-  async uploadPdf(
-    @Req() req: any,
-    @UploadedFile() file: Express.Multer.File,
-  ) {
+  async uploadPdf(@Req() req: any, @UploadedFile() file: Express.Multer.File) {
     if (!file) {
       throw AppException.badRequest(
         'No file uploaded. Please attach a PDF file.',
@@ -674,7 +809,6 @@ export class FinanceController {
   }
 
   @Get('bank-accounts')
-  @PublicPlan()
   @ApiOperation({ summary: "List all bank accounts for the user's business" })
   @ApiResponse({
     status: 200,

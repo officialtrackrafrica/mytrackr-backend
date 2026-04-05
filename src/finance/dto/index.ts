@@ -5,6 +5,7 @@ import {
   IsNumber,
   IsDateString,
   IsBoolean,
+  IsUUID,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -226,15 +227,23 @@ export class CreateTransactionDto {
   @IsString()
   description: string;
 
-  @ApiPropertyOptional({ enum: TransactionCategory })
+  @ApiPropertyOptional({
+    description:
+      'Category UUID from GET /finance/categories (e.g. the ID for "Expenses")',
+    example: '71cc0462-9eef-471f-b8dd-61df76f281a2',
+  })
   @IsOptional()
-  @IsEnum(TransactionCategory)
-  category?: TransactionCategory;
+  @IsUUID()
+  categoryId?: string;
 
-  @ApiPropertyOptional({ example: 'Product Sales' })
+  @ApiPropertyOptional({
+    description:
+      'Sub-category UUID from GET /finance/categories (e.g. the ID for "Rent")',
+    example: 'a2b3c4d5-e6f7-8901-abcd-ef0123456789',
+  })
   @IsOptional()
-  @IsString()
-  subCategory?: string;
+  @IsUUID()
+  subCategoryId?: string;
 
   @ApiPropertyOptional({ example: 'Cash sale — not deposited to bank' })
   @IsOptional()
@@ -247,6 +256,27 @@ export class CreateTransactionDto {
   @IsOptional()
   @IsString()
   bankAccountId?: string;
+}
+
+export class UpdateTransactionDto {
+  @ApiPropertyOptional({
+    description: 'Category UUID from GET /finance/categories',
+  })
+  @IsOptional()
+  @IsUUID()
+  categoryId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Sub-category UUID from GET /finance/categories',
+  })
+  @IsOptional()
+  @IsUUID()
+  subCategoryId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }
 
 export class TransactionQueryDto {
@@ -357,6 +387,9 @@ export class TransactionResponseDto {
   @ApiPropertyOptional({ enum: TransactionCategory })
   category?: TransactionCategory;
   @ApiPropertyOptional() subCategory?: string;
+  @ApiPropertyOptional({ description: 'Category UUID' }) categoryId?: string;
+  @ApiPropertyOptional({ description: 'Sub-category UUID' })
+  subCategoryId?: string;
   @ApiPropertyOptional() monoCategory?: string;
   @ApiPropertyOptional() aiCategory?: string;
   @ApiPropertyOptional() manualCategory?: string;

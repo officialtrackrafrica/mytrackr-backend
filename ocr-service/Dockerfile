@@ -2,14 +2,12 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies including Tesseract OCR
 RUN apt-get update && apt-get install -y \
+    tesseract-ocr \
+    tesseract-ocr-eng \
     libgl1 \
     libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libgomp1 \
     procps \
     && rm -rf /var/lib/apt/lists/*
 
@@ -19,9 +17,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY ocr-service /app
-
-# Create directory for PaddleOCR models
-RUN mkdir -p /root/.paddleocr
 
 EXPOSE 8000
 

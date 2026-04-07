@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { v4 as uuidv4 } from 'uuid';
+import * as crypto from 'crypto';
 import { User } from '../entities';
 import { Business } from '../../business/entities/business.entity';
 import { SessionService } from './session.service';
@@ -60,6 +61,18 @@ export class AuthService {
     private storageService: StorageService,
     private emailService: EmailService,
   ) {}
+
+  private getRequiredEnv(name: string): string {
+    const value = process.env[name];
+    if (!value) {
+      throw new Error(`${name} must be configured`);
+    }
+    return value;
+  }
+
+  private hashResetCode(code: string): string {
+    return crypto.createHash('sha256').update(code).digest('hex');
+  }
 
   async loginWithEmail(
     loginDto: EmailLoginDto,
@@ -183,7 +196,7 @@ export class AuthService {
 
     try {
       payload = this.jwtService.verify<TokenPayload>(refreshToken, {
-        secret: process.env.JWT_REFRESH_SECRET,
+        secret: this.getRequiredEnv('JWT_REFRESH_SECRET'),
       });
     } catch {
       throw new AuthError('TOKEN_INVALID', 'Invalid refresh token');
@@ -268,12 +281,12 @@ export class AuthService {
     };
 
     const accessToken = this.jwtService.sign(accessTokenPayload, {
-      secret: process.env.JWT_ACCESS_SECRET,
+      secret: this.getRequiredEnv('JWT_ACCESS_SECRET'),
       expiresIn: '15m',
     });
 
     const refreshToken = this.jwtService.sign(refreshTokenPayload, {
-      secret: process.env.JWT_REFRESH_SECRET,
+      secret: this.getRequiredEnv('JWT_REFRESH_SECRET'),
       expiresIn: '7d',
     });
 
@@ -511,37 +524,39 @@ export class AuthService {
     const user = await this.usersRepository.findOne({ where: { email } });
 
     if (!user) {
-      return { message: 'If email exists, a reset link has been sent' };
+      return { message: 'If email exists, a password reset OTP has been sent' };
     }
 
-    const resetToken = uuidv4();
+    const resetToken = this.generateOTP();
     const resetExpires = new Date(Date.now() + 60 * 60 * 1000);
 
     await this.usersRepository.update(user.id, {
-      resetPasswordToken: resetToken,
+      resetPasswordToken: this.hashResetCode(resetToken),
       resetPasswordExpires: resetExpires,
     });
 
-    await this.emailService.sendPasswordResetEmail(
+    await this.emailService.sendPasswordResetOtpEmail(
       email,
       user.firstName,
-      `http://localhost:3000/reset-password?token=${resetToken}`,
+      resetToken,
     );
 
-    return { message: 'If email exists, a reset link has been sent' };
+    return { message: 'If email exists, a password reset OTP has been sent' };
   }
 
   async resetPassword(dto: ResetPasswordDto): Promise<{ message: string }> {
-    const { token, newPassword } = dto;
+    const { email, token, newPassword } = dto;
 
     const user = await this.usersRepository.findOne({
-      where: { resetPasswordToken: token },
+      where: { email },
     });
 
     if (
       !user ||
+      !user.resetPasswordToken ||
       !user.resetPasswordExpires ||
-      new Date() > user.resetPasswordExpires
+      new Date() > user.resetPasswordExpires ||
+      user.resetPasswordToken !== this.hashResetCode(token)
     ) {
       throw new AuthError(
         'INVALID_TOKEN',
@@ -720,6 +735,10 @@ export class AuthService {
 
   async blacklistToken(jti: string): Promise<void> {
     await this.sessionService.revokeToken(jti);
+  }
+
+  async logoutSession(sessionId: string): Promise<void> {
+    await this.sessionService.revokeSessionWithTokens(sessionId);
   }
 
   sanitizeUser(user: User): UserResponseDto {

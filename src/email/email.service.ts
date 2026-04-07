@@ -43,25 +43,25 @@ export class EmailService {
     }
   }
 
-  async sendPasswordResetEmail(
+  async sendPasswordResetOtpEmail(
     email: string,
     name: string | undefined,
-    resetLink: string,
+    otp: string,
   ) {
     try {
       await this.mailerService.sendMail({
         to: email,
-        subject: 'Reset Your MyTrackr Password',
-        template: './password-reset', // refers to password-reset.hbs
+        subject: 'Your MyTrackr Password Reset Code',
+        template: './otp',
         context: {
           name: name || 'User',
-          resetLink,
+          otp,
         },
       });
-      this.logger.debug(`Password reset email sent to ${email}`);
+      this.logger.debug(`Password reset OTP email sent to ${email}`);
     } catch (error: any) {
       this.logger.error(
-        `Failed to send password reset email to ${email}`,
+        `Failed to send password reset OTP email to ${email}`,
         error.stack,
       );
     }

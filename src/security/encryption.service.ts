@@ -11,7 +11,11 @@ export class EncryptionService {
   private readonly password: string;
 
   constructor() {
-    this.password = process.env.ENCRYPTION_PASSWORD || 'default_dev_password';
+    const password = process.env.ENCRYPTION_PASSWORD;
+    if (!password) {
+      throw new Error('ENCRYPTION_PASSWORD must be configured');
+    }
+    this.password = password;
   }
 
   private deriveKey(salt: Buffer): Buffer {

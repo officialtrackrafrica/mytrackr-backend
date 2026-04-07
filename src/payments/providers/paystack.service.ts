@@ -22,9 +22,6 @@ export class PaystackService implements IPaymentGateway {
       );
     }
     this.secretKey = key.trim();
-    this.logger.debug(
-      `PaystackService initialized. Key prefix: ${this.secretKey.substring(0, 7)}...`,
-    );
   }
 
   async initializePayment(payload: InitializePaymentDto): Promise<{
@@ -199,24 +196,31 @@ export class PaystackService implements IPaymentGateway {
     signatureHeader?: string,
     rawBody?: Buffer,
   ): Promise<PaymentWebhookEvent | null> {
-    if (signatureHeader) {
-      const dataToVerify = rawBody || JSON.stringify(payload);
-      const hash = crypto
-        .createHmac('sha512', this.secretKey)
-        .update(dataToVerify)
-        .digest('hex');
+    if (!signatureHeader) {
+      throw new HttpException(
+        'Missing webhook signature',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
 
-      if (hash !== signatureHeader) {
-        this.logger.error(`Invalid Paystack webhook signature detected.`);
-        this.logger.debug(`Received signature: ${signatureHeader}`);
-        this.logger.debug(`Calculated hash: ${hash}`);
-        this.logger.debug(`Raw body present: ${!!rawBody}`);
-        this.logger.debug(`Raw body length: ${rawBody?.length || 0}`);
-        throw new HttpException(
-          'Invalid webhook signature',
-          HttpStatus.UNAUTHORIZED,
-        );
-      }
+    const dataToVerify = rawBody || Buffer.from(JSON.stringify(payload));
+    const expectedHash = crypto
+      .createHmac('sha512', this.secretKey)
+      .update(dataToVerify)
+      .digest('hex');
+
+    const received = Buffer.from(signatureHeader, 'utf8');
+    const expected = Buffer.from(expectedHash, 'utf8');
+
+    if (
+      received.length !== expected.length ||
+      !crypto.timingSafeEqual(received, expected)
+    ) {
+      this.logger.error(`Invalid Paystack webhook signature detected.`);
+      throw new HttpException(
+        'Invalid webhook signature',
+        HttpStatus.UNAUTHORIZED,
+      );
     }
 
     await Promise.resolve();

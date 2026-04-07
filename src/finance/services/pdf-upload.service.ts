@@ -88,13 +88,6 @@ export class PdfUploadService {
       `Success: PDF text retrieved (${usedOcr ? 'via OCR Service' : 'via pdf-parse'}) — ${text.length} characters found.`,
     );
 
-    // --- RAW TEXT LOGGING START ---
-    this.logger.log(`\n\n========== RAW PDF TEXT PREVIEW ==========`);
-    // Print the first 2000 characters to prevent buffer overflow, but show enough to debug
-    console.log(text.substring(0, 2000));
-    this.logger.log(`========== END RAW PDF TEXT PREVIEW ==========\n\n`);
-    // --- RAW TEXT LOGGING END ---
-
     const lines = text
       .split('\n')
       .map((l: string) => l.trim())

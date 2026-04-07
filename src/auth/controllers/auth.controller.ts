@@ -205,12 +205,15 @@ export class AuthController {
   @RateLimit({ windowMs: 60 * 60 * 1000, max: 100 })
   @Throttle({ default: { ttl: 60 * 60 * 1000, limit: 100 } })
   @ApiOperation({
-    summary: 'Request password reset — magic link sent to email',
+    summary: 'Request password reset OTP',
     description:
-      'Sends a magic link to the provided email. The link contains a `token` query param to use with `POST /auth/reset-password`.',
+      'Sends a 6-digit OTP to the provided email if the account exists.',
   })
   @ApiBody({ type: ForgotPasswordDto })
-  @ApiResponse({ status: 200, description: 'Reset link sent if email exists' })
+  @ApiResponse({
+    status: 200,
+    description: 'Password reset OTP sent if email exists',
+  })
   async forgotPassword(
     @Body() dto: ForgotPasswordDto,
   ): Promise<{ message: string }> {
@@ -222,13 +225,13 @@ export class AuthController {
   @RateLimit({ windowMs: 60 * 60 * 1000, max: 100 })
   @Throttle({ default: { ttl: 60 * 60 * 1000, limit: 100 } })
   @ApiOperation({
-    summary: 'Reset password using magic link token',
+    summary: 'Reset password using emailed OTP',
     description:
-      'Pass the `token` from the magic link email plus the new password. All existing sessions are revoked after reset.',
+      'Pass the email, 6-digit OTP, and new password. All existing sessions are revoked after reset.',
   })
   @ApiBody({ type: ResetPasswordDto })
   @ApiResponse({ status: 200, description: 'Password reset successfully' })
-  @ApiResponse({ status: 400, description: 'Invalid or expired token' })
+  @ApiResponse({ status: 400, description: 'Invalid or expired OTP' })
   async resetPassword(
     @Body() dto: ResetPasswordDto,
   ): Promise<{ message: string }> {
@@ -410,7 +413,10 @@ export class AuthController {
     @Res({ passthrough: true }) res: ExpressResponse,
   ): Promise<{ message: string }> {
     const jti: string | undefined = req.user?.accessJti;
-    if (jti) {
+    const sessionId: string | undefined = req.user?.sessionId;
+    if (sessionId) {
+      await this.authService.logoutSession(sessionId);
+    } else if (jti) {
       await this.authService.blacklistToken(jti);
     }
     clearCookies(res);

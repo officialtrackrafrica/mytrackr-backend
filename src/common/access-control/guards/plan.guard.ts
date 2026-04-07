@@ -32,7 +32,13 @@ export class PlanGuard implements CanActivate {
       throw new ForbiddenException('User not authenticated');
     }
 
-    if (user.role?.name === 'Super Admin' || user.role?.name === 'Admin') {
+    if (
+      Array.isArray(user.roles) &&
+      user.roles.some(
+        (role: { name?: string }) =>
+          role.name === 'Super Admin' || role.name === 'Admin',
+      )
+    ) {
       return true;
     }
 

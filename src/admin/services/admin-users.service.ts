@@ -1,11 +1,12 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, ILike, In } from 'typeorm';
+import { Repository } from 'typeorm';
 import { User } from '../../auth/entities/user.entity';
 import { Session } from '../../auth/entities/session.entity';
 import { Role } from '../../auth/entities/role.entity';
 import { EncryptionService } from '../../security/encryption.service';
 import { AdminQueryDto } from '../dto';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class AdminUsersService {
@@ -20,6 +21,14 @@ export class AdminUsersService {
     private readonly rolesRepository: Repository<Role>,
     private readonly encryptionService: EncryptionService,
   ) {}
+
+  private generateOtp(): string {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  }
+
+  private hashResetCode(code: string): string {
+    return crypto.createHash('sha256').update(code).digest('hex');
+  }
 
   async updateUserStatus(
     userId: string,
@@ -61,12 +70,10 @@ export class AdminUsersService {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    const resetToken =
-      Math.random().toString(36).substring(2, 15) +
-      Math.random().toString(36).substring(2, 15);
+    const resetToken = this.generateOtp();
     const resetExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-    user.resetPasswordToken = resetToken;
+    user.resetPasswordToken = this.hashResetCode(resetToken);
     user.resetPasswordExpires = resetExpires;
     await this.usersRepository.save(user);
 

@@ -12,6 +12,7 @@ interface DeviceInfo {
 }
 
 const ACCESS_TTL = 15 * 60;
+const REFRESH_TTL = 7 * 24 * 60 * 60;
 
 @Injectable()
 export class SessionService {
@@ -58,14 +59,7 @@ export class SessionService {
   }
 
   async revokeSession(sessionId: string): Promise<void> {
-    await this.sessionRepository.update(sessionId, {
-      revokedAt: new Date(),
-    });
-
-    await this.revokedTokenRepository.update(
-      { sessionId, revokedAt: IsNull() },
-      { revokedAt: new Date() },
-    );
+    await this.revokeSessionWithTokens(sessionId);
   }
 
   async revokeAllUserSessions(userId: string): Promise<void> {
@@ -101,22 +95,36 @@ export class SessionService {
     await this.tokenBlacklist.blacklist(jti, ACCESS_TTL);
   }
 
+  async revokeTokenWithTtl(jti: string, ttl: number): Promise<void> {
+    await this.revokedTokenRepository.update(
+      { jti },
+      { revokedAt: new Date() },
+    );
+
+    await this.tokenBlacklist.blacklist(jti, ttl);
+  }
+
+  async revokeSessionWithTokens(sessionId: string): Promise<void> {
+    const activeTokens = await this.revokedTokenRepository.find({
+      where: { sessionId, revokedAt: IsNull() },
+    });
+
+    for (const token of activeTokens) {
+      await this.revokeTokenWithTtl(token.jti, REFRESH_TTL);
+    }
+
+    await this.sessionRepository.update(sessionId, {
+      revokedAt: new Date(),
+    });
+  }
+
   async revokeAndBlacklistAllForUser(userId: string): Promise<void> {
     const activeTokens = await this.revokedTokenRepository.find({
       where: { userId, revokedAt: IsNull() },
     });
 
-    const jtis = activeTokens.map((t) => t.jti);
-
-    await this.tokenBlacklist.blacklistMany(jtis, ACCESS_TTL);
-
-    if (activeTokens.length) {
-      for (const token of activeTokens) {
-        await this.revokedTokenRepository.update(
-          { jti: token.jti },
-          { revokedAt: new Date() },
-        );
-      }
+    for (const token of activeTokens) {
+      await this.revokeTokenWithTtl(token.jti, REFRESH_TTL);
     }
 
     await this.revokeAllUserSessions(userId);

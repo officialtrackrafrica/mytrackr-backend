@@ -25,6 +25,14 @@ import { CaslModule } from '../casl/casl.module';
 import { RedisModule, TokenBlacklistService } from '../common/redis';
 import { StorageModule } from '../storage/storage.module';
 
+function requiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} must be configured`);
+  }
+  return value;
+}
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -37,7 +45,7 @@ import { StorageModule } from '../storage/storage.module';
     ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.register({
-      secret: process.env.JWT_ACCESS_SECRET || 'dev_access_secret',
+      secret: requiredEnv('JWT_ACCESS_SECRET'),
       signOptions: { expiresIn: '15m' },
     }),
     SecurityModule,

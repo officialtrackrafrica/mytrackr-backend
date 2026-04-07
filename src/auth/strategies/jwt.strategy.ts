@@ -38,7 +38,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         return ExtractJwt.fromAuthHeaderAsBearerToken()(req);
       },
       ignoreExpiration: false,
-      secretOrKey: process.env.JWT_ACCESS_SECRET || 'dev_access_secret',
+      secretOrKey: (() => {
+        const secret = process.env.JWT_ACCESS_SECRET;
+        if (!secret) {
+          throw new Error('JWT_ACCESS_SECRET must be configured');
+        }
+        return secret;
+      })(),
       passReqToCallback: false,
     });
   }

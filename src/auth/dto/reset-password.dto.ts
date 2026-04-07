@@ -1,4 +1,5 @@
 import {
+  IsEmail,
   IsString,
   IsNotEmpty,
   MinLength,
@@ -10,11 +11,21 @@ import { PASSWORD_REGEX, PASSWORD_MESSAGE } from './email-login.dto';
 
 export class ResetPasswordDto {
   @ApiProperty({
-    description: 'Reset token received via email',
-    example: 'abc-123-def',
+    description: 'Email address that requested the password reset OTP',
+    example: 'user@example.com',
+  })
+  @IsEmail()
+  @IsNotEmpty({ message: 'Email is required' })
+  email: string;
+
+  @ApiProperty({
+    description: '6-digit password reset OTP received via email',
+    example: '123456',
   })
   @IsString()
-  @IsNotEmpty({ message: 'Reset token is required' })
+  @IsNotEmpty({ message: 'Reset OTP is required' })
+  @MinLength(6)
+  @MaxLength(6)
   token: string;
 
   @ApiProperty({

@@ -56,7 +56,7 @@ export class CategorizationService {
    * Main ingestion pipeline.
    *
    * Order of priority for each transaction:
-   *  1. User-defined CategorizationRules  (highest trust — explicit)
+   *  1. System-defined categorization rules
    *  2. AI prediction with confidence > 80%  (auto-applied)
    *  3. Direction-based heuristic fallback  (credit=INCOME, debit=EXPENSE)
    *
@@ -69,14 +69,10 @@ export class CategorizationService {
     dtos: RawTransactionDto[],
   ): Promise<number> {
     let newTransactionsCount = 0;
-    let activeRules: CategorizationRule[] = [];
-
-    if (businessId) {
-      activeRules = await this.ruleRepository.find({
-        where: { businessId, isActive: true },
-        order: { priority: 'ASC' },
-      });
-    }
+    const activeRules = await this.ruleRepository.find({
+      where: { isSystem: true, isActive: true },
+      order: { priority: 'ASC' },
+    });
 
     // Dedup: skip transactions already stored
     const dedupExternalIds = dtos
@@ -394,7 +390,7 @@ export class CategorizationService {
 
   /**
    * Returns a hierarchical list of account categories and their sub-categories.
-   * Includes all system-default categories and any business-specific overrides/additions.
+   * Includes all system-default categories.
    */
   async listCategories(businessId?: string): Promise<AccountCategory[]> {
     const query = this.categoryRepo
@@ -527,8 +523,13 @@ export class CategorizationService {
   async applyRuleRetroactively(rule: CategorizationRule): Promise<number> {
     let query = this.transactionRepository
       .createQueryBuilder('tx')
-      .where('tx.businessId = :businessId', { businessId: rule.businessId })
-      .andWhere('tx.isCategorised = :isCat', { isCat: false });
+      .where('tx.isCategorised = :isCat', { isCat: false });
+
+    if (rule.businessId) {
+      query = query.andWhere('tx.businessId = :businessId', {
+        businessId: rule.businessId,
+      });
+    }
 
     const descLower = rule.matchValue.toLowerCase();
     if (rule.matchType === MatchType.CONTAINS) {

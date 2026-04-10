@@ -22,7 +22,7 @@ export const SWAGGER_TAGS = [
   {
     name: '5. Finance',
     description:
-      'Assets, liabilities, categorization rules, and manual transactions',
+      'Assets, liabilities, system categorization, and manual transactions',
   },
   {
     name: '6. Tax',

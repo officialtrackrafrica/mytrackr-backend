@@ -21,6 +21,9 @@ export class CategorizationRule {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Column({ default: true })
+  isSystem: boolean;
+
   @Column({ type: 'enum', enum: MatchType })
   matchType: MatchType;
 
@@ -43,8 +46,8 @@ export class CategorizationRule {
   @JoinColumn({ name: 'businessId' })
   business: Business;
 
-  @Column()
-  businessId: string;
+  @Column({ nullable: true })
+  businessId: string | null;
 
   @CreateDateColumn()
   createdAt: Date;

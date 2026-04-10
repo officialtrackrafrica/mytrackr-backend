@@ -11,8 +11,8 @@ import {
   UseInterceptors,
   UploadedFile,
   ParseUUIDPipe,
-  Logger,
   Req,
+  Logger,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -31,7 +31,6 @@ import { JwtAuthGuard } from '../auth/guards';
 import { BusinessService } from '../business/services/business.service';
 import { Asset } from './entities/asset.entity';
 import { Liability, LiabilityStatus } from './entities/liability.entity';
-import { CategorizationRule } from './entities/categorization-rule.entity';
 import { Transaction, CategorySource } from './entities/transaction.entity';
 import { AccountCategory } from './entities/account-category.entity';
 import { AccountSubCategory } from './entities/account-subcategory.entity';
@@ -48,14 +47,10 @@ import {
   UpdateAssetDto,
   CreateLiabilityDto,
   UpdateLiabilityDto,
-  CreateCategorizationRuleDto,
-  UpdateCategorizationRuleDto,
   CreateTransactionDto,
   UpdateTransactionDto,
   AssetResponseDto,
   LiabilityResponseDto,
-  CategorizationRuleResponseDto,
-  RuleCreateResponseDto,
   TransactionResponseDto,
   ArchiveMessageResponseDto,
   CsvUploadResponseDto,
@@ -80,8 +75,6 @@ export class FinanceController {
     private readonly assetRepository: Repository<Asset>,
     @InjectRepository(Liability)
     private readonly liabilityRepository: Repository<Liability>,
-    @InjectRepository(CategorizationRule)
-    private readonly ruleRepository: Repository<CategorizationRule>,
     @InjectRepository(Transaction)
     private readonly transactionRepository: Repository<Transaction>,
     @InjectRepository(AccountCategory)
@@ -286,8 +279,7 @@ export class FinanceController {
   @ApiOperation({
     summary: 'List all financial categories and subtypes',
     description:
-      'Returns a hierarchical list of system-default and business-specific categories ' +
-      'used for transaction classification.',
+      'Returns a hierarchical list of system-default categories used for transaction classification.',
   })
   @ApiResponse({
     status: 200,
@@ -322,102 +314,6 @@ export class FinanceController {
       businessId,
       req.user.id,
     );
-  }
-
-  // --- Categorization Rules ---
-
-  @Get('categorization-rules')
-  @ApiOperation({
-    summary: "List categorization rules for the user's business",
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'List of categorization rules',
-    type: [CategorizationRuleResponseDto],
-  })
-  async listRules(@Req() req: any) {
-    const businessId = await this.businessService.getBusinessIdForUser(
-      req.user.id,
-    );
-    return this.ruleRepository.find({
-      where: { businessId },
-      order: { priority: 'ASC' },
-    });
-  }
-
-  @Post('categorization-rules')
-  @ApiOperation({ summary: 'Create a categorization rule' })
-  @ApiResponse({
-    status: 201,
-    description: 'Rule created',
-    type: RuleCreateResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Validation error',
-    type: ErrorResponseDto,
-  })
-  async createRule(@Body() dto: CreateCategorizationRuleDto) {
-    const rule = this.ruleRepository.create(dto);
-    const savedRule = await this.ruleRepository.save(rule);
-
-    const affected =
-      await this.categorizationService.applyRuleRetroactively(savedRule);
-    this.logger.log(
-      `Rule ${savedRule.id} applied retroactively to ${affected} transactions`,
-    );
-
-    return { rule: savedRule, retroactivelyApplied: affected };
-  }
-
-  @Patch('categorization-rules/:id')
-  @ApiOperation({ summary: 'Update a categorization rule' })
-  @ApiResponse({
-    status: 200,
-    description: 'Rule updated',
-    type: CategorizationRuleResponseDto,
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Rule not found',
-    type: ErrorResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Validation error',
-    type: ErrorResponseDto,
-  })
-  async updateRule(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateCategorizationRuleDto,
-  ) {
-    const rule = await this.ruleRepository.findOneBy({ id });
-    if (!rule) {
-      throw AppException.notFound('Rule not found', 'FINANCE_RULE_NOT_FOUND');
-    }
-    await this.ruleRepository.update(id, dto);
-    return this.ruleRepository.findOneBy({ id });
-  }
-
-  @Delete('categorization-rules/:id')
-  @ApiOperation({ summary: 'Deactivate a categorization rule' })
-  @ApiResponse({
-    status: 200,
-    description: 'Rule deactivated',
-    type: ArchiveMessageResponseDto,
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Rule not found',
-    type: ErrorResponseDto,
-  })
-  async deactivateRule(@Param('id', ParseUUIDPipe) id: string) {
-    const rule = await this.ruleRepository.findOneBy({ id });
-    if (!rule) {
-      throw AppException.notFound('Rule not found', 'FINANCE_RULE_NOT_FOUND');
-    }
-    await this.ruleRepository.update(id, { isActive: false });
-    return { message: 'Rule deactivated' };
   }
 
   // --- Transactions ---

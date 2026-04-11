@@ -273,6 +273,79 @@ export class UpdateTicketDto {
   priority?: string;
 }
 
+export class CreateSupportTicketDto {
+  @ApiProperty({ description: 'Support ticket title' })
+  @IsString()
+  title: string;
+
+  @ApiProperty({ description: 'Support ticket description' })
+  @IsString()
+  description: string;
+}
+
+export class CreateSupportTicketUploadDto extends CreateSupportTicketDto {
+  @ApiPropertyOptional({
+    type: 'string',
+    format: 'binary',
+    description: 'Optional ticket attachment file',
+  })
+  @IsOptional()
+  attachment?: any;
+}
+
+export class UserSupportTicketQueryDto {
+  @ApiPropertyOptional({
+    enum: ['open', 'in_progress', 'resolved', 'closed'],
+  })
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @ApiPropertyOptional({ default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ default: 20 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(100)
+  limit?: number = 20;
+}
+
+export class SupportTicketResponseDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  title: string;
+
+  @ApiProperty()
+  description: string;
+
+  @ApiPropertyOptional()
+  attachmentUrl?: string;
+
+  @ApiProperty()
+  status: string;
+
+  @ApiProperty()
+  priority: string;
+
+  @ApiPropertyOptional()
+  resolution?: string;
+
+  @ApiProperty()
+  createdAt: Date;
+
+  @ApiProperty()
+  updatedAt: Date;
+}
+
 export class ResolveDisputeDto {
   @ApiProperty({ description: 'Resolution description' })
   @IsString()

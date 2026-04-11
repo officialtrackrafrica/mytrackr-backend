@@ -9,6 +9,7 @@ import { Dispute } from '../entities/dispute.entity';
 import { WebhookLog } from '../entities/webhook-log.entity';
 import { DataSource } from 'typeorm';
 import Redis from 'ioredis';
+import { StorageService } from '../../storage/storage.service';
 import {
   TicketQueryDto,
   DisputeQueryDto,
@@ -17,6 +18,8 @@ import {
   UpdateNotificationTemplateDto,
   UpdateTicketDto,
   ResolveDisputeDto,
+  CreateSupportTicketDto,
+  UserSupportTicketQueryDto,
 } from '../dto';
 
 @Injectable()
@@ -37,6 +40,7 @@ export class AdminSystemService {
     private readonly webhookLogRepository: Repository<WebhookLog>,
     private readonly configService: ConfigService,
     private readonly dataSource: DataSource,
+    private readonly storageService: StorageService,
   ) {
     this.initRedis();
   }
@@ -175,6 +179,60 @@ export class AdminSystemService {
 
     return {
       tickets,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async createUserSupportTicket(
+    userId: string,
+    dto: CreateSupportTicketDto,
+    attachment?: any,
+  ) {
+    let attachmentUrl: string | undefined;
+    if (attachment) {
+      attachmentUrl = await this.storageService.uploadFile(
+        attachment,
+        'support-tickets',
+      );
+    }
+
+    const ticket = this.ticketsRepository.create({
+      userId,
+      subject: dto.title,
+      description: dto.description,
+      attachmentUrl,
+      status: 'open',
+      priority: 'medium',
+    });
+
+    const saved = await this.ticketsRepository.save(ticket);
+    return this.mapSupportTicket(saved);
+  }
+
+  async getUserSupportTickets(userId: string, query: UserSupportTicketQueryDto) {
+    const { status, page = 1, limit = 20 } = query;
+    const skip = (page - 1) * limit;
+
+    const qb = this.ticketsRepository
+      .createQueryBuilder('ticket')
+      .where('ticket.userId = :userId', { userId })
+      .orderBy('ticket.createdAt', 'DESC')
+      .skip(skip)
+      .take(limit);
+
+    if (status) {
+      qb.andWhere('ticket.status = :status', { status });
+    }
+
+    const [tickets, total] = await qb.getManyAndCount();
+
+    return {
+      tickets: tickets.map((ticket) => this.mapSupportTicket(ticket)),
       pagination: {
         total,
         page,
@@ -400,5 +458,19 @@ export class AdminSystemService {
     }
 
     return { message: 'No cache to clear (Redis not available)' };
+  }
+
+  private mapSupportTicket(ticket: SupportTicket) {
+    return {
+      id: ticket.id,
+      title: ticket.subject,
+      description: ticket.description,
+      attachmentUrl: ticket.attachmentUrl || undefined,
+      status: ticket.status,
+      priority: ticket.priority,
+      resolution: ticket.resolution || undefined,
+      createdAt: ticket.createdAt,
+      updatedAt: ticket.updatedAt,
+    };
   }
 }

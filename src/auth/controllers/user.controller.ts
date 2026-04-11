@@ -45,6 +45,9 @@ interface AuthenticatedRequest {
   };
 }
 
+const MAX_PROFILE_PICTURE_WIDTH = 800;
+const MAX_PROFILE_PICTURE_HEIGHT = 400;
+
 @ApiTags(SWAGGER_TAGS[3].name)
 @Controller('users')
 @UseGuards(JwtAuthGuard, PoliciesGuard)
@@ -90,15 +93,12 @@ export class UserController {
     @Request() req: AuthenticatedRequest,
     @Body() updateDto: UpdateProfileDto,
   ): Promise<UserResponseDto> {
-    const { firstName, lastName, professionalTitle, country, timezone, bio } =
-      updateDto;
+    const { firstName, lastName, country, timezone } = updateDto;
     const safeUpdate: any = {
       firstName,
       lastName,
-      professionalTitle,
       country,
       timezone,
-      bio,
     };
 
     Object.keys(safeUpdate).forEach((key) => {
@@ -151,7 +151,7 @@ export class UserController {
   @ApiOperation({ summary: 'Upload profile picture' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
-    description: 'Profile picture file',
+    description: 'Profile picture file (max 800x400 pixels)',
     type: UploadProfilePictureDto,
   })
   @ApiResponse({
@@ -169,6 +169,24 @@ export class UserController {
       throw new HttpException('No file provided', HttpStatus.BAD_REQUEST);
     }
 
+    const dimensions = this.getImageDimensions(file);
+    if (!dimensions) {
+      throw new HttpException(
+        'Unsupported image format. Please upload a PNG, JPEG, GIF, or WebP image.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    if (
+      dimensions.width > MAX_PROFILE_PICTURE_WIDTH ||
+      dimensions.height > MAX_PROFILE_PICTURE_HEIGHT
+    ) {
+      throw new HttpException(
+        `Profile picture must not exceed ${MAX_PROFILE_PICTURE_WIDTH}x${MAX_PROFILE_PICTURE_HEIGHT} pixels.`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
     // Auth service handling the file upload
     const user = await this.authService.uploadProfilePicture(req.user.id, file);
     return this.sanitizeUser(user);
@@ -181,13 +199,92 @@ export class UserController {
       firstName: user.firstName,
       lastName: user.lastName,
       profilePicture: user.profilePicture,
-      professionalTitle: user.professionalTitle,
       country: user.country,
       timezone: user.timezone,
-      bio: user.bio,
-      portfolioProjects: user.portfolioProjects,
       isVerified: user.isVerified,
       createdAt: user.createdAt,
     };
+  }
+
+  private getImageDimensions(
+    file: any,
+  ): { width: number; height: number } | null {
+    const buffer: Buffer | undefined = file?.buffer;
+    if (!buffer || buffer.length < 10) {
+      return null;
+    }
+
+    if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e) {
+      return {
+        width: buffer.readUInt32BE(16),
+        height: buffer.readUInt32BE(20),
+      };
+    }
+
+    if (buffer[0] === 0xff && buffer[1] === 0xd8) {
+      let offset = 2;
+
+      while (offset < buffer.length) {
+        if (buffer[offset] !== 0xff) {
+          offset++;
+          continue;
+        }
+
+        const marker = buffer[offset + 1];
+        const length = buffer.readUInt16BE(offset + 2);
+
+        if (
+          marker >= 0xc0 &&
+          marker <= 0xcf &&
+          ![0xc4, 0xc8, 0xcc].includes(marker)
+        ) {
+          return {
+            height: buffer.readUInt16BE(offset + 5),
+            width: buffer.readUInt16BE(offset + 7),
+          };
+        }
+
+        offset += 2 + length;
+      }
+    }
+
+    if (buffer.toString('ascii', 0, 6) === 'GIF87a' ||
+        buffer.toString('ascii', 0, 6) === 'GIF89a') {
+      return {
+        width: buffer.readUInt16LE(6),
+        height: buffer.readUInt16LE(8),
+      };
+    }
+
+    if (
+      buffer.toString('ascii', 0, 4) === 'RIFF' &&
+      buffer.toString('ascii', 8, 12) === 'WEBP'
+    ) {
+      const chunkType = buffer.toString('ascii', 12, 16);
+
+      if (chunkType === 'VP8X') {
+        return {
+          width: 1 + buffer.readUIntLE(24, 3),
+          height: 1 + buffer.readUIntLE(27, 3),
+        };
+      }
+
+      if (chunkType === 'VP8 ') {
+        return {
+          width: buffer.readUInt16LE(26) & 0x3fff,
+          height: buffer.readUInt16LE(28) & 0x3fff,
+        };
+      }
+
+      if (chunkType === 'VP8L') {
+        const bits = buffer.readUInt32LE(21);
+        return {
+          width: (bits & 0x3fff) + 1,
+          height: ((bits >> 14) & 0x3fff) + 1,
+        };
+      }
+    }
+
+    return null;
   }
 }

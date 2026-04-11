@@ -31,10 +31,12 @@ import {
   AdminFinanceController,
   AdminSupportController,
   AdminOpsController,
+  SupportController,
 } from './controllers';
 
 import { CaslModule } from '../casl/casl.module';
 import { SecurityModule } from '../security/security.module';
+import { StorageModule } from '../storage/storage.module';
 
 @Module({
   imports: [
@@ -54,6 +56,7 @@ import { SecurityModule } from '../security/security.module';
     ConfigModule,
     CaslModule,
     SecurityModule,
+    StorageModule,
   ],
   controllers: [
     AdminUsersController,
@@ -61,6 +64,7 @@ import { SecurityModule } from '../security/security.module';
     AdminFinanceController,
     AdminSupportController,
     AdminOpsController,
+    SupportController,
   ],
   providers: [
     AdminUsersService,

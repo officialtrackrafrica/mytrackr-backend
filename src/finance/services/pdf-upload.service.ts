@@ -1,11 +1,7 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import pdf from 'pdf-parse';
-import {
-  Transaction,
-  TransactionDirection,
-} from '../entities/transaction.entity';
+import { TransactionDirection } from '../entities/transaction.entity';
+import { CategorizationService } from './categorization.service';
 import { OcrService } from './ocr.service';
 
 interface ParsedRow {
@@ -22,8 +18,7 @@ export class PdfUploadService {
   private readonly logger = new Logger(PdfUploadService.name);
 
   constructor(
-    @InjectRepository(Transaction)
-    private readonly transactionRepository: Repository<Transaction>,
+    private readonly categorizationService: CategorizationService,
     private readonly ocrService: OcrService,
   ) {}
 
@@ -102,11 +97,22 @@ export class PdfUploadService {
       );
     }
 
-    // Save to DB
-    const imported = await this.saveTransactions(
-      parsedRows,
+    const imported = await this.categorizationService.ingestTransactions(
       businessId,
       userId,
+      parsedRows.map((row) => ({
+        bankAccountId: '',
+        businessId,
+        userId,
+        externalId:
+          row.reference ||
+          `pdf:${businessId}:${row.date}:${row.amount}:${row.direction}:${row.description}`,
+        date: new Date(row.date),
+        name: row.name,
+        amount: row.amount,
+        direction: row.direction,
+        description: row.description,
+      })),
     );
 
     return {
@@ -345,47 +351,5 @@ export class PdfUploadService {
       return `${y}-${monthNum}-${d.padStart(2, '0')}`;
     }
     return dateStr;
-  }
-
-  private async saveTransactions(
-    rows: ParsedRow[],
-    businessId: string,
-    userId: string,
-  ): Promise<number> {
-    let imported = 0;
-
-    for (const row of rows) {
-      const transaction = this.transactionRepository.create({
-        date: new Date(row.date),
-        name: row.name || undefined,
-        amount: row.amount,
-        direction: row.direction,
-        description: row.description,
-        externalId: row.reference || undefined,
-        businessId,
-        userId,
-        isCategorised: false,
-      });
-
-      try {
-        await this.transactionRepository.save(transaction);
-        imported++;
-      } catch (err: any) {
-        // Skip duplicates (unique constraint violations)
-        if (
-          err.code === '23505' ||
-          err.message?.includes('duplicate') ||
-          err.message?.includes('unique')
-        ) {
-          this.logger.debug(
-            `Skipped duplicate transaction: ${row.date} ${row.amount} ${row.description}`,
-          );
-        } else {
-          this.logger.warn(`Failed to save row: ${err.message}`);
-        }
-      }
-    }
-
-    return imported;
   }
 }

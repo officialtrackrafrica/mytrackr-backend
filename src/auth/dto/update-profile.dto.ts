@@ -15,15 +15,6 @@ export class UpdateProfileDto {
   lastName?: string;
 
   @ApiProperty({
-    description: 'Professional Title',
-    example: 'Product Designer',
-    required: false,
-  })
-  @IsString()
-  @IsOptional()
-  professionalTitle?: string;
-
-  @ApiProperty({
     description: 'Country',
     example: 'Australia',
     required: false,
@@ -40,13 +31,4 @@ export class UpdateProfileDto {
   @IsString()
   @IsOptional()
   timezone?: string;
-
-  @ApiProperty({
-    description: 'Biography',
-    example: 'I am a Product Designer...',
-    required: false,
-  })
-  @IsString()
-  @IsOptional()
-  bio?: string;
 }

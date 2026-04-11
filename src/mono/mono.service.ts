@@ -25,6 +25,7 @@ import { BusinessService } from '../business/services/business.service';
 import { AccountCategory } from '../finance/entities/account-category.entity';
 import { AccountSubCategory } from '../finance/entities/account-subcategory.entity';
 import { CategorySource } from '../finance/entities/transaction.entity';
+import { SubscriptionService } from '../payments/services/subscription.service';
 
 @Injectable()
 export class MonoService {
@@ -46,6 +47,7 @@ export class MonoService {
     private readonly aiCategorizationService: AiCategorizationService,
     private readonly transactionSyncService: TransactionSyncService,
     private readonly businessService: BusinessService,
+    private readonly subscriptionService: SubscriptionService,
   ) {}
 
   private getSecretKey(): string {
@@ -168,6 +170,8 @@ export class MonoService {
   }
 
   async initiateAccountLinking(user: User, dto: InitiateAccountDto) {
+    await this.subscriptionService.assertCanLinkAnotherBankAccount(user.id);
+
     const payload: any = {
       customer: {
         name: user.firstName

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User, Role } from '../../auth/entities';
 import { Plan } from '../../payments/entities/plan.entity';
+import { SystemSetting } from '../../admin/entities/system-setting.entity';
 import { AccountCategory } from '../../finance/entities/account-category.entity';
 import { AccountSubCategory } from '../../finance/entities/account-subcategory.entity';
 import { CategorizationRule } from '../../finance/entities/categorization-rule.entity';
@@ -13,6 +14,7 @@ import { AdminSeed } from './admin.seed';
 import { PlansSeed } from './plans.seed';
 import { FinancialCategoriesSeed } from './financial-categories.seed';
 import { CategorizationRulesSeed } from './categorization-rules.seed';
+import { SystemSettingsSeed } from './system-settings.seed';
 
 @Module({
   imports: [
@@ -20,6 +22,7 @@ import { CategorizationRulesSeed } from './categorization-rules.seed';
       User,
       Role,
       Plan,
+      SystemSetting,
       AccountCategory,
       AccountSubCategory,
       CategorizationRule,
@@ -34,6 +37,7 @@ import { CategorizationRulesSeed } from './categorization-rules.seed';
     PlansSeed,
     FinancialCategoriesSeed,
     CategorizationRulesSeed,
+    SystemSettingsSeed,
   ],
   exports: [SeedingService],
 })

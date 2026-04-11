@@ -23,6 +23,9 @@ export class SupportTicket {
   @Column({ type: 'text' })
   description: string;
 
+  @Column({ nullable: true })
+  attachmentUrl: string;
+
   @Column({ default: 'open' })
   status: string;
 

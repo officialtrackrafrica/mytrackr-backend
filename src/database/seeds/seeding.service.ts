@@ -4,6 +4,7 @@ import { AdminSeed } from './admin.seed';
 import { PlansSeed } from './plans.seed';
 import { FinancialCategoriesSeed } from './financial-categories.seed';
 import { CategorizationRulesSeed } from './categorization-rules.seed';
+import { SystemSettingsSeed } from './system-settings.seed';
 
 @Injectable()
 export class SeedingService implements OnModuleInit {
@@ -15,6 +16,7 @@ export class SeedingService implements OnModuleInit {
     private readonly plansSeed: PlansSeed,
     private readonly financialCategoriesSeed: FinancialCategoriesSeed,
     private readonly categorizationRulesSeed: CategorizationRulesSeed,
+    private readonly systemSettingsSeed: SystemSettingsSeed,
   ) {}
 
   async onModuleInit() {
@@ -25,6 +27,7 @@ export class SeedingService implements OnModuleInit {
       await this.plansSeed.run();
       await this.financialCategoriesSeed.run();
       await this.categorizationRulesSeed.run();
+      await this.systemSettingsSeed.run();
       this.logger.log('Database seeding completed successfully.');
     } catch (error) {
       this.logger.error('Failed to seed database', error.stack);

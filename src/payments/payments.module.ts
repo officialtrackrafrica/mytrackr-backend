@@ -5,6 +5,8 @@ import { ConfigModule } from '@nestjs/config';
 import { Plan } from './entities/plan.entity';
 import { Subscription } from './entities/subscription.entity';
 import { PaymentTransaction } from './entities/payment-transaction.entity';
+import { SystemSetting } from '../admin/entities/system-setting.entity';
+import { MonoAccount } from '../mono/entities/mono-account.entity';
 
 import { SubscriptionService } from './services/subscription.service';
 import { PaymentFactoryService } from './services/payment-factory.service';
@@ -18,7 +20,13 @@ import { PremiumFieldInterceptor } from '../common/access-control/interceptors/p
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Plan, Subscription, PaymentTransaction]),
+    TypeOrmModule.forFeature([
+      Plan,
+      Subscription,
+      PaymentTransaction,
+      SystemSetting,
+      MonoAccount,
+    ]),
     ConfigModule,
   ],
   controllers: [SubscriptionController, WebhookController],

@@ -1,9 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import {
-  Transaction,
-  TransactionDirection,
-} from '../entities/transaction.entity';
+import { TransactionDirection } from '../entities/transaction.entity';
+import { CategorizationService } from './categorization.service';
+import { OcrService } from './ocr.service';
 
 // Mock pdf-parse before importing the service
 const mockPdf = jest.fn();
@@ -14,20 +12,25 @@ import { PdfUploadService } from './pdf-upload.service';
 
 describe('PdfUploadService', () => {
   let service: PdfUploadService;
-  let repo: any;
+  let categorizationService: { ingestTransactions: jest.Mock };
 
   beforeEach(async () => {
-    repo = {
-      create: jest.fn().mockImplementation((dto) => dto),
-      save: jest.fn().mockResolvedValue({ id: 'tx-1' }),
+    categorizationService = {
+      ingestTransactions: jest.fn().mockResolvedValue(2),
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PdfUploadService,
         {
-          provide: getRepositoryToken(Transaction),
-          useValue: repo,
+          provide: CategorizationService,
+          useValue: categorizationService,
+        },
+        {
+          provide: OcrService,
+          useValue: {
+            extractTextFromPdf: jest.fn(),
+          },
         },
       ],
     }).compile();
@@ -54,19 +57,21 @@ describe('PdfUploadService', () => {
     );
 
     expect(result.imported).toBe(2);
-    expect(repo.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        amount: 5000,
-        direction: TransactionDirection.DEBIT,
-        description: 'TRANSFER FROM ALICE',
-      }),
-    );
-    expect(repo.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        amount: 2500,
-        direction: TransactionDirection.CREDIT,
-        description: 'PAYMENT TO BOB',
-      }),
+    expect(categorizationService.ingestTransactions).toHaveBeenCalledWith(
+      'biz-1',
+      'user-1',
+      expect.arrayContaining([
+        expect.objectContaining({
+          amount: 5000,
+          direction: TransactionDirection.DEBIT,
+          description: 'TRANSFER FROM ALICE',
+        }),
+        expect.objectContaining({
+          amount: 2500,
+          direction: TransactionDirection.CREDIT,
+          description: 'PAYMENT TO BOB',
+        }),
+      ]),
     );
   });
 
@@ -85,19 +90,21 @@ describe('PdfUploadService', () => {
     );
 
     expect(result.imported).toBe(2);
-    expect(repo.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        amount: 10000,
-        direction: TransactionDirection.DEBIT,
-        description: 'ATM WITHDRAWAL',
-      }),
-    );
-    expect(repo.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        amount: 150000,
-        direction: TransactionDirection.CREDIT,
-        description: 'SALARY DEPOSIT',
-      }),
+    expect(categorizationService.ingestTransactions).toHaveBeenCalledWith(
+      'biz-1',
+      'user-1',
+      expect.arrayContaining([
+        expect.objectContaining({
+          amount: 10000,
+          direction: TransactionDirection.DEBIT,
+          description: 'ATM WITHDRAWAL',
+        }),
+        expect.objectContaining({
+          amount: 150000,
+          direction: TransactionDirection.CREDIT,
+          description: 'SALARY DEPOSIT',
+        }),
+      ]),
     );
   });
 });

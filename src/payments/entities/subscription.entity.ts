@@ -28,6 +28,12 @@ export class Subscription {
   @Column({ type: 'varchar', nullable: true })
   gatewayCustomerCode: string;
 
+  @Column({ type: 'varchar', nullable: true })
+  gatewayEmailToken: string;
+
+  @Column({ type: 'jsonb', nullable: true })
+  paymentAuthorization: Record<string, any> | null;
+
   @Column({ type: 'timestamptz', nullable: true })
   currentPeriodStart: Date;
 
@@ -38,7 +44,7 @@ export class Subscription {
   cancelAtPeriodEnd: boolean;
 
   @Column({ type: 'timestamptz', nullable: true })
-  canceledAt: Date;
+  canceledAt: Date | null;
 
   @CreateDateColumn()
   createdAt: Date;

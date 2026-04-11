@@ -709,6 +709,8 @@ export class AuthService {
       await this.rolesService.assignRoleToUser(user.id, 'User');
     }
 
+    await this.ensureBusinessExistsForUser(user);
+
     const session = await this.sessionService.createSession(user.id);
     const tokens = await this.generateTokens(user.id, session.id);
 
@@ -720,6 +722,30 @@ export class AuthService {
         expiresIn: tokens.expiresIn,
       },
     };
+  }
+
+  private async ensureBusinessExistsForUser(user: User): Promise<void> {
+    const existingBusiness = await this.businessRepository.findOne({
+      where: { userId: user.id },
+    });
+
+    if (existingBusiness) {
+      return;
+    }
+
+    const ownerName =
+      user.firstName?.trim() ||
+      user.email?.split('@')[0]?.trim() ||
+      'MyTrackr';
+
+    const business = this.businessRepository.create({
+      name: `${ownerName}'s Business`,
+      owner: user,
+      userId: user.id,
+    });
+
+    await this.businessRepository.save(business);
+    this.logger.log(`Provisioned default business for OAuth user ${user.id}`);
   }
 
   verifyMfaLogin(

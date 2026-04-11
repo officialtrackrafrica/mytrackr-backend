@@ -230,4 +230,83 @@ export class PaystackService implements IPaymentGateway {
       data: payload.data,
     };
   }
+
+  async createSubscription(payload: {
+    customer: string;
+    plan: string;
+    authorization: string;
+  }): Promise<{ subscriptionCode: string; emailToken: string }> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    try {
+      const response = await fetch(`${this.baseUrl}/subscription`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.secretKey}`,
+          'Content-Type': 'application/json',
+        },
+        signal: controller.signal,
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.status) {
+        throw new Error(data.message || 'Failed to create subscription');
+      }
+
+      return {
+        subscriptionCode: data.data.subscription_code,
+        emailToken: data.data.email_token,
+      };
+    } catch (error) {
+      this.logger.error(`Paystack subscription creation error: ${error.message}`);
+      throw new HttpException(
+        {
+          message: 'Subscription creation failed',
+          cause: error.message,
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async disableSubscription(payload: {
+    code: string;
+    token: string;
+  }): Promise<void> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    try {
+      const response = await fetch(`${this.baseUrl}/subscription/disable`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.secretKey}`,
+          'Content-Type': 'application/json',
+        },
+        signal: controller.signal,
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.status) {
+        throw new Error(data.message || 'Failed to disable subscription');
+      }
+    } catch (error) {
+      this.logger.error(`Paystack subscription disable error: ${error.message}`);
+      throw new HttpException(
+        {
+          message: 'Subscription cancellation failed',
+          cause: error.message,
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
 }

@@ -38,8 +38,6 @@ import { CategorizationService } from './services/categorization.service';
 import { CsvUploadService } from './services/csv-upload.service';
 import { PdfUploadService } from './services/pdf-upload.service';
 import { BankAccountService } from './services/bank-account.service';
-import { PlanGuard } from '../common/access-control/guards/plan.guard';
-import { RequirePlan } from '../common/access-control/decorators/require-plan.decorator';
 import { SWAGGER_TAGS } from '../common/docs';
 import { AppException, ErrorResponseDto } from '../common/errors';
 import {
@@ -61,8 +59,7 @@ import {
 
 @ApiTags(SWAGGER_TAGS[5].name)
 @Controller('finance')
-@UseGuards(JwtAuthGuard, PlanGuard)
-@RequirePlan()
+@UseGuards(JwtAuthGuard)
 @ApiCookieAuth('accessToken')
 export class FinanceController {
   private readonly logger = new Logger(FinanceController.name);
@@ -293,30 +290,26 @@ export class FinanceController {
     return this.categorizationService.listCategories(businessId);
   }
 
-  // --- Transaction Repair ---
-
-  @Post('transactions/repair')
-  @ApiOperation({
-    summary: 'Repair orphaned transactions',
-    description:
-      'Fixes all transactions that are missing a businessId or are uncategorised. ' +
-      'Call this once to fix zero-value reports after linking a bank account.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Repair results',
-  })
-  async repairTransactions(@Req() req: any) {
-    const businessId = await this.businessService.getBusinessIdForUser(
-      req.user.id,
-    );
-    return this.categorizationService.repairOrphanedTransactions(
-      businessId,
-      req.user.id,
-    );
-  }
-
-  // --- Transactions ---
+  // @Post('transactions/repair')
+  // @ApiOperation({
+  //   summary: 'Repair orphaned transactions',
+  //   description:
+  //     'Fixes all transactions that are missing a businessId or are uncategorised. ' +
+  //     'Call this once to fix zero-value reports after linking a bank account.',
+  // })
+  // @ApiResponse({
+  //   status: 200,
+  //   description: 'Repair results',
+  // })
+  // async repairTransactions(@Req() req: any) {
+  //   const businessId = await this.businessService.getBusinessIdForUser(
+  //     req.user.id,
+  //   );
+  //   return this.categorizationService.repairOrphanedTransactions(
+  //     businessId,
+  //     req.user.id,
+  //   );
+  // }
 
   @Post('transactions')
   @ApiOperation({
@@ -339,7 +332,6 @@ export class FinanceController {
       req.user.id,
     );
 
-    // Resolve category/subcategory UUIDs to string names
     let category: string | undefined;
     let subCategory: string | undefined;
     let categoryId: string | undefined = dto.categoryId;

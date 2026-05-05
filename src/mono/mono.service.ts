@@ -707,12 +707,13 @@ export class MonoService {
     transaction.subCategory = subCategory;
     transaction.subCategoryId = subCategoryId || null;
     transaction.isCategorised = true;
-    transaction.categorySource = CategorySource.MANUAL;
+      transaction.categorySource = CategorySource.MANUAL;
 
-    await this.transactionRepository.save(transaction);
+      await this.transactionRepository.save(transaction);
+      await this.syncFinanceTransactionCategory(transaction);
 
-    if (transaction.monoAccount?.user?.id && category) {
-      this.aiCategorizationService
+      if (transaction.monoAccount?.user?.id && category) {
+        this.aiCategorizationService
         .learnFeedback(
           transaction.narration,
           category,
@@ -754,13 +755,14 @@ export class MonoService {
     transaction.manualSubCategory = null;
     transaction.isCategorised = false;
     transaction.categorySource = CategorySource.MONO; // Reset to default
-    transaction.categoryId = null;
-    transaction.subCategory = null;
-    transaction.subCategoryId = null;
-    await this.transactionRepository.save(transaction);
+      transaction.categoryId = null;
+      transaction.subCategory = null;
+      transaction.subCategoryId = null;
+      await this.transactionRepository.save(transaction);
+      await this.syncFinanceTransactionCategory(transaction);
 
-    return {
-      id: transaction.id,
+      return {
+        id: transaction.id,
       financeTransactionId: await this.findFinanceTransactionId(transaction),
       category: transaction.category,
       subCategory: transaction.subCategory,
@@ -1239,6 +1241,34 @@ export class MonoService {
     });
 
     return financeTransaction?.id || null;
+  }
+
+  private async syncFinanceTransactionCategory(
+    transaction: Transaction,
+  ): Promise<void> {
+    const financeTransaction = await this.financeTransactionRepository.findOne({
+      where: {
+        externalId: `mono_${transaction.monoTransactionId}`,
+      },
+    });
+
+    if (!financeTransaction) {
+      return;
+    }
+
+    financeTransaction.category = (transaction.category || null) as any;
+    financeTransaction.categoryId = (transaction.categoryId || null) as any;
+    financeTransaction.subCategory = (transaction.subCategory || null) as any;
+    financeTransaction.subCategoryId = (transaction.subCategoryId ||
+      null) as any;
+    financeTransaction.manualCategory = (transaction.manualCategory ||
+      null) as any;
+    financeTransaction.manualSubCategory = (transaction.manualSubCategory ||
+      null) as any;
+    financeTransaction.isCategorised = transaction.isCategorised;
+    financeTransaction.categorySource = transaction.categorySource;
+
+    await this.financeTransactionRepository.save(financeTransaction);
   }
 
   private async getFinanceIdMap(transactions: Transaction[]) {

@@ -131,10 +131,12 @@ export class TransactionSyncService {
     userId: string | null,
     options?: { autoCategorize?: boolean },
   ): Promise<{ synced: number; skipped: string | null }> {
-    const monoTransactions = await this.monoTransactionRepository.find({
-      where: { monoAccount: { id: monoAccountUuid } },
-      order: { date: 'ASC' },
-    });
+    const monoTransactions = await this.monoTransactionRepository
+      .createQueryBuilder('tx')
+      .leftJoin('tx.monoAccount', 'monoAccount')
+      .where('monoAccount.id = :monoAccountUuid', { monoAccountUuid })
+      .orderBy('tx.date', 'ASC')
+      .getMany();
 
     this.logger.log(
       `Found ${monoTransactions.length} Mono transactions for account ${monoAccountUuid}`,
@@ -163,7 +165,7 @@ export class TransactionSyncService {
       businessId,
       userId,
       rawDtos,
-      { autoCategorize: options?.autoCategorize ?? true },
+      { autoCategorize: options?.autoCategorize ?? false },
     );
 
     this.logger.log(

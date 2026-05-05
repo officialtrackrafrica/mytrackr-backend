@@ -279,7 +279,7 @@ export class FinanceController {
 
   @Get('categories')
   @ApiOperation({
-    summary: '3. List available finance categories',
+    summary: 'List all financial categories and subtypes',
     description:
       'Returns a hierarchical list of system-default categories used for transaction classification.',
   })
@@ -318,7 +318,7 @@ export class FinanceController {
 
   @Post('transactions')
   @ApiOperation({
-    summary: '4. Create a manual transaction',
+    summary: 'Create a manual transaction',
     description:
       'Record a transaction manually — useful for cash payments, offline sales, etc. Bank Account ID is optional for cash transactions.',
   })
@@ -397,7 +397,7 @@ export class FinanceController {
   }
 
   @Patch('transactions/:id')
-  @ApiOperation({ summary: '5. Update a finance transaction' })
+  @ApiOperation({ summary: 'Update a transaction (manual categorization)' })
   @ApiResponse({
     status: 200,
     description: 'Transaction updated',
@@ -481,7 +481,8 @@ export class FinanceController {
 
   @Get('transactions')
   @ApiOperation({
-    summary: '6. List finance transactions',
+    summary:
+      "List transactions for the user's business with pagination and filtering",
   })
   @ApiResponse({
     status: 200,
@@ -509,17 +510,19 @@ export class FinanceController {
 
     const query = this.transactionRepository
       .createQueryBuilder('tx')
-      .where('tx.businessId = :businessId', { businessId });
+      .where('tx."businessId" = :businessId', { businessId });
 
     if (search) {
       query.andWhere(
-        '(tx.description ILIKE :search OR tx.name ILIKE :search OR tx.externalId ILIKE :search)',
+        '(tx.description ILIKE :search OR tx.name ILIKE :search OR tx."externalId" ILIKE :search)',
         { search: `%${search}%` },
       );
     }
 
     if (isCategorised !== undefined) {
-      query.andWhere('tx.isCategorised = :isCategorised', { isCategorised });
+      query.andWhere('tx."isCategorised" = :isCategorised', {
+        isCategorised,
+      });
     }
 
     if (startDate && endDate) {
@@ -656,7 +659,7 @@ export class FinanceController {
   @Post('transactions/upload-csv')
   @UseInterceptors(FileInterceptor('file'))
   @ApiOperation({
-    summary: '7. Import transactions via CSV',
+    summary: 'Upload bank transactions via CSV',
     description:
       'Upload a CSV file from your bank statement. The system auto-detects common column headers (Date, Amount, Credit/Debit, Description, Reference). Duplicates are automatically skipped.',
   })
@@ -728,7 +731,7 @@ export class FinanceController {
     FileInterceptor('file', { limits: { fileSize: 10_000_000 } }),
   )
   @ApiOperation({
-    summary: '8. Import transactions via PDF/OCR',
+    summary: 'Upload bank transactions via PDF',
     description:
       'Upload a text-searchable PDF bank statement. Supported banks include GTB, Zenith, Access, and others with standard transaction row formats. Duplicates are automatically skipped.',
   })
@@ -756,8 +759,9 @@ export class FinanceController {
     name: 'autoCategorize',
     required: false,
     type: Boolean,
+    example: false,
     description:
-      'Set to false to import OCR/PDF transactions without auto-categorizing them',
+      'Set to true to auto-categorize imported OCR/PDF transactions',
   })
   async uploadPdf(
     @Req() req: any,
@@ -790,12 +794,12 @@ export class FinanceController {
       file.buffer,
       businessId,
       req.user.id,
-      autoCategorize !== 'false',
+      autoCategorize === 'true',
     );
   }
 
   @Get('bank-accounts')
-  @ApiOperation({ summary: '9. List connected bank accounts' })
+  @ApiOperation({ summary: "List all bank accounts for the user's business" })
   @ApiResponse({
     status: 200,
     description: 'List of bank accounts',

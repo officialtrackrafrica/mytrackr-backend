@@ -73,7 +73,7 @@ export class CategorizationService {
     dtos: RawTransactionDto[],
     options: IngestTransactionOptions = {},
   ): Promise<number> {
-    const autoCategorize = options.autoCategorize ?? true;
+    const autoCategorize = options.autoCategorize ?? false;
     let newTransactionsCount = 0;
     const activeRules = await this.ruleRepository.find({
       where: { isSystem: true, isActive: true },

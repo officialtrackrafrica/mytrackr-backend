@@ -41,7 +41,7 @@ export class MonoFinanceController {
 
   @Get('linked-accounts/transactions')
   @ApiOperation({
-    summary: '1. Review linked-account transactions',
+    summary: 'Get transactions for all linked accounts (synced from cache)',
     description:
       'Performs on-demand delta sync, then returns cached transactions from the database. ' +
       'Supports date range queries. If the requested range extends beyond what is cached, ' +
@@ -63,8 +63,9 @@ export class MonoFinanceController {
     name: 'autoCategorize',
     required: false,
     type: Boolean,
+    example: false,
     description:
-      'Set to false to sync and return transactions without auto-categorizing them',
+      'Set to true to auto-categorize synced linked-account transactions',
   })
   @ApiHeader({
     name: 'x-force-sync',
@@ -87,7 +88,7 @@ export class MonoFinanceController {
       start,
       end,
       forceSync === 'true',
-      autoCategorize !== 'false',
+      autoCategorize === 'true',
     );
   }
 
@@ -101,7 +102,7 @@ export class MonoFinanceController {
 
   @Patch('linked-accounts/transactions/:id/category')
   @ApiOperation({
-    summary: '2. Categorize a linked-account transaction manually',
+    summary: 'Manually set the category of a specific transaction',
     description:
       'Manually set a category for a transaction. This override takes precedence over the Mono-assigned category ' +
       'and will persist through future syncs.',

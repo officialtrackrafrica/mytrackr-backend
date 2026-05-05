@@ -295,7 +295,7 @@ export class MonoService {
     start?: string,
     end?: string,
     forceSync?: boolean,
-    autoCategorize = true,
+    autoCategorize = false,
   ) {
     const now = new Date();
 
@@ -356,7 +356,7 @@ export class MonoService {
     account: MonoAccount,
     requestedStart?: Date,
     forceSync?: boolean,
-    autoCategorize = true,
+    autoCategorize = false,
   ) {
     const now = new Date();
 
@@ -423,7 +423,7 @@ export class MonoService {
     account: MonoAccount,
     startDate: Date,
     endDate: Date,
-    autoCategorize = true,
+    autoCategorize = false,
   ) {
     const start = this.formatDateForMono(startDate);
     const end = this.formatDateForMono(endDate);
@@ -467,12 +467,24 @@ export class MonoService {
   private async upsertTransactions(
     account: MonoAccount,
     monoTransactions: any[],
-    autoCategorize = true,
+    autoCategorize = false,
   ) {
+    const validTransactions = monoTransactions.filter((tx) => {
+      if (tx?.id || tx?._id) {
+        return true;
+      }
+
+      this.logger.warn(
+        `Skipping Mono transaction without id for account ${account.monoAccountId}`,
+      );
+      return false;
+    });
+
     const entities = await Promise.all(
-      monoTransactions.map(async (tx) => {
+      validTransactions.map(async (tx) => {
         let finalCategory: string | null = null;
         let finalCategorySource = CategorySource.MONO;
+        const monoTransactionId = tx.id || tx._id;
 
         if (autoCategorize) {
           const predicted = await this.aiCategorizationService.predict(
@@ -490,7 +502,7 @@ export class MonoService {
         }
 
         return this.transactionRepository.create({
-          monoTransactionId: tx.id,
+          monoTransactionId,
           monoAccount: { id: account.id } as any,
           narration: tx.narration || '',
           amount: tx.amount,
@@ -536,23 +548,27 @@ export class MonoService {
 
     const transactionsData = await Promise.all(
       userAccounts.map(async (acc) => {
-        const where: any = { monoAccount: { id: acc.id } };
+        const query = this.transactionRepository
+          .createQueryBuilder('tx')
+          .leftJoin('tx.monoAccount', 'monoAccount')
+          .where('monoAccount.id = :monoAccountId', { monoAccountId: acc.id });
 
         if (start && end) {
-          where.date = Between(
-            this.parseDateParam(start),
-            this.parseDateParam(end),
-          );
+          query.andWhere('tx.date BETWEEN :startDate AND :endDate', {
+            startDate: this.parseDateParam(start),
+            endDate: this.parseDateParam(end),
+          });
         } else if (start) {
-          where.date = MoreThanOrEqual(this.parseDateParam(start));
+          query.andWhere('tx.date >= :startDate', {
+            startDate: this.parseDateParam(start),
+          });
         } else if (end) {
-          where.date = LessThanOrEqual(this.parseDateParam(end));
+          query.andWhere('tx.date <= :endDate', {
+            endDate: this.parseDateParam(end),
+          });
         }
 
-        const transactions = await this.transactionRepository.find({
-          where,
-          order: { date: 'DESC' },
-        });
+        const transactions = await query.orderBy('tx.date', 'DESC').getMany();
 
         const financeIdByExternalId = await this.getFinanceIdMap(transactions);
 

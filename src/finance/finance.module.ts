@@ -19,6 +19,7 @@ import { FinanceController } from './finance.controller';
 import { PaymentsModule } from '../payments/payments.module';
 import { CategorizationModule } from '../categorization/categorization.module';
 import { MonoModule } from '../mono/mono.module';
+import { Transaction as MonoTransaction } from '../mono/entities/transaction.entity';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { MonoModule } from '../mono/mono.module';
       CategorizationRule,
       BankAccount,
       Transaction,
+      MonoTransaction,
       AccountCategory,
       AccountSubCategory,
     ]),

@@ -36,6 +36,7 @@ import { Liability, LiabilityStatus } from './entities/liability.entity';
 import { Transaction, CategorySource } from './entities/transaction.entity';
 import { AccountCategory } from './entities/account-category.entity';
 import { AccountSubCategory } from './entities/account-subcategory.entity';
+import { Transaction as MonoTransaction } from '../mono/entities/transaction.entity';
 import { CategorizationService } from './services/categorization.service';
 import { CsvUploadService } from './services/csv-upload.service';
 import { PdfUploadService } from './services/pdf-upload.service';
@@ -76,6 +77,8 @@ export class FinanceController {
     private readonly liabilityRepository: Repository<Liability>,
     @InjectRepository(Transaction)
     private readonly transactionRepository: Repository<Transaction>,
+    @InjectRepository(MonoTransaction)
+    private readonly monoTransactionRepository: Repository<MonoTransaction>,
     @InjectRepository(AccountCategory)
     private readonly categoryRepository: Repository<AccountCategory>,
     @InjectRepository(AccountSubCategory)
@@ -276,7 +279,7 @@ export class FinanceController {
 
   @Get('categories')
   @ApiOperation({
-    summary: 'List all financial categories and subtypes',
+    summary: '3. List available finance categories',
     description:
       'Returns a hierarchical list of system-default categories used for transaction classification.',
   })
@@ -315,7 +318,7 @@ export class FinanceController {
 
   @Post('transactions')
   @ApiOperation({
-    summary: 'Create a manual transaction',
+    summary: '4. Create a manual transaction',
     description:
       'Record a transaction manually — useful for cash payments, offline sales, etc. Bank Account ID is optional for cash transactions.',
   })
@@ -394,7 +397,7 @@ export class FinanceController {
   }
 
   @Patch('transactions/:id')
-  @ApiOperation({ summary: 'Update a transaction (manual categorization)' })
+  @ApiOperation({ summary: '5. Update a finance transaction' })
   @ApiResponse({
     status: 200,
     description: 'Transaction updated',
@@ -413,7 +416,7 @@ export class FinanceController {
     const businessId = await this.businessService.getBusinessIdForUser(
       req.user.id,
     );
-    const tx = await this.transactionRepository.findOneBy({ id, businessId });
+    const tx = await this.resolveFinanceTransaction(req.user.id, businessId, id);
     if (!tx) {
       throw AppException.notFound(
         'Transaction not found',
@@ -471,13 +474,14 @@ export class FinanceController {
     }
 
     await this.transactionRepository.save(tx);
-    return this.transactionRepository.findOneBy({ id });
+    return this.serializeTransaction(
+      await this.transactionRepository.findOneBy({ id: tx.id }),
+    );
   }
 
   @Get('transactions')
   @ApiOperation({
-    summary:
-      "List transactions for the user's business with pagination and filtering",
+    summary: '6. List finance transactions',
   })
   @ApiResponse({
     status: 200,
@@ -532,20 +536,98 @@ export class FinanceController {
 
     const skip = (page - 1) * limit;
 
+    const summaryRaw = await query
+      .clone()
+      .select('COUNT(*)', 'totalTransactions')
+      .addSelect(
+        'SUM(CASE WHEN tx."isCategorised" = true THEN 1 ELSE 0 END)',
+        'totalCategorized',
+      )
+      .addSelect(
+        'SUM(CASE WHEN tx."isCategorised" = false THEN 1 ELSE 0 END)',
+        'totalUncategorized',
+      )
+      .getRawOne();
+
     const [data, total] = await query
       .orderBy(`tx.${sortBy}`, sortOrder)
       .skip(skip)
       .take(limit)
       .getManyAndCount();
 
+    const serialized = await Promise.all(
+      data.map((tx) => this.serializeTransaction(tx)),
+    );
+
     return {
-      data,
+      data: serialized,
+      summary: {
+        totalTransactions: Number(summaryRaw?.totalTransactions || 0),
+        totalCategorized: Number(summaryRaw?.totalCategorized || 0),
+        totalUncategorized: Number(summaryRaw?.totalUncategorized || 0),
+      },
       meta: {
         total,
         page,
         limit,
         totalPages: Math.ceil(total / limit),
       },
+    };
+  }
+
+  private async resolveFinanceTransaction(
+    userId: string,
+    businessId: string,
+    transactionId: string,
+  ): Promise<Transaction | null> {
+    const financeTransaction = await this.transactionRepository.findOneBy({
+      id: transactionId,
+      businessId,
+    });
+
+    if (financeTransaction) {
+      return financeTransaction;
+    }
+
+    const monoTransaction = await this.monoTransactionRepository.findOne({
+      where: { id: transactionId },
+      relations: ['monoAccount', 'monoAccount.user'],
+    });
+
+    if (!monoTransaction || monoTransaction.monoAccount?.user?.id !== userId) {
+      return null;
+    }
+
+    return this.transactionRepository.findOneBy({
+      externalId: `mono_${monoTransaction.monoTransactionId}`,
+      businessId,
+    });
+  }
+
+  private async serializeTransaction(tx: Transaction | null) {
+    if (!tx) {
+      return tx;
+    }
+
+    let sourceTransactionId: string | undefined;
+    let sourceProvider: string | undefined;
+
+    if (tx.externalId?.startsWith('mono_')) {
+      const monoTransactionId = tx.externalId.slice(5);
+      const monoTransaction = await this.monoTransactionRepository.findOneBy({
+        monoTransactionId,
+      });
+
+      if (monoTransaction) {
+        sourceTransactionId = monoTransaction.id;
+        sourceProvider = 'mono';
+      }
+    }
+
+    return {
+      ...tx,
+      sourceTransactionId,
+      sourceProvider,
     };
   }
 
@@ -574,7 +656,7 @@ export class FinanceController {
   @Post('transactions/upload-csv')
   @UseInterceptors(FileInterceptor('file'))
   @ApiOperation({
-    summary: 'Upload bank transactions via CSV',
+    summary: '7. Import transactions via CSV',
     description:
       'Upload a CSV file from your bank statement. The system auto-detects common column headers (Date, Amount, Credit/Debit, Description, Reference). Duplicates are automatically skipped.',
   })
@@ -646,7 +728,7 @@ export class FinanceController {
     FileInterceptor('file', { limits: { fileSize: 10_000_000 } }),
   )
   @ApiOperation({
-    summary: 'Upload bank transactions via PDF',
+    summary: '8. Import transactions via PDF/OCR',
     description:
       'Upload a text-searchable PDF bank statement. Supported banks include GTB, Zenith, Access, and others with standard transaction row formats. Duplicates are automatically skipped.',
   })
@@ -670,7 +752,18 @@ export class FinanceController {
     description: 'Invalid PDF or no searchable text found',
     type: ErrorResponseDto,
   })
-  async uploadPdf(@Req() req: any, @UploadedFile() file: Express.Multer.File) {
+  @ApiQuery({
+    name: 'autoCategorize',
+    required: false,
+    type: Boolean,
+    description:
+      'Set to false to import OCR/PDF transactions without auto-categorizing them',
+  })
+  async uploadPdf(
+    @Req() req: any,
+    @UploadedFile() file: Express.Multer.File,
+    @Query('autoCategorize') autoCategorize?: string,
+  ) {
     if (!file) {
       throw AppException.badRequest(
         'No file uploaded. Please attach a PDF file.',
@@ -697,11 +790,12 @@ export class FinanceController {
       file.buffer,
       businessId,
       req.user.id,
+      autoCategorize !== 'false',
     );
   }
 
   @Get('bank-accounts')
-  @ApiOperation({ summary: "List all bank accounts for the user's business" })
+  @ApiOperation({ summary: '9. List connected bank accounts' })
   @ApiResponse({
     status: 200,
     description: 'List of bank accounts',

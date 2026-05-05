@@ -46,6 +46,7 @@ export class PdfUploadService {
     fileBuffer: Buffer,
     businessId: string,
     userId: string,
+    autoCategorize = true,
   ): Promise<{ imported: number; skipped: number; errors: string[] }> {
     this.logger.log(
       `Starting PDF parse — buffer size: ${fileBuffer.length} bytes`,
@@ -113,6 +114,7 @@ export class PdfUploadService {
         direction: row.direction,
         description: row.description,
       })),
+      { autoCategorize },
     );
 
     return {

@@ -14,7 +14,13 @@ import {
   CreditworthinessDto,
 } from './dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThanOrEqual, MoreThanOrEqual, Between } from 'typeorm';
+import {
+  Repository,
+  LessThanOrEqual,
+  MoreThanOrEqual,
+  Between,
+  In,
+} from 'typeorm';
 import { MonoAccount } from './entities/mono-account.entity';
 import { Transaction } from './entities/transaction.entity';
 import { User } from '../auth/entities/user.entity';
@@ -24,7 +30,10 @@ import { TransactionSyncService } from './services/transaction-sync.service';
 import { BusinessService } from '../business/services/business.service';
 import { AccountCategory } from '../finance/entities/account-category.entity';
 import { AccountSubCategory } from '../finance/entities/account-subcategory.entity';
-import { CategorySource } from '../finance/entities/transaction.entity';
+import {
+  CategorySource,
+  Transaction as FinanceTransaction,
+} from '../finance/entities/transaction.entity';
 import { SubscriptionService } from '../payments/services/subscription.service';
 
 @Injectable()
@@ -40,6 +49,8 @@ export class MonoService {
     private monoAccountRepository: Repository<MonoAccount>,
     @InjectRepository(Transaction)
     private transactionRepository: Repository<Transaction>,
+    @InjectRepository(FinanceTransaction)
+    private financeTransactionRepository: Repository<FinanceTransaction>,
     @InjectRepository(AccountCategory)
     private categoryRepo: Repository<AccountCategory>,
     @InjectRepository(AccountSubCategory)
@@ -284,6 +295,7 @@ export class MonoService {
     start?: string,
     end?: string,
     forceSync?: boolean,
+    autoCategorize = true,
   ) {
     const now = new Date();
 
@@ -317,10 +329,16 @@ export class MonoService {
 
     await Promise.all(
       userAccounts.map((acc) =>
-        this.syncTransactionsForAccount(acc, parsedStart, forceSync)
+        this.syncTransactionsForAccount(
+          acc,
+          parsedStart,
+          forceSync,
+          autoCategorize,
+        )
           .then(() =>
             this.transactionSyncService.syncAccountTransactions(
               acc.monoAccountId,
+              { autoCategorize },
             ),
           )
           .catch((e) =>
@@ -338,6 +356,7 @@ export class MonoService {
     account: MonoAccount,
     requestedStart?: Date,
     forceSync?: boolean,
+    autoCategorize = true,
   ) {
     const now = new Date();
 
@@ -352,7 +371,12 @@ export class MonoService {
       this.logger.log(
         `Forward sync for ${account.monoAccountId}: ${forwardStart.toISOString()} → ${now.toISOString()}`,
       );
-      await this.fetchAndStoreTransactions(account, forwardStart, now);
+      await this.fetchAndStoreTransactions(
+        account,
+        forwardStart,
+        now,
+        autoCategorize,
+      );
     }
 
     if (
@@ -367,6 +391,7 @@ export class MonoService {
         account,
         requestedStart,
         backfillEnd,
+        autoCategorize,
       );
     }
 
@@ -398,6 +423,7 @@ export class MonoService {
     account: MonoAccount,
     startDate: Date,
     endDate: Date,
+    autoCategorize = true,
   ) {
     const start = this.formatDateForMono(startDate);
     const end = this.formatDateForMono(endDate);
@@ -419,7 +445,7 @@ export class MonoService {
         const transactions = response?.data || [];
 
         if (transactions.length > 0) {
-          await this.upsertTransactions(account, transactions);
+          await this.upsertTransactions(account, transactions, autoCategorize);
           totalInserted += transactions.length;
         }
 
@@ -441,21 +467,27 @@ export class MonoService {
   private async upsertTransactions(
     account: MonoAccount,
     monoTransactions: any[],
+    autoCategorize = true,
   ) {
     const entities = await Promise.all(
       monoTransactions.map(async (tx) => {
-        const predicted = await this.aiCategorizationService.predict(
-          tx.narration || '',
-          account.user?.id || '',
-        );
-        const finalCategory =
-          predicted.category !== 'Uncategorized'
-            ? predicted.category
-            : tx.category || null;
-        const finalCategorySource =
-          predicted.category !== 'Uncategorized'
-            ? CategorySource.AI
-            : CategorySource.MONO;
+        let finalCategory: string | null = null;
+        let finalCategorySource = CategorySource.MONO;
+
+        if (autoCategorize) {
+          const predicted = await this.aiCategorizationService.predict(
+            tx.narration || '',
+            account.user?.id || '',
+          );
+          finalCategory =
+            predicted.category !== 'Uncategorized'
+              ? predicted.category
+              : tx.category || null;
+          finalCategorySource =
+            predicted.category !== 'Uncategorized'
+              ? CategorySource.AI
+              : CategorySource.MONO;
+        }
 
         return this.transactionRepository.create({
           monoTransactionId: tx.id,
@@ -464,7 +496,7 @@ export class MonoService {
           amount: tx.amount,
           type: tx.type,
           category: finalCategory,
-          subCategory: tx.sub_category || null,
+          subCategory: autoCategorize ? tx.sub_category || null : null,
           categorySource: finalCategorySource,
           currency: tx.currency || 'NGN',
           balance: tx.balance,
@@ -522,6 +554,8 @@ export class MonoService {
           order: { date: 'DESC' },
         });
 
+        const financeIdByExternalId = await this.getFinanceIdMap(transactions);
+
         return {
           bankName: acc.institutionName,
           monoAccountId: acc.monoAccountId,
@@ -531,7 +565,13 @@ export class MonoService {
             latest: acc.lastSyncedAt,
           },
           total: transactions.length,
-          data: transactions,
+          data: transactions.map((transaction) => ({
+            ...transaction,
+            financeTransactionId:
+              financeIdByExternalId.get(
+                `mono_${transaction.monoTransactionId}`,
+              ) || null,
+          })),
         };
       }),
     );
@@ -685,6 +725,7 @@ export class MonoService {
 
     return {
       id: transaction.id,
+      financeTransactionId: await this.findFinanceTransactionId(transaction),
       category: transaction.category,
       categoryId: transaction.categoryId,
       subCategory: transaction.subCategory,
@@ -720,6 +761,7 @@ export class MonoService {
 
     return {
       id: transaction.id,
+      financeTransactionId: await this.findFinanceTransactionId(transaction),
       category: transaction.category,
       subCategory: transaction.subCategory,
       categorySource: transaction.categorySource,
@@ -1184,5 +1226,40 @@ export class MonoService {
       );
 
     return saved;
+  }
+
+  private async findFinanceTransactionId(
+    transaction: Transaction,
+  ): Promise<string | null> {
+    const financeTransaction = await this.financeTransactionRepository.findOne({
+      where: {
+        externalId: `mono_${transaction.monoTransactionId}`,
+      },
+      select: ['id'],
+    });
+
+    return financeTransaction?.id || null;
+  }
+
+  private async getFinanceIdMap(transactions: Transaction[]) {
+    const externalIds = transactions.map((transaction) => {
+      return `mono_${transaction.monoTransactionId}`;
+    });
+
+    if (externalIds.length === 0) {
+      return new Map<string, string>();
+    }
+
+    const financeTransactions = await this.financeTransactionRepository.find({
+      where: { externalId: In(externalIds) },
+      select: ['id', 'externalId'],
+    });
+
+    return new Map(
+      financeTransactions.map((transaction) => [
+        transaction.externalId,
+        transaction.id,
+      ]),
+    );
   }
 }

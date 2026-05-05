@@ -28,6 +28,7 @@ import {
   ToggleFeatureFlagDto,
   BroadcastNotificationDto,
   CreateNotificationTemplateDto,
+  SendUncategorizedTransactionReminderDto,
   UpdateNotificationTemplateDto,
   WebhookQueryDto,
 } from '../dto';
@@ -151,6 +152,31 @@ export class AdminOpsController {
       null,
       req.user.id,
       { title: dto.title, channel: dto.channel },
+      req.ip,
+    );
+    return result;
+  }
+
+  @Post('notifications/uncategorized-transactions/reminder')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({
+    summary: 'Send reminder emails to users with uncategorized transactions',
+  })
+  @ApiResponse({ status: 200, description: 'Reminder processing completed' })
+  async sendUncategorizedTransactionReminders(
+    @Body() dto: SendUncategorizedTransactionReminderDto,
+    @Req() req: any,
+  ) {
+    const result =
+      await this.systemService.sendUncategorizedTransactionReminders(
+        dto.dryRun ?? false,
+      );
+    await this.auditService.log(
+      'UNCATEGORIZED_TX_REMINDER_SENT',
+      'Notification',
+      null,
+      req.user.id,
+      { dryRun: dto.dryRun ?? false, result },
       req.ip,
     );
     return result;

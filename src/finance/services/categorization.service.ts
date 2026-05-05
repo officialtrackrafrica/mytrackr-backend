@@ -29,6 +29,10 @@ export interface RawTransactionDto {
   valueDate?: Date;
 }
 
+export interface IngestTransactionOptions {
+  autoCategorize?: boolean;
+}
+
 /**
  * Confidence threshold above which the AI prediction is auto-applied and the
  * transaction is marked as fully categorised without human review.
@@ -67,7 +71,9 @@ export class CategorizationService {
     businessId: string | null,
     userId: string | null,
     dtos: RawTransactionDto[],
+    options: IngestTransactionOptions = {},
   ): Promise<number> {
+    const autoCategorize = options.autoCategorize ?? true;
     let newTransactionsCount = 0;
     const activeRules = await this.ruleRepository.find({
       where: { isSystem: true, isActive: true },
@@ -113,6 +119,10 @@ export class CategorizationService {
           });
           if (full && !full.isCategorised) {
             tx = full;
+            if (!autoCategorize) {
+              transactionsToUpdate.push(tx);
+              continue;
+            }
             // ── Step 0: Preserve Manual if present ───────────────────────────
             if (
               tx.categorySource === CategorySource.MANUAL &&
@@ -189,6 +199,10 @@ export class CategorizationService {
       }
 
       // ── Step 1: Rule-based matching ────────────────────────────────────────
+      if (!autoCategorize) {
+        continue;
+      }
+
       this.applyRules(tx, activeRules);
 
       // ── Step 2: AI prediction (only if rules didn't match) ─────────────────

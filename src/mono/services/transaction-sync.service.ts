@@ -26,7 +26,10 @@ export class TransactionSyncService {
     private readonly businessService: BusinessService,
   ) {}
 
-  async syncAccountTransactions(monoAccountId: string): Promise<{
+  async syncAccountTransactions(
+    monoAccountId: string,
+    options?: { autoCategorize?: boolean },
+  ): Promise<{
     synced: number;
     skipped: string | null;
   }> {
@@ -117,6 +120,7 @@ export class TransactionSyncService {
       bankAccount.id,
       bankAccount.businessId,
       bankAccount.userId,
+      options,
     );
   }
 
@@ -125,6 +129,7 @@ export class TransactionSyncService {
     bankAccountId: string,
     businessId: string | null,
     userId: string | null,
+    options?: { autoCategorize?: boolean },
   ): Promise<{ synced: number; skipped: string | null }> {
     const monoTransactions = await this.monoTransactionRepository.find({
       where: { monoAccount: { id: monoAccountUuid } },
@@ -158,6 +163,7 @@ export class TransactionSyncService {
       businessId,
       userId,
       rawDtos,
+      { autoCategorize: options?.autoCategorize ?? true },
     );
 
     this.logger.log(

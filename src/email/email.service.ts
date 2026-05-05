@@ -66,4 +66,33 @@ export class EmailService {
       );
     }
   }
+
+  async sendUncategorizedTransactionsReminderEmail(
+    email: string,
+    name: string | undefined,
+    uncategorizedCount: number,
+    dashboardUrl: string,
+  ) {
+    try {
+      await this.mailerService.sendMail({
+        to: email,
+        subject: 'Action needed: categorize your transactions',
+        template: './uncategorized-transactions-reminder',
+        context: {
+          name: name || 'User',
+          uncategorizedCount,
+          dashboardUrl,
+        },
+      });
+      this.logger.debug(
+        `Uncategorized transactions reminder email sent to ${email}`,
+      );
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to send uncategorized transactions reminder email to ${email}`,
+        error.stack,
+      );
+      throw error;
+    }
+  }
 }

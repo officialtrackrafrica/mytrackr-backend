@@ -14,6 +14,7 @@ import { CategorizationModule } from '../categorization/categorization.module';
 import { BusinessModule } from '../business/business.module';
 import { AccountCategory } from '../finance/entities/account-category.entity';
 import { AccountSubCategory } from '../finance/entities/account-subcategory.entity';
+import { Transaction as FinanceTransaction } from '../finance/entities/transaction.entity';
 
 import { MonoFinanceController } from './mono-finance.controller';
 import { MonoAdminController } from './mono-admin.controller';
@@ -24,6 +25,7 @@ import { MonoAdminController } from './mono-admin.controller';
       User,
       MonoAccount,
       Transaction,
+      FinanceTransaction,
       AccountCategory,
       AccountSubCategory,
     ]),

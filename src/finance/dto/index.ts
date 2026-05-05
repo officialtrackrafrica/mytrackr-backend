@@ -379,6 +379,21 @@ export class RuleCreateResponseDto {
 
 export class TransactionResponseDto {
   @ApiProperty() id: string;
+  @ApiPropertyOptional({
+    description:
+      'Original source transaction ID for mirrored linked-account transactions',
+  })
+  sourceTransactionId?: string;
+  @ApiPropertyOptional({
+    description:
+      'Provider/source type for mirrored linked-account transactions',
+    example: 'mono',
+  })
+  sourceProvider?: string;
+  @ApiPropertyOptional({
+    description: 'External sync identifier used to mirror provider transactions',
+  })
+  externalId?: string;
   @ApiProperty() date: Date;
   @ApiPropertyOptional() name?: string;
   @ApiProperty() amount: number;
@@ -409,6 +424,19 @@ export class TransactionResponseDto {
 export class PaginatedTransactionResponseDto {
   @ApiProperty({ type: [TransactionResponseDto] })
   data: TransactionResponseDto[];
+
+  @ApiProperty({
+    example: {
+      totalTransactions: 42,
+      totalCategorized: 30,
+      totalUncategorized: 12,
+    },
+  })
+  summary: {
+    totalTransactions: number;
+    totalCategorized: number;
+    totalUncategorized: number;
+  };
 
   @ApiProperty()
   meta: {

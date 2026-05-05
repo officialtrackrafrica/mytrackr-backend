@@ -10,6 +10,7 @@ import { WebhookLog } from '../entities/webhook-log.entity';
 import { DataSource } from 'typeorm';
 import Redis from 'ioredis';
 import { StorageService } from '../../storage/storage.service';
+import { EmailService } from '../../email/email.service';
 import {
   TicketQueryDto,
   DisputeQueryDto,
@@ -41,6 +42,7 @@ export class AdminSystemService {
     private readonly configService: ConfigService,
     private readonly dataSource: DataSource,
     private readonly storageService: StorageService,
+    private readonly emailService: EmailService,
   ) {
     this.initRedis();
   }
@@ -185,6 +187,102 @@ export class AdminSystemService {
         limit,
         totalPages: Math.ceil(total / limit),
       },
+    };
+  }
+
+  async sendUncategorizedTransactionReminders(dryRun = false) {
+    const targets = await this.dataSource.query(
+      `
+        SELECT
+          u.id,
+          u.email,
+          u."firstName" AS "firstName",
+          u."lastName" AS "lastName",
+          SUM(reminders.count)::int AS "uncategorizedCount"
+        FROM users u
+        INNER JOIN (
+          SELECT
+            ma."userId" AS "userId",
+            COUNT(*)::int AS count
+          FROM mono_transactions mt
+          INNER JOIN mono_accounts ma
+            ON ma.id = mt."monoAccountId"
+          WHERE mt."isCategorised" = false
+            AND ma."userId" IS NOT NULL
+          GROUP BY ma."userId"
+
+          UNION ALL
+
+          SELECT
+            tx."userId" AS "userId",
+            COUNT(*)::int AS count
+          FROM transactions tx
+          WHERE tx."isCategorised" = false
+            AND tx."userId" IS NOT NULL
+          GROUP BY tx."userId"
+        ) reminders
+          ON reminders."userId" = u.id
+        WHERE u.email IS NOT NULL
+        GROUP BY u.id, u.email, u."firstName", u."lastName"
+        ORDER BY "uncategorizedCount" DESC, u.email ASC
+      `,
+    );
+
+    const recipients = targets.map((target: any) => ({
+      userId: target.id,
+      email: target.email,
+      firstName: target.firstName || null,
+      lastName: target.lastName || null,
+      uncategorizedCount: Number(target.uncategorizedCount || 0),
+    }));
+
+    if (dryRun) {
+      return {
+        message: 'Dry run completed',
+        dryRun: true,
+        targetedUsers: recipients.length,
+        sent: 0,
+        failed: 0,
+        recipients,
+      };
+    }
+
+    const dashboardUrl = this.buildTransactionsUrl();
+    const sent: string[] = [];
+    const failed: Array<{ email: string; reason: string }> = [];
+
+    for (const recipient of recipients) {
+      try {
+        await this.emailService.sendUncategorizedTransactionsReminderEmail(
+          recipient.email,
+          recipient.firstName || recipient.lastName || undefined,
+          recipient.uncategorizedCount,
+          dashboardUrl,
+        );
+        sent.push(recipient.email);
+      } catch (error) {
+        failed.push({
+          email: recipient.email,
+          reason: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+
+    this.logger.log(
+      `Processed uncategorized transaction reminders: ${sent.length} sent, ${failed.length} failed`,
+    );
+
+    return {
+      message: 'Reminder processing completed',
+      dryRun: false,
+      targetedUsers: recipients.length,
+      sent: sent.length,
+      failed: failed.length,
+      recipients: recipients.map((recipient) => ({
+        ...recipient,
+        status: sent.includes(recipient.email) ? 'sent' : 'failed',
+      })),
+      failures: failed,
     };
   }
 
@@ -458,6 +556,15 @@ export class AdminSystemService {
     }
 
     return { message: 'No cache to clear (Redis not available)' };
+  }
+
+  private buildTransactionsUrl() {
+    const appUrl =
+      this.configService.get<string>('FRONTEND_URL') ||
+      this.configService.get<string>('APP_URL') ||
+      'http://localhost:3000';
+
+    return new URL('/transactions', appUrl).toString();
   }
 
   private mapSupportTicket(ticket: SupportTicket) {

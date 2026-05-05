@@ -185,6 +185,16 @@ export class BroadcastNotificationDto {
   filters?: Record<string, any>;
 }
 
+export class SendUncategorizedTransactionReminderDto {
+  @ApiPropertyOptional({
+    description: 'When true, only returns the target users without sending emails',
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  dryRun?: boolean = false;
+}
+
 export class CreateNotificationTemplateDto {
   @ApiProperty({ description: 'Template name (unique)' })
   @IsString()

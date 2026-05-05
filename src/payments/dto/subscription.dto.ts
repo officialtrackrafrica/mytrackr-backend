@@ -1,13 +1,23 @@
-import { IsNotEmpty, IsNumber, IsOptional } from 'class-validator';
+import { IsIn, IsNotEmpty, IsNumber, IsOptional } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class InitializeSubscriptionDto {
+  @ApiPropertyOptional({
+    description: 'The subscription plan to checkout',
+    enum: ['basic', 'pro', 'pro-plus'],
+    default: 'pro',
+  })
+  @IsOptional()
+  @IsIn(['basic', 'pro', 'pro-plus'])
+  planSlug?: 'basic' | 'pro' | 'pro-plus' = 'pro';
+
   @ApiPropertyOptional({
     description: 'The preferred billing interval',
     enum: ['monthly', 'annually'],
     default: 'monthly',
   })
   @IsOptional()
+  @IsIn(['monthly', 'annually'])
   interval?: 'monthly' | 'annually' = 'monthly';
 }
 
@@ -50,6 +60,9 @@ export class AdditionalBankAccountFeeStatusDto {
 
   @ApiProperty({ example: 1 })
   freeIncludedAccounts: number;
+
+  @ApiProperty({ example: 1 })
+  includedAccounts: number;
 
   @ApiProperty({ example: 2 })
   linkedAccounts: number;

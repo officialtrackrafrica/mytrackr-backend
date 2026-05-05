@@ -46,4 +46,9 @@ export const SWAGGER_TAGS = [
     description:
       'Financial reports (P&L, Balance Sheet, Cash Flow) and analytics data',
   },
+  {
+    name: '11. Website Integrations',
+    description:
+      'API keys and public config for React, WordPress, and custom websites',
+  },
 ];

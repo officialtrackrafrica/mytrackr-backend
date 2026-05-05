@@ -17,11 +17,21 @@ import { SystemSetting } from '../../admin/entities/system-setting.entity';
 import { MonoAccount } from '../../mono/entities/mono-account.entity';
 import { PaystackService } from '../providers/paystack.service';
 import { StoreBillingCardDto } from '../dto/subscription.dto';
+import {
+  BANK_ACCOUNT_LIMIT_BY_PLAN,
+  normalizePlanSlug,
+  PLAN_SLUGS,
+  PlanSlug,
+} from '../../common/access-control/plan-entitlements';
+import { IntegrationPlan } from '../../integrations/entities/integration-plan.entity';
+import {
+  Integration,
+  IntegrationBillingStatus,
+} from '../../integrations/entities/integration.entity';
 
-const ADDITIONAL_BANK_ACCOUNT_FEE_KEY =
-  'billing.additional_bank_account_fee';
+const ADDITIONAL_BANK_ACCOUNT_FEE_KEY = 'billing.additional_bank_account_fee';
 const ADDITIONAL_BANK_ACCOUNT_FEE_TYPE = 'additional_bank_account_fee';
-const FREE_INCLUDED_BANK_ACCOUNTS = 1;
+const INTEGRATION_API_KEY_PAYMENT_TYPE = 'integration_api_key_subscription';
 
 @Injectable()
 export class SubscriptionService {
@@ -38,6 +48,10 @@ export class SubscriptionService {
     private readonly settingsRepository: Repository<SystemSetting>,
     @InjectRepository(MonoAccount)
     private readonly monoAccountRepository: Repository<MonoAccount>,
+    @InjectRepository(Integration)
+    private readonly integrationRepository: Repository<Integration>,
+    @InjectRepository(IntegrationPlan)
+    private readonly integrationPlanRepository: Repository<IntegrationPlan>,
     private readonly paymentFactory: PaymentFactoryService,
     private readonly paystackService: PaystackService,
   ) {}
@@ -54,9 +68,7 @@ export class SubscriptionService {
     });
 
     if (!sub) {
-      const freePlan = await this.planRepository.findOne({
-        where: { slug: 'free' },
-      });
+      const freePlan = await this.getFallbackBasicPlan();
       return {
         hasActiveSubscription: false,
         activePlan: freePlan || null,
@@ -69,9 +81,7 @@ export class SubscriptionService {
       sub.status = 'past_due';
       await this.subRepository.save(sub);
 
-      const freePlan = await this.planRepository.findOne({
-        where: { slug: 'free' },
-      });
+      const freePlan = await this.getFallbackBasicPlan();
       return {
         hasActiveSubscription: false,
         activePlan: freePlan || null,
@@ -183,12 +193,12 @@ export class SubscriptionService {
   }
 
   async initializeSubscription(user: User, dto?: InitializeSubscriptionDto) {
-    // Determine plan slug based on interval
     const interval = dto?.interval || 'monthly';
-    const slug = interval === 'annually' ? 'premium-yearly' : 'premium';
+    const requestedSlug = dto?.planSlug || 'pro';
+    const planSlug = this.resolveCheckoutPlanSlug(requestedSlug, interval);
 
     const plan = await this.planRepository.findOne({
-      where: { slug },
+      where: { slug: planSlug },
     });
 
     if (!plan) throw new NotFoundException('Subscription plan not found');
@@ -252,18 +262,20 @@ export class SubscriptionService {
   async getAdditionalBankAccountFeeStatus(userId: string) {
     const price = await this.getAdditionalBankAccountFee();
     const linkedAccounts = await this.getLinkedBankAccountCount(userId);
+    const includedAccounts = await this.getIncludedBankAccountLimit(userId);
     const paidSlots = await this.getPurchasedAdditionalBankAccountSlots(userId);
-    const usedPaidSlots = Math.max(linkedAccounts - FREE_INCLUDED_BANK_ACCOUNTS, 0);
+    const usedPaidSlots = Math.max(linkedAccounts - includedAccounts, 0);
 
     return {
       price,
       currency: 'NGN',
-      freeIncludedAccounts: FREE_INCLUDED_BANK_ACCOUNTS,
+      freeIncludedAccounts: includedAccounts,
+      includedAccounts,
       linkedAccounts,
       paidSlots,
       availableSlots: Math.max(paidSlots - usedPaidSlots, 0),
       paymentRequiredForNextAccount:
-        linkedAccounts >= FREE_INCLUDED_BANK_ACCOUNTS + paidSlots,
+        linkedAccounts >= includedAccounts + paidSlots,
     };
   }
 
@@ -325,16 +337,15 @@ export class SubscriptionService {
 
   async assertCanLinkAnotherBankAccount(userId: string): Promise<void> {
     const linkedAccounts = await this.getLinkedBankAccountCount(userId);
-    if (linkedAccounts < FREE_INCLUDED_BANK_ACCOUNTS) {
+    const includedAccounts = await this.getIncludedBankAccountLimit(userId);
+
+    if (linkedAccounts < includedAccounts) {
       return;
     }
 
-    const paidSlots = await this.getPurchasedAdditionalBankAccountSlots(userId);
-    if (linkedAccounts >= FREE_INCLUDED_BANK_ACCOUNTS + paidSlots) {
-      throw new BadRequestException(
-        'Additional bank account payment required before linking another account',
-      );
-    }
+    throw new BadRequestException(
+      `Your current plan allows ${includedAccounts} linked bank account${includedAccounts === 1 ? '' : 's'}. Upgrade your plan to link another account.`,
+    );
   }
 
   async cancelSubscription(userId: string) {
@@ -410,6 +421,15 @@ export class SubscriptionService {
             verification.customerCode,
             verification.rawResponse?.data?.authorization,
           );
+        } else if (
+          tx.metadata?.type === INTEGRATION_API_KEY_PAYMENT_TYPE &&
+          tx.metadata?.integrationId &&
+          tx.metadata?.integrationPlanId
+        ) {
+          await this.activatePaidIntegration(
+            tx.metadata.integrationId,
+            tx.metadata.integrationPlanId,
+          );
         }
       } else {
         tx.status = 'failed';
@@ -455,7 +475,11 @@ export class SubscriptionService {
 
     let gatewaySubscriptionId = '';
     let gatewayEmailToken = '';
-    if (plan.gatewayPlanId && customerCode && authorization?.authorization_code) {
+    if (
+      plan.gatewayPlanId &&
+      customerCode &&
+      authorization?.authorization_code
+    ) {
       const created = await this.paystackService.createSubscription({
         customer: customerCode,
         plan: plan.gatewayPlanId,
@@ -480,6 +504,38 @@ export class SubscriptionService {
 
     await this.subRepository.save(sub);
     this.logger.log(`Provisioned plan ${plan.name} for user ${user.id}`);
+  }
+
+  private async activatePaidIntegration(
+    integrationId: string,
+    integrationPlanId: string,
+  ) {
+    const [integration, plan] = await Promise.all([
+      this.integrationRepository.findOne({
+        where: { id: integrationId },
+        relations: ['plan'],
+      }),
+      this.integrationPlanRepository.findOne({
+        where: { id: integrationPlanId },
+      }),
+    ]);
+
+    if (!integration || !plan) {
+      return;
+    }
+
+    const periodEnd = new Date();
+    if (plan.interval === 'annually' || plan.interval === 'yearly') {
+      periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+    } else {
+      periodEnd.setMonth(periodEnd.getMonth() + 1);
+    }
+
+    integration.plan = plan;
+    integration.billingStatus = IntegrationBillingStatus.ACTIVE;
+    integration.currentPeriodEnd = periodEnd;
+    integration.isActive = true;
+    await this.integrationRepository.save(integration);
   }
 
   async updatePlanPrice(planId: string, newPrice: number) {
@@ -511,6 +567,34 @@ export class SubscriptionService {
     return this.monoAccountRepository.count({
       where: { user: { id: userId } },
     });
+  }
+
+  private async getIncludedBankAccountLimit(userId: string): Promise<number> {
+    const { activePlan } = await this.getUserSubscriptionStatus(userId);
+    const planSlug = normalizePlanSlug(activePlan) || 'basic';
+    return BANK_ACCOUNT_LIMIT_BY_PLAN[planSlug];
+  }
+
+  private async getFallbackBasicPlan(): Promise<Plan | null> {
+    return (
+      (await this.planRepository.findOne({ where: { slug: 'basic' } })) ||
+      (await this.planRepository.findOne({ where: { slug: 'free' } }))
+    );
+  }
+
+  private resolveCheckoutPlanSlug(
+    requestedSlug: PlanSlug,
+    interval: 'monthly' | 'annually',
+  ): string {
+    if (!PLAN_SLUGS.includes(requestedSlug)) {
+      throw new BadRequestException('Invalid subscription plan');
+    }
+
+    if (interval === 'annually' && requestedSlug !== 'basic') {
+      return `${requestedSlug}-yearly`;
+    }
+
+    return requestedSlug;
   }
 
   private async getPurchasedAdditionalBankAccountSlots(
@@ -551,7 +635,9 @@ export class SubscriptionService {
     return 'Payment';
   }
 
-  private async getLatestSubscription(userId: string): Promise<Subscription | null> {
+  private async getLatestSubscription(
+    userId: string,
+  ): Promise<Subscription | null> {
     return this.subRepository.findOne({
       where: { user: { id: userId } },
       order: { createdAt: 'DESC' },

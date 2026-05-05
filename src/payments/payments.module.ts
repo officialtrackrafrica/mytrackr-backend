@@ -7,6 +7,8 @@ import { Subscription } from './entities/subscription.entity';
 import { PaymentTransaction } from './entities/payment-transaction.entity';
 import { SystemSetting } from '../admin/entities/system-setting.entity';
 import { MonoAccount } from '../mono/entities/mono-account.entity';
+import { IntegrationPlan } from '../integrations/entities/integration-plan.entity';
+import { Integration } from '../integrations/entities/integration.entity';
 
 import { SubscriptionService } from './services/subscription.service';
 import { PaymentFactoryService } from './services/payment-factory.service';
@@ -26,6 +28,8 @@ import { PremiumFieldInterceptor } from '../common/access-control/interceptors/p
       PaymentTransaction,
       SystemSetting,
       MonoAccount,
+      Integration,
+      IntegrationPlan,
     ]),
     ConfigModule,
   ],
@@ -37,6 +41,12 @@ import { PremiumFieldInterceptor } from '../common/access-control/interceptors/p
     PlanGuard,
     PremiumFieldInterceptor,
   ],
-  exports: [SubscriptionService, PlanGuard, PremiumFieldInterceptor],
+  exports: [
+    SubscriptionService,
+    PaymentFactoryService,
+    PaystackService,
+    PlanGuard,
+    PremiumFieldInterceptor,
+  ],
 })
 export class PaymentsModule {}

@@ -24,6 +24,7 @@ import { ReportsModule } from './reports/reports.module';
 import { StorageModule } from './storage/storage.module';
 import { EmailModule } from './email/email.module';
 import { HealthModule } from './health/health.module';
+import { IntegrationsModule } from './integrations/integrations.module';
 
 @Module({
   imports: [
@@ -71,6 +72,7 @@ import { HealthModule } from './health/health.module';
     StorageModule,
     EmailModule,
     HealthModule,
+    IntegrationsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

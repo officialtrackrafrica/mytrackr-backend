@@ -138,10 +138,11 @@ export class SubscriptionController {
   @UseGuards(JwtAuthGuard)
   @Post('subscribe')
   @ApiOperation({
-    summary: 'Initialize a new premium subscription payment',
+    summary: 'Initialize a new Basic, Pro, or Pro+ subscription payment',
     description:
-      'Starts the recurring billing flow. If no planId is provided, it defaults to the system "Premium" plan.',
+      'Starts the recurring billing flow. Use planSlug basic, pro, or pro-plus. If no planSlug is provided, it defaults to pro.',
   })
+  @ApiBody({ type: InitializeSubscriptionDto })
   @ApiResponse({
     status: 201,
     description: 'Returns payment authorization URL',
@@ -159,7 +160,8 @@ export class SubscriptionController {
   @UseGuards(JwtAuthGuard)
   @Get('additional-bank-accounts/fee')
   @ApiOperation({
-    summary: 'Get the current pricing and slot status for additional bank accounts',
+    summary:
+      'Get the current pricing and slot status for additional bank accounts',
   })
   @ApiResponse({
     status: 200,
@@ -184,7 +186,8 @@ export class SubscriptionController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Additional account payment is not currently required or cannot be initialized',
+    description:
+      'Additional account payment is not currently required or cannot be initialized',
     type: ErrorResponseDto,
   })
   async initializeAdditionalBankAccountCheckout(@Req() req: any) {

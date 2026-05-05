@@ -7,6 +7,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { REQUIRE_PLAN_KEY } from '../decorators/require-plan.decorator';
 import { SubscriptionService } from '../../../payments/services/subscription.service';
+import { planHasAccess } from '../plan-entitlements';
 
 @Injectable()
 export class PlanGuard implements CanActivate {
@@ -45,17 +46,19 @@ export class PlanGuard implements CanActivate {
     const { hasActiveSubscription, activePlan } =
       await this.subscriptionService.getUserSubscriptionStatus(user.id);
 
-    if (!hasActiveSubscription || !activePlan) {
+    if ((!hasActiveSubscription || !activePlan) && requiredPlans.length === 0) {
       throw new ForbiddenException(
-        'This feature requires an active premium subscription.',
+        'This feature requires an active subscription plan.',
       );
     }
 
+    if (requiredPlans.length === 0 && !planHasAccess(activePlan, 'pro')) {
+      throw new ForbiddenException('This feature requires a Pro plan.');
+    }
+
     if (requiredPlans.length > 0) {
-      const match = requiredPlans.some(
-        (planName) =>
-          planName.toLowerCase() === activePlan.name.toLowerCase() ||
-          planName.toLowerCase() === activePlan.slug.toLowerCase(),
+      const match = requiredPlans.some((planName) =>
+        planHasAccess(activePlan, planName),
       );
 
       if (!match) {

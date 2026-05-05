@@ -28,6 +28,8 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtAuthGuard } from '../auth/guards';
+import { PlanGuard } from '../common/access-control/guards/plan.guard';
+import { RequirePlan } from '../common/access-control/decorators/require-plan.decorator';
 import { BusinessService } from '../business/services/business.service';
 import { Asset } from './entities/asset.entity';
 import { Liability, LiabilityStatus } from './entities/liability.entity';
@@ -638,6 +640,8 @@ export class FinanceController {
   }
 
   @Post('transactions/upload-pdf')
+  @UseGuards(PlanGuard)
+  @RequirePlan('basic')
   @UseInterceptors(
     FileInterceptor('file', { limits: { fileSize: 10_000_000 } }),
   )

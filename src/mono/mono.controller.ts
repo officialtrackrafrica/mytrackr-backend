@@ -43,8 +43,8 @@ export class MonoController {
   constructor(private readonly monoService: MonoService) {}
 
   @Post('initiate')
-  @UseGuards(JwtAuthGuard)
-  @PublicPlan()
+  @UseGuards(JwtAuthGuard, PlanGuard)
+  @RequirePlan('pro')
   @ApiCookieAuth('accessToken')
   @ApiOperation({ summary: 'Initiate Mono account linking' })
   @ApiResponse({

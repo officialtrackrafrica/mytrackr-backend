@@ -64,13 +64,13 @@ export class PdfUploadService {
 
     if (!text || text.trim().length === 0) {
       this.logger.log(
-        'Fallback: Attempting OCR extraction via Tesseract service...',
+        'Fallback: Attempting OCR extraction via OCRmyPDF service...',
       );
       text = await this.ocrService.extractTextFromPdf(fileBuffer);
 
       if (!text || text.trim().length === 0) {
         this.logger.error(
-          'No text retrieved from either pdf-parse or Tesseract OCR.',
+          'No text retrieved from either pdf-parse or OCRmyPDF.',
         );
         throw new BadRequestException(
           'PDF file appears to be empty or contains no extractable text. Please ensure it is a valid bank statement.',

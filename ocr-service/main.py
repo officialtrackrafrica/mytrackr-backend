@@ -1,206 +1,161 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import JSONResponse
-import fitz  # PyMuPDF
-import pytesseract
-from PIL import Image
-import io
-import logging
-import numpy as np
-from typing import Optional
+from __future__ import annotations
 
-# Configure logging
+import logging
+import os
+import subprocess
+import tempfile
+from pathlib import Path
+
+import fitz  # PyMuPDF
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import JSONResponse
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="MyTrackr OCR Service", version="2.0.0")
+app = FastAPI(title="MyTrackr OCR Service", version="3.0.0")
+
+MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
+OCR_TIMEOUT_SECONDS = 120
+OCR_SKIP_FLAG = "--skip-text"
 
 
-def extract_text_directly(pdf_bytes: bytes) -> str:
-    """
-    Attempt to extract text directly from the PDF structure using PyMuPDF.
-    This is much faster and more accurate for searchable PDFs.
-    """
+def extract_text_from_pdf(pdf_path: Path) -> str:
+    """Read text from a searchable PDF."""
     try:
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        full_text = ""
-        for page in doc:
-            full_text += page.get_text() + "\n"
-        doc.close()
-        return full_text.strip()
-    except Exception as e:
-        logger.warning(f"Direct text extraction failed: {e}")
-        return ""
+        with fitz.open(pdf_path) as document:
+            return "\n".join(page.get_text() for page in document).strip()
+    except Exception as exc:
+        logger.error("Failed to extract text from OCR output: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail="OCR completed but text extraction from output PDF failed",
+        ) from exc
 
 
-def pdf_to_images(pdf_bytes: bytes) -> list:
-    """Convert PDF bytes to list of PIL images (one per page)."""
+def get_pdf_page_count(pdf_path: Path) -> int:
+    """Return the number of pages in the PDF."""
     try:
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        images = []
-
-        for page_num in range(len(doc)):
-            page = doc[page_num]
-            # Render page at 300 DPI for good OCR quality
-            mat = fitz.Matrix(300 / 72, 300 / 72)
-            pix = page.get_pixmap(matrix=mat)
-
-            # Convert to PIL Image
-            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-            images.append(img)
-
-        doc.close()
-        logger.info(f"Rendered {len(images)} pages from PDF for OCR")
-        return images
-    except Exception as e:
-        logger.error(f"Error converting PDF to images: {e}")
-        raise HTTPException(status_code=400, detail=f"Invalid PDF file: {str(e)}")
+        with fitz.open(pdf_path) as document:
+            return len(document)
+    except Exception:
+        return 0
 
 
-def extract_text_from_image(image: Image.Image) -> str:
-    """Extract text from a single image using Tesseract OCR."""
-    # Tesseract config for bank statements:
-    # --psm 6 = Assume a single uniform block of text
-    # -c preserve_interword_spaces=1 = Keep spacing for table alignment
-    custom_config = r"--psm 6 -c preserve_interword_spaces=1"
-    text = pytesseract.image_to_string(image, config=custom_config)
-    return text
+def run_ocrmypdf(input_path: Path, output_path: Path) -> subprocess.CompletedProcess[str]:
+    """Run OCRmyPDF with production-safe defaults."""
+    command = [
+        "ocrmypdf",
+        OCR_SKIP_FLAG,
+        "--output-type",
+        "pdf",
+        str(input_path),
+        str(output_path),
+    ]
+
+    logger.info("Running OCRmyPDF command: %s", " ".join(command[:-2] + ["<input>", "<output>"]))
+
+    return subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        timeout=OCR_TIMEOUT_SECONDS,
+        check=False,
+    )
+
+
+def get_ocrmypdf_version() -> str:
+    """Fetch OCRmyPDF version for health reporting."""
+    try:
+        result = subprocess.run(
+            ["ocrmypdf", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip() or "unknown"
+        return "unknown"
+    except Exception:
+        return "unknown"
 
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
-    # Quick check that tesseract binary is accessible
-    try:
-        version = pytesseract.get_tesseract_version()
-        engine_ready = True
-    except Exception:
-        version = "unknown"
-        engine_ready = False
+    version = get_ocrmypdf_version()
+    engine_ready = version != "unknown"
 
     return {
-        "status": "healthy",
-        "engine": "tesseract",
+        "status": "healthy" if engine_ready else "degraded",
+        "engine": "ocrmypdf",
         "engine_ready": engine_ready,
-        "tesseract_version": str(version),
-        "version": "2.0.0",
+        "ocrmypdf_version": version,
+        "ocr_args": [OCR_SKIP_FLAG],
+        "version": "3.0.0",
     }
 
 
 @app.post("/ocr/pdf")
 async def ocr_pdf(file: UploadFile = File(...)):
-    """
-    Hybrid text extraction from a PDF file.
-    1. Try direct extraction (fast, accurate for searchable PDFs).
-    2. Fallback to Tesseract OCR if no text is found (for scanned/image PDFs).
-    """
+    """OCR a PDF using OCRmyPDF and keep existing text pages intact."""
     try:
-        # Read file
         pdf_bytes = await file.read()
 
         if not pdf_bytes:
             raise HTTPException(status_code=400, detail="Empty file provided")
 
-        # Check file size (limit to 50MB)
-        if len(pdf_bytes) > 50 * 1024 * 1024:
+        if len(pdf_bytes) > MAX_FILE_SIZE_BYTES:
             raise HTTPException(status_code=413, detail="File too large (max 50MB)")
 
-        # --- Phase 1: Direct Extraction ---
-        logger.info(f"Attempting direct text extraction for {file.filename}...")
-        direct_text = extract_text_directly(pdf_bytes)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            input_path = tmp_path / "input.pdf"
+            output_path = tmp_path / "output.pdf"
+            input_path.write_bytes(pdf_bytes)
 
-        # If we got significant text (at least 100 chars), return it immediately
-        if len(direct_text) > 100:
+            result = run_ocrmypdf(input_path, output_path)
+
+            if result.returncode != 0:
+                error_output = (result.stderr or result.stdout).strip()
+                logger.error("OCRmyPDF failed (%s): %s", result.returncode, error_output)
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"OCRmyPDF failed: {error_output or 'unknown error'}",
+                )
+
+            if not output_path.exists() or os.path.getsize(output_path) == 0:
+                raise HTTPException(
+                    status_code=500,
+                    detail="OCRmyPDF did not produce an output PDF",
+                )
+
+            text = extract_text_from_pdf(output_path)
+            pages = get_pdf_page_count(output_path)
+
             logger.info(
-                f"Direct extraction successful ({len(direct_text)} chars). Skipping OCR."
+                "OCRmyPDF completed for %s with --skip-text; extracted %s chars from %s pages",
+                file.filename,
+                len(text),
+                pages,
             )
+
             return JSONResponse(
                 content={
                     "success": True,
-                    "text": direct_text,
-                    "method": "direct",
-                    "pages": 0,
-                    "message": "Text extracted directly from PDF structure",
+                    "text": text,
+                    "method": "ocrmypdf",
+                    "pages": pages,
+                    "message": "OCRmyPDF completed successfully with --skip-text",
                 }
             )
-
-        logger.info(
-            "Direct extraction returned minimal text. Falling back to Tesseract OCR..."
-        )
-
-        # --- Phase 2: Tesseract OCR Fallback ---
-        images = pdf_to_images(pdf_bytes)
-
-        if not images:
-            raise HTTPException(status_code=400, detail="No pages found in PDF")
-
-        # Extract text from each page
-        all_text = []
-        for i, image in enumerate(images):
-            logger.info(f"Tesseract OCR processing page {i + 1}/{len(images)}")
-            page_text = extract_text_from_image(image)
-            all_text.append(page_text)
-
-        # Combine all text
-        full_text = "\n\n".join(all_text)
-
-        return JSONResponse(
-            content={
-                "success": True,
-                "text": full_text,
-                "method": "ocr",
-                "pages": len(images),
-                "message": "Tesseract OCR completed successfully",
-            }
-        )
-
+    except subprocess.TimeoutExpired as exc:
+        logger.error("OCRmyPDF timed out: %s", exc)
+        raise HTTPException(status_code=504, detail="OCR processing timed out") from exc
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"OCR processing error: {e}", exc_info=True)
+    except Exception as exc:
+        logger.error("OCR processing error: %s", exc, exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"OCR processing failed: {str(e)}"
-        )
-
-
-@app.post("/ocr/image")
-async def ocr_image(file: UploadFile = File(...)):
-    """
-    Extract text from a single image (PNG, JPG, etc.) using Tesseract OCR.
-    """
-    try:
-        # Read file
-        image_bytes = await file.read()
-
-        if not image_bytes:
-            raise HTTPException(status_code=400, detail="Empty file provided")
-
-        # Convert to PIL Image
-        image = Image.open(io.BytesIO(image_bytes))
-        if image.mode != "RGB":
-            image = image.convert("RGB")
-
-        # Extract text
-        text = extract_text_from_image(image)
-
-        return JSONResponse(
-            content={
-                "success": True,
-                "text": text,
-                "method": "ocr",
-                "message": "Tesseract OCR completed successfully",
-            }
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"OCR processing error: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail=f"OCR processing failed: {str(e)}"
-        )
-
-
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+            status_code=500, detail=f"OCR processing failed: {str(exc)}"
+        ) from exc

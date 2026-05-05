@@ -651,10 +651,12 @@ export class MonoService {
     transactionId: string,
     dto: UpdateTransactionCategoryDto,
   ) {
-    const transaction = await this.transactionRepository.findOne({
-      where: { id: transactionId },
-      relations: ['monoAccount', 'monoAccount.user'],
-    });
+    const transaction = await this.transactionRepository
+      .createQueryBuilder('tx')
+      .leftJoinAndSelect('tx.monoAccount', 'monoAccount')
+      .leftJoinAndSelect('monoAccount.user', 'user')
+      .where('tx.id = :transactionId', { transactionId })
+      .getOne();
 
     if (!transaction) {
       throw new NotFoundException('Transaction not found');
@@ -736,10 +738,12 @@ export class MonoService {
   }
 
   async resetTransactionCategory(userId: string, transactionId: string) {
-    const transaction = await this.transactionRepository.findOne({
-      where: { id: transactionId },
-      relations: ['monoAccount', 'monoAccount.user'],
-    });
+    const transaction = await this.transactionRepository
+      .createQueryBuilder('tx')
+      .leftJoinAndSelect('tx.monoAccount', 'monoAccount')
+      .leftJoinAndSelect('monoAccount.user', 'user')
+      .where('tx.id = :transactionId', { transactionId })
+      .getOne();
 
     if (!transaction) {
       throw new NotFoundException('Transaction not found');

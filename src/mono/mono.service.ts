@@ -670,21 +670,27 @@ export class MonoService {
     transactionId: string,
     dto: UpdateTransactionCategoryDto,
   ) {
-    const transaction = await this.transactionRepository
-      .createQueryBuilder('tx')
-      .leftJoinAndSelect('tx.monoAccount', 'monoAccount')
-      .leftJoinAndSelect('monoAccount.user', 'user')
-      .where('tx.id = :transactionId', { transactionId })
-      .getOne();
+    const transaction = await this.resolveMonoTransactionForUpdate(
+      userId,
+      transactionId,
+    );
 
     if (!transaction) {
-      throw new NotFoundException('Transaction not found');
-    }
-
-    if (transaction.monoAccount?.user?.id !== userId) {
-      throw new UnauthorizedException(
-        'You can only modify your own transactions',
+      const financeTransaction = await this.financeTransactionRepository.findOne(
+        {
+          where: { id: transactionId },
+        },
       );
+
+      if (financeTransaction) {
+        return this.updateFinanceOnlyTransactionCategory(
+          userId,
+          financeTransaction,
+          dto,
+        );
+      }
+
+      throw new NotFoundException('Transaction not found');
     }
 
     let categoryId = dto.categoryId;
@@ -728,13 +734,13 @@ export class MonoService {
     transaction.subCategory = subCategory;
     transaction.subCategoryId = subCategoryId || null;
     transaction.isCategorised = true;
-      transaction.categorySource = CategorySource.MANUAL;
+    transaction.categorySource = CategorySource.MANUAL;
 
-      await this.transactionRepository.save(transaction);
-      await this.syncFinanceTransactionCategory(transaction);
+    await this.transactionRepository.save(transaction);
+    await this.syncFinanceTransactionCategory(transaction);
 
-      if (transaction.monoAccount?.user?.id && category) {
-        this.aiCategorizationService
+    if (transaction.monoAccount?.user?.id && category) {
+      this.aiCategorizationService
         .learnFeedback(
           transaction.narration,
           category,
@@ -757,35 +763,41 @@ export class MonoService {
   }
 
   async resetTransactionCategory(userId: string, transactionId: string) {
-    const transaction = await this.transactionRepository
-      .createQueryBuilder('tx')
-      .leftJoinAndSelect('tx.monoAccount', 'monoAccount')
-      .leftJoinAndSelect('monoAccount.user', 'user')
-      .where('tx.id = :transactionId', { transactionId })
-      .getOne();
+    const transaction = await this.resolveMonoTransactionForUpdate(
+      userId,
+      transactionId,
+    );
 
     if (!transaction) {
-      throw new NotFoundException('Transaction not found');
-    }
-
-    if (transaction.monoAccount?.user?.id !== userId) {
-      throw new UnauthorizedException(
-        'You can only modify your own transactions',
+      const financeTransaction = await this.financeTransactionRepository.findOne(
+        {
+          where: { id: transactionId },
+        },
       );
+
+      if (financeTransaction) {
+        return this.resetFinanceOnlyTransactionCategory(
+          userId,
+          financeTransaction,
+        );
+      }
+
+      throw new NotFoundException('Transaction not found');
     }
 
     transaction.manualCategory = null;
     transaction.manualSubCategory = null;
+    transaction.category = null;
     transaction.isCategorised = false;
     transaction.categorySource = CategorySource.MONO; // Reset to default
-      transaction.categoryId = null;
-      transaction.subCategory = null;
-      transaction.subCategoryId = null;
-      await this.transactionRepository.save(transaction);
-      await this.syncFinanceTransactionCategory(transaction);
+    transaction.categoryId = null;
+    transaction.subCategory = null;
+    transaction.subCategoryId = null;
+    await this.transactionRepository.save(transaction);
+    await this.syncFinanceTransactionCategory(transaction);
 
-      return {
-        id: transaction.id,
+    return {
+      id: transaction.id,
       financeTransactionId: await this.findFinanceTransactionId(transaction),
       category: transaction.category,
       subCategory: transaction.subCategory,
@@ -1264,6 +1276,174 @@ export class MonoService {
     });
 
     return financeTransaction?.id || null;
+  }
+
+  private async resolveMonoTransactionForUpdate(
+    userId: string,
+    transactionId: string,
+  ): Promise<MonoTransaction | null> {
+    const directMonoTransaction = await this.findMonoTransactionWithUser(
+      transactionId,
+    );
+
+    if (directMonoTransaction) {
+      this.assertMonoTransactionOwner(directMonoTransaction, userId);
+      return directMonoTransaction;
+    }
+
+    const financeTransaction = await this.financeTransactionRepository.findOne({
+      where: { id: transactionId },
+    });
+
+    if (!financeTransaction) {
+      return null;
+    }
+
+    if (financeTransaction.userId !== userId) {
+      throw new UnauthorizedException(
+        'You can only modify your own transactions',
+      );
+    }
+
+    if (!financeTransaction.externalId?.startsWith('mono_')) {
+      return null;
+    }
+
+    const monoTransactionId = financeTransaction.externalId.slice(5);
+    const mirroredMonoTransaction = await this.transactionRepository
+      .createQueryBuilder('tx')
+      .leftJoinAndSelect('tx.monoAccount', 'monoAccount')
+      .leftJoinAndSelect('monoAccount.user', 'user')
+      .where('tx.monoTransactionId = :monoTransactionId', {
+        monoTransactionId,
+      })
+      .getOne();
+
+    if (!mirroredMonoTransaction) {
+      return null;
+    }
+
+    this.assertMonoTransactionOwner(mirroredMonoTransaction, userId);
+    return mirroredMonoTransaction;
+  }
+
+  private findMonoTransactionWithUser(
+    transactionId: string,
+  ): Promise<MonoTransaction | null> {
+    return this.transactionRepository
+      .createQueryBuilder('tx')
+      .leftJoinAndSelect('tx.monoAccount', 'monoAccount')
+      .leftJoinAndSelect('monoAccount.user', 'user')
+      .where('tx.id = :transactionId', { transactionId })
+      .getOne();
+  }
+
+  private assertMonoTransactionOwner(
+    transaction: MonoTransaction,
+    userId: string,
+  ) {
+    if (transaction.monoAccount?.user?.id !== userId) {
+      throw new UnauthorizedException(
+        'You can only modify your own transactions',
+      );
+    }
+  }
+
+  private async updateFinanceOnlyTransactionCategory(
+    userId: string,
+    financeTransaction: FinanceTransaction,
+    dto: UpdateTransactionCategoryDto,
+  ) {
+    if (financeTransaction.userId !== userId) {
+      throw new UnauthorizedException(
+        'You can only modify your own transactions',
+      );
+    }
+
+    let categoryId = dto.categoryId;
+    const subCategoryId = dto.subCategoryId;
+    let category: string | null = null;
+    let subCategory: string | null = null;
+
+    if (categoryId) {
+      const cat = await this.categoryRepo.findOneBy({ id: categoryId });
+      if (!cat) {
+        throw new BadRequestException('Invalid categoryId');
+      }
+      category = cat.type;
+    }
+
+    if (subCategoryId) {
+      const sub = await this.subCategoryRepo.findOne({
+        where: { id: subCategoryId },
+        relations: ['category'],
+      });
+      if (!sub) {
+        throw new BadRequestException('Invalid subCategoryId');
+      }
+      subCategory = sub.name;
+      if (!categoryId) {
+        categoryId = sub.category.id;
+        category = sub.category.type;
+      }
+    }
+
+    if (!category && !subCategory) {
+      throw new BadRequestException(
+        'You must provide at least a categoryId or subCategoryId',
+      );
+    }
+
+    financeTransaction.manualCategory = category as any;
+    financeTransaction.manualSubCategory = subCategory as any;
+    financeTransaction.category = category as any;
+    financeTransaction.categoryId = (categoryId || null) as any;
+    financeTransaction.subCategory = subCategory as any;
+    financeTransaction.subCategoryId = (subCategoryId || null) as any;
+    financeTransaction.isCategorised = true;
+    financeTransaction.categorySource = CategorySource.MANUAL;
+
+    await this.financeTransactionRepository.save(financeTransaction);
+
+    return {
+      id: financeTransaction.id,
+      financeTransactionId: financeTransaction.id,
+      category: financeTransaction.category,
+      categoryId: financeTransaction.categoryId,
+      subCategory: financeTransaction.subCategory,
+      subCategoryId: financeTransaction.subCategoryId,
+      categorySource: financeTransaction.categorySource,
+    };
+  }
+
+  private async resetFinanceOnlyTransactionCategory(
+    userId: string,
+    financeTransaction: FinanceTransaction,
+  ) {
+    if (financeTransaction.userId !== userId) {
+      throw new UnauthorizedException(
+        'You can only modify your own transactions',
+      );
+    }
+
+    financeTransaction.manualCategory = null as any;
+    financeTransaction.manualSubCategory = null as any;
+    financeTransaction.category = null as any;
+    financeTransaction.categoryId = null as any;
+    financeTransaction.subCategory = null as any;
+    financeTransaction.subCategoryId = null as any;
+    financeTransaction.isCategorised = false;
+    financeTransaction.categorySource = CategorySource.MONO;
+
+    await this.financeTransactionRepository.save(financeTransaction);
+
+    return {
+      id: financeTransaction.id,
+      financeTransactionId: financeTransaction.id,
+      category: financeTransaction.category,
+      subCategory: financeTransaction.subCategory,
+      categorySource: financeTransaction.categorySource,
+    };
   }
 
   private async syncFinanceTransactionCategory(

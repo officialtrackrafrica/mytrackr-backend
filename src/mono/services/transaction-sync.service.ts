@@ -14,6 +14,7 @@ import { BusinessService } from '../../business/services/business.service';
 @Injectable()
 export class TransactionSyncService {
   private readonly logger = new Logger(TransactionSyncService.name);
+  private monoAccountFkColumnName: string | null = null;
 
   constructor(
     @InjectRepository(MonoTransaction)
@@ -131,9 +132,12 @@ export class TransactionSyncService {
     userId: string | null,
     options?: { autoCategorize?: boolean },
   ): Promise<{ synced: number; skipped: string | null }> {
+    const monoAccountFkColumnName = await this.getMonoAccountFkColumnName();
     const monoTransactions = await this.monoTransactionRepository
       .createQueryBuilder('tx')
-      .where('tx."monoAccountId" = :monoAccountUuid', { monoAccountUuid })
+      .where(`tx.${this.quoteIdentifier(monoAccountFkColumnName)} = :monoAccountUuid`, {
+        monoAccountUuid,
+      })
       .orderBy('tx.date', 'ASC')
       .getMany();
 
@@ -195,5 +199,47 @@ export class TransactionSyncService {
     }
 
     return { total, results };
+  }
+
+  private async getMonoAccountFkColumnName(): Promise<string> {
+    if (this.monoAccountFkColumnName) {
+      return this.monoAccountFkColumnName;
+    }
+
+    const columns = await this.monoTransactionRepository.query(
+      `
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_name = 'mono_transactions'
+          AND table_schema = current_schema()
+      `,
+    );
+
+    const candidates = [
+      'monoAccountId',
+      'monoaccountid',
+      'mono_account_id',
+    ];
+
+    const matched =
+      candidates.find((candidate) =>
+        columns.some((column: { column_name: string }) => column.column_name === candidate),
+      ) ||
+      columns.find((column: { column_name: string }) =>
+        /mono.*account.*id/i.test(column.column_name),
+      )?.column_name;
+
+    if (!matched) {
+      throw new Error(
+        'Could not resolve mono_transactions account foreign key column',
+      );
+    }
+
+    this.monoAccountFkColumnName = matched;
+    return matched;
+  }
+
+  private quoteIdentifier(identifier: string): string {
+    return `"${identifier.replace(/"/g, '""')}"`;
   }
 }

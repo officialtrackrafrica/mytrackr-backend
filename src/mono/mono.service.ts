@@ -42,6 +42,7 @@ export class MonoService {
   private readonly baseUrl = 'https://api.withmono.com/v2';
   private readonly maxRetries = 3;
   private readonly initialRetryDelayMs = 60 * 1000; // 1 minute
+  private monoAccountFkColumnName: string | null = null;
 
   constructor(
     private configService: ConfigService,
@@ -548,9 +549,10 @@ export class MonoService {
 
     const transactionsData = await Promise.all(
       userAccounts.map(async (acc) => {
+        const monoAccountFkColumnName = await this.getMonoAccountFkColumnName();
         const query = this.transactionRepository
           .createQueryBuilder('tx')
-          .where('tx."monoAccountId" = :monoAccountId', {
+          .where(`tx.${this.quoteIdentifier(monoAccountFkColumnName)} = :monoAccountId`, {
             monoAccountId: acc.id,
           });
 
@@ -1312,5 +1314,47 @@ export class MonoService {
         transaction.id,
       ]),
     );
+  }
+
+  private async getMonoAccountFkColumnName(): Promise<string> {
+    if (this.monoAccountFkColumnName) {
+      return this.monoAccountFkColumnName;
+    }
+
+    const columns = await this.transactionRepository.query(
+      `
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_name = 'mono_transactions'
+          AND table_schema = current_schema()
+      `,
+    );
+
+    const candidates = [
+      'monoAccountId',
+      'monoaccountid',
+      'mono_account_id',
+    ];
+
+    const matched =
+      candidates.find((candidate) =>
+        columns.some((column: { column_name: string }) => column.column_name === candidate),
+      ) ||
+      columns.find((column: { column_name: string }) =>
+        /mono.*account.*id/i.test(column.column_name),
+      )?.column_name;
+
+    if (!matched) {
+      throw new Error(
+        'Could not resolve mono_transactions account foreign key column',
+      );
+    }
+
+    this.monoAccountFkColumnName = matched;
+    return matched;
+  }
+
+  private quoteIdentifier(identifier: string): string {
+    return `"${identifier.replace(/"/g, '""')}"`;
   }
 }

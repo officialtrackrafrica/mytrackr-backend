@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
 import { User } from '../../auth/entities/user.entity';
 import { Session } from '../../auth/entities/session.entity';
-import { Transaction } from '../../mono/entities/transaction.entity';
+import { MonoTransaction as Transaction } from '../../mono/entities/transaction.entity';
 import { MonoAccount } from '../../mono/entities/mono-account.entity';
 
 @Injectable()

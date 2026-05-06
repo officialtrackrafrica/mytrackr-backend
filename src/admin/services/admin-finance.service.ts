@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Transaction } from '../../mono/entities/transaction.entity';
+import { MonoTransaction as Transaction } from '../../mono/entities/transaction.entity';
 import { MonoAccount } from '../../mono/entities/mono-account.entity';
 import { TransactionQueryDto } from '../dto';
 

@@ -36,7 +36,7 @@ import { Liability, LiabilityStatus } from './entities/liability.entity';
 import { Transaction, CategorySource } from './entities/transaction.entity';
 import { AccountCategory } from './entities/account-category.entity';
 import { AccountSubCategory } from './entities/account-subcategory.entity';
-import { Transaction as MonoTransaction } from '../mono/entities/transaction.entity';
+import { MonoTransaction } from '../mono/entities/transaction.entity';
 import { CategorizationService } from './services/categorization.service';
 import { CsvUploadService } from './services/csv-upload.service';
 import { PdfUploadService } from './services/pdf-upload.service';

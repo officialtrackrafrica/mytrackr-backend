@@ -14,18 +14,13 @@ import { BankAccount } from './bank-account.entity';
 import { CategorizationRule } from './categorization-rule.entity';
 import { AccountCategory } from './account-category.entity';
 import { AccountSubCategory } from './account-subcategory.entity';
+import { CategorySource } from './category-source.enum';
+
+export { CategorySource };
 
 export enum TransactionDirection {
   CREDIT = 'CREDIT',
   DEBIT = 'DEBIT',
-}
-
-export enum CategorySource {
-  MONO = 'MONO',
-  AI = 'AI',
-  RULE = 'RULE',
-  HEURISTIC = 'HEURISTIC',
-  MANUAL = 'MANUAL',
 }
 
 export const TransactionCategory = {

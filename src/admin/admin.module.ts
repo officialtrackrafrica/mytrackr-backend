@@ -14,7 +14,7 @@ import {
 import { User } from '../auth/entities/user.entity';
 import { Session } from '../auth/entities/session.entity';
 import { Role } from '../auth/entities/role.entity';
-import { Transaction } from '../mono/entities/transaction.entity';
+import { MonoTransaction } from '../mono/entities/transaction.entity';
 import { MonoAccount } from '../mono/entities/mono-account.entity';
 
 import {
@@ -50,7 +50,7 @@ import { StorageModule } from '../storage/storage.module';
       User,
       Session,
       Role,
-      Transaction,
+      MonoTransaction,
       MonoAccount,
     ]),
     ConfigModule,

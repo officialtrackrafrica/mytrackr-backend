@@ -7,7 +7,7 @@ import { forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from '../auth/entities/user.entity';
 import { MonoAccount } from './entities/mono-account.entity';
-import { Transaction } from './entities/transaction.entity';
+import { MonoTransaction } from './entities/transaction.entity';
 import { FinanceModule } from '../finance/finance.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { CategorizationModule } from '../categorization/categorization.module';
@@ -24,7 +24,7 @@ import { MonoAdminController } from './mono-admin.controller';
     TypeOrmModule.forFeature([
       User,
       MonoAccount,
-      Transaction,
+      MonoTransaction,
       FinanceTransaction,
       AccountCategory,
       AccountSubCategory,

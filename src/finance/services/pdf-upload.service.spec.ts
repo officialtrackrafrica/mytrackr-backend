@@ -72,6 +72,7 @@ describe('PdfUploadService', () => {
           description: 'PAYMENT TO BOB',
         }),
       ]),
+      { autoCategorize: false },
     );
   });
 
@@ -105,6 +106,7 @@ describe('PdfUploadService', () => {
           description: 'SALARY DEPOSIT',
         }),
       ]),
+      { autoCategorize: false },
     );
   });
 });

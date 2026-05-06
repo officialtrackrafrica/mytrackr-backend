@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
-import { Transaction as MonoTransaction } from '../entities/transaction.entity';
+import { MonoTransaction } from '../entities/transaction.entity';
 import { MonoAccount } from '../entities/mono-account.entity';
 import {
   CategorizationService,

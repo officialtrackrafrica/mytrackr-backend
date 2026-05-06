@@ -22,7 +22,7 @@ import {
   In,
 } from 'typeorm';
 import { MonoAccount } from './entities/mono-account.entity';
-import { Transaction } from './entities/transaction.entity';
+import { MonoTransaction } from './entities/transaction.entity';
 import { User } from '../auth/entities/user.entity';
 import { v4 as uuidv4 } from 'uuid';
 import { AiCategorizationService } from '../categorization/categorization.service';
@@ -48,8 +48,8 @@ export class MonoService {
     private configService: ConfigService,
     @InjectRepository(MonoAccount)
     private monoAccountRepository: Repository<MonoAccount>,
-    @InjectRepository(Transaction)
-    private transactionRepository: Repository<Transaction>,
+    @InjectRepository(MonoTransaction)
+    private transactionRepository: Repository<MonoTransaction>,
     @InjectRepository(FinanceTransaction)
     private financeTransactionRepository: Repository<FinanceTransaction>,
     @InjectRepository(AccountCategory)
@@ -521,7 +521,7 @@ export class MonoService {
     await this.transactionRepository
       .createQueryBuilder()
       .insert()
-      .into(Transaction)
+      .into(MonoTransaction)
       .values(entities)
       .orUpdate(
         [
@@ -1254,7 +1254,7 @@ export class MonoService {
   }
 
   private async findFinanceTransactionId(
-    transaction: Transaction,
+    transaction: MonoTransaction,
   ): Promise<string | null> {
     const financeTransaction = await this.financeTransactionRepository.findOne({
       where: {
@@ -1267,7 +1267,7 @@ export class MonoService {
   }
 
   private async syncFinanceTransactionCategory(
-    transaction: Transaction,
+    transaction: MonoTransaction,
   ): Promise<void> {
     const financeTransaction = await this.financeTransactionRepository.findOne({
       where: {
@@ -1294,7 +1294,7 @@ export class MonoService {
     await this.financeTransactionRepository.save(financeTransaction);
   }
 
-  private async getFinanceIdMap(transactions: Transaction[]) {
+  private async getFinanceIdMap(transactions: MonoTransaction[]) {
     const externalIds = transactions.map((transaction) => {
       return `mono_${transaction.monoTransactionId}`;
     });

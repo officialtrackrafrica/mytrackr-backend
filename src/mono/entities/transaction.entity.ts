@@ -10,12 +10,12 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { MonoAccount } from './mono-account.entity';
-import { CategorySource } from '../../finance/entities/transaction.entity';
+import { CategorySource } from '../../finance/entities/category-source.enum';
 
 @Entity('mono_transactions')
 @Unique('UQ_mono_tx_per_account', ['monoTransactionId', 'monoAccount'])
 @Index('IDX_mono_tx_date', ['monoAccount', 'date'])
-export class Transaction {
+export class MonoTransaction {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 

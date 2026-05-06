@@ -10,7 +10,7 @@ import {
 } from 'typeorm';
 import { User } from '../../auth/entities/user.entity';
 import { Business } from '../../business/entities/business.entity';
-import { Transaction } from './transaction.entity';
+import { MonoTransaction } from './transaction.entity';
 
 @Entity('mono_accounts')
 export class MonoAccount {
@@ -66,8 +66,8 @@ export class MonoAccount {
   @Column({ type: 'uuid', nullable: true })
   businessId: string | null;
 
-  @OneToMany(() => Transaction, (tx) => tx.monoAccount)
-  transactions: Transaction[];
+  @OneToMany(() => MonoTransaction, (tx) => tx.monoAccount)
+  transactions: MonoTransaction[];
 
   @CreateDateColumn()
   createdAt: Date;

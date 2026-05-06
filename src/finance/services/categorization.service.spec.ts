@@ -25,6 +25,7 @@ describe('CategorizationService', () => {
   beforeEach(async () => {
     txRepo = {
       find: jest.fn(),
+      findOneBy: jest.fn(),
       create: jest.fn().mockImplementation((dto) => ({ ...dto })),
       save: jest.fn(),
     };
@@ -65,9 +66,11 @@ describe('CategorizationService', () => {
       id: 'old-uuid',
       externalId: 'mono_123',
       businessId: null,
+      isCategorised: false,
     };
 
     txRepo.find.mockResolvedValue([existingTx]);
+    txRepo.findOneBy.mockResolvedValue(existingTx);
 
     const dtos: RawTransactionDto[] = [
       {
@@ -83,19 +86,16 @@ describe('CategorizationService', () => {
     const businessId = 'new-biz-uuid';
     await service.ingestTransactions(businessId, 'user_1', dtos);
 
-    // Verify that txRepo.create was called with the existing ID and the new businessId
-    expect(txRepo.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: 'old-uuid',
-        businessId: 'new-biz-uuid',
-        isCategorised: false,
-      }),
-    );
+    expect(txRepo.create).not.toHaveBeenCalled();
 
-    // Verify save was called for the update
     expect(txRepo.save).toHaveBeenCalledWith(
       expect.arrayContaining([
-        expect.objectContaining({ id: 'old-uuid', businessId: 'new-biz-uuid' }),
+        expect.objectContaining({
+          id: 'old-uuid',
+          businessId: 'new-biz-uuid',
+          userId: 'user_1',
+          isCategorised: false,
+        }),
       ]),
       expect.any(Object),
     );
@@ -106,9 +106,11 @@ describe('CategorizationService', () => {
       id: 'old-uuid',
       externalId: 'mono_123',
       businessId: 'same-biz-uuid',
+      isCategorised: true,
     };
 
     txRepo.find.mockResolvedValue([existingTx]);
+    txRepo.findOneBy.mockResolvedValue(existingTx);
 
     const dtos: RawTransactionDto[] = [
       {

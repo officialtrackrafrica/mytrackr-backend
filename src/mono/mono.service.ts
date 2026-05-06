@@ -550,8 +550,9 @@ export class MonoService {
       userAccounts.map(async (acc) => {
         const query = this.transactionRepository
           .createQueryBuilder('tx')
-          .leftJoin('tx.monoAccount', 'monoAccount')
-          .where('monoAccount.id = :monoAccountId', { monoAccountId: acc.id });
+          .where('tx."monoAccountId" = :monoAccountId', {
+            monoAccountId: acc.id,
+          });
 
         if (start && end) {
           query.andWhere('tx.date BETWEEN :startDate AND :endDate', {

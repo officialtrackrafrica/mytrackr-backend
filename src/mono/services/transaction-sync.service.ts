@@ -133,8 +133,7 @@ export class TransactionSyncService {
   ): Promise<{ synced: number; skipped: string | null }> {
     const monoTransactions = await this.monoTransactionRepository
       .createQueryBuilder('tx')
-      .leftJoin('tx.monoAccount', 'monoAccount')
-      .where('monoAccount.id = :monoAccountUuid', { monoAccountUuid })
+      .where('tx."monoAccountId" = :monoAccountUuid', { monoAccountUuid })
       .orderBy('tx.date', 'ASC')
       .getMany();
 

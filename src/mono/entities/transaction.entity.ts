@@ -7,6 +7,7 @@ import {
   ManyToOne,
   Index,
   Unique,
+  JoinColumn,
 } from 'typeorm';
 import { MonoAccount } from './mono-account.entity';
 import { CategorySource } from '../../finance/entities/transaction.entity';
@@ -24,7 +25,11 @@ export class Transaction {
   @ManyToOne(() => MonoAccount, (acc) => acc.transactions, {
     onDelete: 'CASCADE',
   })
+  @JoinColumn({ name: 'monoAccountId' })
   monoAccount: MonoAccount;
+
+  @Column({ type: 'uuid' })
+  monoAccountId: string;
 
   @Column()
   narration: string;

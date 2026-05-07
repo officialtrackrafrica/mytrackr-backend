@@ -13,6 +13,8 @@ interface ParsedRow {
   reference?: string;
 }
 
+const EXTRACTED_TEXT_LOG_LIMIT = 4000;
+
 @Injectable()
 export class PdfUploadService {
   private readonly logger = new Logger(PdfUploadService.name);
@@ -82,6 +84,10 @@ export class PdfUploadService {
 
     this.logger.log(
       `Success: PDF text retrieved (${usedOcr ? 'via OCR Service' : 'via pdf-parse'}) — ${text.length} characters found.`,
+    );
+
+    this.logger.log(
+      `Extracted PDF text preview (${usedOcr ? 'ocr' : 'pdf-parse'}, first ${EXTRACTED_TEXT_LOG_LIMIT} chars): ${text.slice(0, EXTRACTED_TEXT_LOG_LIMIT)}`,
     );
 
     const lines = text

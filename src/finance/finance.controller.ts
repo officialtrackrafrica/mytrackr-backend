@@ -26,7 +26,7 @@ import {
   ApiParam,
 } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, SelectQueryBuilder } from 'typeorm';
 import { JwtAuthGuard } from '../auth/guards';
 import { PlanGuard } from '../common/access-control/guards/plan.guard';
 import { RequirePlan } from '../common/access-control/decorators/require-plan.decorator';
@@ -57,6 +57,7 @@ import {
   CsvUploadResponseDto,
   TransactionQueryDto,
   PaginatedTransactionResponseDto,
+  TransactionSummaryResponseDto,
   AccountCategoryResponseDto,
 } from './dto';
 
@@ -508,49 +509,10 @@ export class FinanceController {
       sortOrder = 'DESC',
     } = queryDto;
 
-    const query = this.transactionRepository
-      .createQueryBuilder('tx')
-      .where('tx."businessId" = :businessId', { businessId });
-
-    if (search) {
-      query.andWhere(
-        '(tx.description ILIKE :search OR tx.name ILIKE :search OR tx."externalId" ILIKE :search)',
-        { search: `%${search}%` },
-      );
-    }
-
-    if (isCategorised !== undefined) {
-      query.andWhere('tx."isCategorised" = :isCategorised', {
-        isCategorised,
-      });
-    }
-
-    if (startDate && endDate) {
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-
-      if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
-        query.andWhere('tx.date BETWEEN :startDate AND :endDate', {
-          startDate: start,
-          endDate: end,
-        });
-      }
-    }
+    const query = this.buildTransactionQuery(businessId, queryDto);
 
     const skip = (page - 1) * limit;
-
-    const summaryRaw = await query
-      .clone()
-      .select('COUNT(*)', 'totalTransactions')
-      .addSelect(
-        'SUM(CASE WHEN tx."isCategorised" = true THEN 1 ELSE 0 END)',
-        'totalCategorized',
-      )
-      .addSelect(
-        'SUM(CASE WHEN tx."isCategorised" = false THEN 1 ELSE 0 END)',
-        'totalUncategorized',
-      )
-      .getRawOne();
+    const summary = await this.getTransactionSummary(query);
 
     const [data, total] = await query
       .orderBy(`tx.${sortBy}`, sortOrder)
@@ -564,11 +526,7 @@ export class FinanceController {
 
     return {
       data: serialized,
-      summary: {
-        totalTransactions: Number(summaryRaw?.totalTransactions || 0),
-        totalCategorized: Number(summaryRaw?.totalCategorized || 0),
-        totalUncategorized: Number(summaryRaw?.totalUncategorized || 0),
-      },
+      summary,
       meta: {
         total,
         page,
@@ -576,6 +534,28 @@ export class FinanceController {
         totalPages: Math.ceil(total / limit),
       },
     };
+  }
+
+  @Get('transactions/summary')
+  @ApiOperation({
+    summary:
+      "Get transaction counts for the user's business with optional filtering",
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Total, categorized, and uncategorized transaction counts for the current filters',
+    type: TransactionSummaryResponseDto,
+  })
+  async getTransactionSummaryEndpoint(
+    @Req() req: any,
+    @Query() queryDto: TransactionQueryDto,
+  ) {
+    const businessId = await this.businessService.getBusinessIdForUser(
+      req.user.id,
+    );
+    const query = this.buildTransactionQuery(businessId, queryDto);
+    return this.getTransactionSummary(query);
   }
 
   private async resolveFinanceTransaction(
@@ -605,6 +585,67 @@ export class FinanceController {
       externalId: `mono_${monoTransaction.monoTransactionId}`,
       businessId,
     });
+  }
+
+  private buildTransactionQuery(
+    businessId: string,
+    queryDto: TransactionQueryDto,
+  ): SelectQueryBuilder<Transaction> {
+    const { search, isCategorised, startDate, endDate } = queryDto;
+
+    const query = this.transactionRepository
+      .createQueryBuilder('tx')
+      .where('tx."businessId" = :businessId', { businessId });
+
+    if (search) {
+      query.andWhere(
+        '(tx.description ILIKE :search OR tx.name ILIKE :search OR tx."externalId" ILIKE :search)',
+        { search: `%${search}%` },
+      );
+    }
+
+    if (isCategorised !== undefined) {
+      query.andWhere('tx."isCategorised" = :isCategorised', {
+        isCategorised,
+      });
+    }
+
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+
+      if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+        query.andWhere('tx.date BETWEEN :startDate AND :endDate', {
+          startDate: start,
+          endDate: end,
+        });
+      }
+    }
+
+    return query;
+  }
+
+  private async getTransactionSummary(
+    query: SelectQueryBuilder<Transaction>,
+  ): Promise<TransactionSummaryResponseDto> {
+    const summaryRaw = await query
+      .clone()
+      .select('COUNT(*)', 'totalTransactions')
+      .addSelect(
+        'SUM(CASE WHEN tx."isCategorised" = true THEN 1 ELSE 0 END)',
+        'totalCategorized',
+      )
+      .addSelect(
+        'SUM(CASE WHEN tx."isCategorised" = false THEN 1 ELSE 0 END)',
+        'totalUncategorized',
+      )
+      .getRawOne();
+
+    return {
+      totalTransactions: Number(summaryRaw?.totalTransactions || 0),
+      totalCategorized: Number(summaryRaw?.totalCategorized || 0),
+      totalUncategorized: Number(summaryRaw?.totalUncategorized || 0),
+    };
   }
 
   private async serializeTransaction(tx: Transaction | null) {

@@ -447,6 +447,28 @@ export class PaginatedTransactionResponseDto {
   };
 }
 
+export class TransactionSummaryResponseDto {
+  @ApiProperty({
+    example: 42,
+    description: 'Total number of transactions matching the current filters',
+  })
+  totalTransactions: number;
+
+  @ApiProperty({
+    example: 30,
+    description:
+      'Total number of categorized transactions matching the current filters',
+  })
+  totalCategorized: number;
+
+  @ApiProperty({
+    example: 12,
+    description:
+      'Total number of uncategorized transactions matching the current filters',
+  })
+  totalUncategorized: number;
+}
+
 export class ArchiveMessageResponseDto {
   @ApiProperty({ example: 'Asset archived' }) message: string;
 }

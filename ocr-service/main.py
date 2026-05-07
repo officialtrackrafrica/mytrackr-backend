@@ -6,7 +6,6 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-import fitz  # PyMuPDF
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
@@ -18,13 +17,23 @@ app = FastAPI(title="MyTrackr OCR Service", version="3.0.0")
 MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
 OCR_TIMEOUT_SECONDS = 120
 OCR_SKIP_FLAG = "--skip-text"
+EXTRACTED_TEXT_LOG_LIMIT = 4000
 
 
 def extract_text_from_pdf(pdf_path: Path) -> str:
-    """Read text from a searchable PDF."""
+    """Extract text from a searchable PDF using Poppler pdftotext."""
     try:
-        with fitz.open(pdf_path) as document:
-            return "\n".join(page.get_text() for page in document).strip()
+        result = subprocess.run(
+            ["pdftotext", "-layout", str(pdf_path), "-"],
+            capture_output=True,
+            text=True,
+            timeout=OCR_TIMEOUT_SECONDS,
+            check=False,
+        )
+        if result.returncode != 0:
+            error_output = (result.stderr or result.stdout).strip()
+            raise RuntimeError(error_output or "pdftotext failed")
+        return result.stdout.strip()
     except Exception as exc:
         logger.error("Failed to extract text from OCR output: %s", exc)
         raise HTTPException(
@@ -34,10 +43,21 @@ def extract_text_from_pdf(pdf_path: Path) -> str:
 
 
 def get_pdf_page_count(pdf_path: Path) -> int:
-    """Return the number of pages in the PDF."""
+    """Return the number of pages in the PDF via Poppler pdfinfo."""
     try:
-        with fitz.open(pdf_path) as document:
-            return len(document)
+        result = subprocess.run(
+            ["pdfinfo", str(pdf_path)],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        if result.returncode != 0:
+            return 0
+        for line in result.stdout.splitlines():
+            if line.startswith("Pages:"):
+                return int(line.split(":", 1)[1].strip())
+        return 0
     except Exception:
         return 0
 
@@ -81,16 +101,36 @@ def get_ocrmypdf_version() -> str:
         return "unknown"
 
 
+def get_pdftotext_version() -> str:
+    """Fetch pdftotext version for health reporting."""
+    try:
+        result = subprocess.run(
+            ["pdftotext", "-v"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        output = ((result.stderr or "") + "\n" + (result.stdout or "")).strip()
+        if result.returncode == 0 and output:
+            return output.splitlines()[0].strip()
+        return "unknown"
+    except Exception:
+        return "unknown"
+
+
 @app.get("/health")
 async def health_check():
-    version = get_ocrmypdf_version()
-    engine_ready = version != "unknown"
+    ocrmypdf_version = get_ocrmypdf_version()
+    pdftotext_version = get_pdftotext_version()
+    engine_ready = ocrmypdf_version != "unknown" and pdftotext_version != "unknown"
 
     return {
         "status": "healthy" if engine_ready else "degraded",
         "engine": "ocrmypdf",
         "engine_ready": engine_ready,
-        "ocrmypdf_version": version,
+        "ocrmypdf_version": ocrmypdf_version,
+        "pdftotext_version": pdftotext_version,
         "ocr_args": [OCR_SKIP_FLAG],
         "version": "3.0.0",
     }
@@ -98,7 +138,7 @@ async def health_check():
 
 @app.post("/ocr/pdf")
 async def ocr_pdf(file: UploadFile = File(...)):
-    """OCR a PDF using OCRmyPDF and keep existing text pages intact."""
+    """OCR a PDF using OCRmyPDF and extract text with Poppler pdftotext."""
     try:
         pdf_bytes = await file.read()
 
@@ -132,6 +172,17 @@ async def ocr_pdf(file: UploadFile = File(...)):
 
             text = extract_text_from_pdf(output_path)
             pages = get_pdf_page_count(output_path)
+
+            if text:
+                logger.info(
+                    "Extracted text preview for %s (%s chars, first %s chars): %s",
+                    file.filename,
+                    len(text),
+                    EXTRACTED_TEXT_LOG_LIMIT,
+                    text[:EXTRACTED_TEXT_LOG_LIMIT],
+                )
+            else:
+                logger.warning("No text extracted from OCR output for %s", file.filename)
 
             logger.info(
                 "OCRmyPDF completed for %s with --skip-text; extracted %s chars from %s pages",

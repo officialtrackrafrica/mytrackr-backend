@@ -24,6 +24,7 @@ import { SecurityModule } from '../security/security.module';
 import { CaslModule } from '../casl/casl.module';
 import { RedisModule, TokenBlacklistService } from '../common/redis';
 import { StorageModule } from '../storage/storage.module';
+import { AdminModule } from '../admin/admin.module';
 
 function requiredEnv(name: string): string {
   const value = process.env[name];
@@ -52,6 +53,7 @@ function requiredEnv(name: string): string {
     CaslModule,
     RedisModule,
     StorageModule,
+    AdminModule,
   ],
   controllers: [
     AuthController,

@@ -5,6 +5,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import Redis from 'ioredis';
 import { APP_GUARD } from '@nestjs/core';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
@@ -25,6 +26,8 @@ import { StorageModule } from './storage/storage.module';
 import { EmailModule } from './email/email.module';
 import { HealthModule } from './health/health.module';
 import { IntegrationsModule } from './integrations/integrations.module';
+import { ActivityLogInterceptor } from './common/interceptors/activity-log.interceptor';
+import { AdminAuditService } from './admin/services/admin-audit.service';
 
 @Module({
   imports: [
@@ -75,6 +78,15 @@ import { IntegrationsModule } from './integrations/integrations.module';
     IntegrationsModule,
   ],
   controllers: [AppController],
-  providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [
+    AppService,
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    {
+      provide: APP_INTERCEPTOR,
+      useFactory: (auditService: AdminAuditService) =>
+        new ActivityLogInterceptor(auditService),
+      inject: [AdminAuditService],
+    },
+  ],
 })
 export class AppModule {}

@@ -3,6 +3,7 @@ import {
   Get,
   Patch,
   Body,
+  Query,
   UseGuards,
   Request,
   NotFoundException,
@@ -38,6 +39,8 @@ import { AuthService } from '../services/auth.service';
 import { AuthError } from '../../common/errors';
 import { Action } from '../../casl/action.enum';
 import { AppAbility } from '../../casl/casl-ability.factory';
+import { AdminAuditService } from '../../admin/services/admin-audit.service';
+import { AuditLogQueryDto } from '../../admin/dto';
 
 interface AuthenticatedRequest {
   user: {
@@ -57,6 +60,7 @@ export class UserController {
     @InjectRepository(User)
     private usersRepository: Repository<User>,
     private authService: AuthService,
+    private auditService: AdminAuditService,
   ) {}
 
   @Get('me')
@@ -190,6 +194,17 @@ export class UserController {
     // Auth service handling the file upload
     const user = await this.authService.uploadProfilePicture(req.user.id, file);
     return this.sanitizeUser(user);
+  }
+
+  @Get('me/activity-logs')
+  @ApiOperation({ summary: 'Get my activity logs' })
+  @ApiResponse({ status: 200, description: 'Current user activity logs' })
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Read, 'User'))
+  async getMyActivityLogs(
+    @Request() req: AuthenticatedRequest,
+    @Query() query: AuditLogQueryDto,
+  ) {
+    return this.auditService.getUserActivityLogs(req.user.id, query);
   }
 
   private sanitizeUser(user: User): UserResponseDto {

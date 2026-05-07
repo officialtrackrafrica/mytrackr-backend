@@ -7,6 +7,7 @@ import {
   Query,
   Body,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -24,6 +25,7 @@ import { AdminSystemService } from '../services/admin-system.service';
 import { AdminAuditService } from '../services/admin-audit.service';
 import {
   AuditLogQueryDto,
+  AuditLogCleanupDto,
   UpdateSettingDto,
   ToggleFeatureFlagDto,
   BroadcastNotificationDto,
@@ -32,6 +34,10 @@ import {
   UpdateNotificationTemplateDto,
   WebhookQueryDto,
 } from '../dto';
+
+interface ExpressResponse {
+  setHeader(name: string, value: string): this;
+}
 @ApiTags('Admin - Operations')
 @ApiCookieAuth('accessToken')
 @Controller('admin')
@@ -48,6 +54,28 @@ export class AdminOpsController {
   @ApiResponse({ status: 200, description: 'Paginated audit logs' })
   async getAuditLogs(@Query() query: AuditLogQueryDto) {
     return this.auditService.getAuditLogs(query);
+  }
+
+  @Get('audit-logs/export')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({ summary: 'Export audit trail with filters' })
+  @ApiResponse({ status: 200, description: 'CSV export of audit logs' })
+  async exportAuditLogs(
+    @Query() query: AuditLogQueryDto,
+    @Res({ passthrough: true }) res: ExpressResponse,
+  ) {
+    const csv = await this.auditService.exportAuditLogs(query);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="audit-logs.csv"');
+    return csv;
+  }
+
+  @Post('audit-logs/cleanup')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({ summary: 'Delete old audit logs by retention window' })
+  @ApiResponse({ status: 200, description: 'Audit log cleanup result' })
+  async cleanupAuditLogs(@Body() dto: AuditLogCleanupDto) {
+    return this.auditService.cleanupAuditLogs(dto.days ?? 90, dto.dryRun ?? false);
   }
 
   @Get('security/login-attempts')

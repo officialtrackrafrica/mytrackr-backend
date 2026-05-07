@@ -23,7 +23,7 @@ import { AppAbility } from '../../casl/casl-ability.factory';
 import { Action } from '../../casl/action.enum';
 import { AdminUsersService } from '../services/admin-users.service';
 import { AdminAuditService } from '../services/admin-audit.service';
-import { UpdateUserStatusDto, AdminQueryDto } from '../dto';
+import { UpdateUserStatusDto, AdminQueryDto, AuditLogQueryDto } from '../dto';
 
 @ApiTags('Admin - User Management')
 @Controller('admin/users')
@@ -131,5 +131,16 @@ export class AdminUsersController {
   @ApiResponse({ status: 404, description: 'User not found' })
   async getActivityLog(@Param('id') userId: string) {
     return this.adminUsersService.getUserActivityLog(userId);
+  }
+
+  @Get(':id/activity-logs')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({ summary: 'Get endpoint/activity logs for a user' })
+  @ApiResponse({ status: 200, description: 'User activity logs' })
+  async getUserActivityLogs(
+    @Param('id') userId: string,
+    @Query() query: AuditLogQueryDto,
+  ) {
+    return this.auditService.getUserActivityLogs(userId, query);
   }
 }

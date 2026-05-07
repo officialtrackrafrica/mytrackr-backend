@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { LessThan, Repository } from 'typeorm';
 import { AuditLog } from '../entities/audit-log.entity';
 import { User } from '../../auth/entities/user.entity';
 import { AuditLogQueryDto } from '../dto';
@@ -43,7 +43,17 @@ export class AdminAuditService {
   }
 
   async getAuditLogs(query: AuditLogQueryDto) {
-    const { action, userId, dateFrom, dateTo, page = 1, limit = 20 } = query;
+    const {
+      action,
+      userId,
+      dateFrom,
+      dateTo,
+      route,
+      method,
+      statusCode,
+      page = 1,
+      limit = 20,
+    } = query;
     const skip = (page - 1) * limit;
 
     const qb = this.auditLogRepository
@@ -66,6 +76,19 @@ export class AdminAuditService {
     if (dateTo) {
       qb.andWhere('log.createdAt <= :dateTo', { dateTo: new Date(dateTo) });
     }
+    if (route) {
+      qb.andWhere('log.resource ILIKE :route', { route: `%${route}%` });
+    }
+    if (method) {
+      qb.andWhere(`log.details->>'method' = :method`, {
+        method: method.toUpperCase(),
+      });
+    }
+    if (statusCode !== undefined) {
+      qb.andWhere(`CAST(log.details->>'statusCode' AS INTEGER) = :statusCode`, {
+        statusCode,
+      });
+    }
 
     const [logs, total] = await qb.getManyAndCount();
 
@@ -77,6 +100,81 @@ export class AdminAuditService {
         limit,
         totalPages: Math.ceil(total / limit),
       },
+    };
+  }
+
+  async getUserActivityLogs(userId: string, query: AuditLogQueryDto) {
+    return this.getAuditLogs({
+      ...query,
+      userId,
+    });
+  }
+
+  async exportAuditLogs(query: AuditLogQueryDto) {
+    const result = await this.getAuditLogs({
+      ...query,
+      page: 1,
+      limit: 10000,
+    });
+
+    const rows = [
+      [
+        'id',
+        'createdAt',
+        'userId',
+        'action',
+        'resource',
+        'method',
+        'statusCode',
+        'ipAddress',
+        'userAgent',
+      ],
+      ...result.logs.map((log) => [
+        log.id,
+        log.createdAt?.toISOString?.() || '',
+        log.userId || '',
+        log.action,
+        log.resource,
+        String(log.details?.method || ''),
+        String(log.details?.statusCode || ''),
+        log.ipAddress || '',
+        (log.userAgent || '').replace(/\r?\n/g, ' '),
+      ]),
+    ];
+
+    return rows
+      .map((row) => row.map((value) => this.escapeCsv(String(value ?? ''))).join(','))
+      .join('\n');
+  }
+
+  async cleanupAuditLogs(days = 90, dryRun = false) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+
+    const count = await this.auditLogRepository.count({
+      where: {
+        createdAt: LessThan(cutoff),
+      },
+    });
+
+    if (dryRun) {
+      return {
+        dryRun: true,
+        cutoff,
+        deleted: 0,
+        matched: count,
+      };
+    }
+
+    const result = await this.auditLogRepository.delete({
+      createdAt: LessThan(cutoff),
+    });
+
+    return {
+      dryRun: false,
+      cutoff,
+      deleted: result.affected || 0,
+      matched: count,
     };
   }
 
@@ -137,5 +235,12 @@ export class AdminAuditService {
       })),
       recentAlerts: suspiciousLogs,
     };
+  }
+
+  private escapeCsv(value: string): string {
+    if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+      return `"${value.replace(/"/g, '""')}"`;
+    }
+    return value;
   }
 }

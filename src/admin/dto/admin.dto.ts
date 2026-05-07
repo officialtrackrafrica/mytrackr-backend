@@ -133,6 +133,22 @@ export class AuditLogQueryDto {
   @IsString()
   dateTo?: string;
 
+  @ApiPropertyOptional({ description: 'Filter by route/resource path' })
+  @IsOptional()
+  @IsString()
+  route?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by HTTP method' })
+  @IsOptional()
+  @IsString()
+  method?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by HTTP status code' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  statusCode?: number;
+
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
   @Type(() => Number)
@@ -325,6 +341,26 @@ export class UserSupportTicketQueryDto {
   @Min(1)
   @Max(100)
   limit?: number = 20;
+}
+
+export class AuditLogCleanupDto {
+  @ApiPropertyOptional({
+    description: 'Delete logs older than this many days',
+    default: 90,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  days?: number = 90;
+
+  @ApiPropertyOptional({
+    description: 'When true, only returns the number of logs that would be deleted',
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  dryRun?: boolean = false;
 }
 
 export class SupportTicketResponseDto {

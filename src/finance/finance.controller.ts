@@ -480,6 +480,61 @@ export class FinanceController {
     );
   }
 
+  @Delete('transactions/:id')
+  @ApiOperation({
+    summary:
+      'Delete a transaction from history with suppression for linked-account records',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Transaction soft-deleted',
+    type: ArchiveMessageResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Transaction not found',
+    type: ErrorResponseDto,
+  })
+  async deleteTransaction(
+    @Req() req: any,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const businessId = await this.businessService.getBusinessIdForUser(
+      req.user.id,
+    );
+
+    const tx = await this.resolveFinanceTransaction(req.user.id, businessId, id);
+    if (!tx) {
+      throw AppException.notFound(
+        'Transaction not found',
+        'FINANCE_TRANSACTION_NOT_FOUND',
+      );
+    }
+
+    if (tx.externalId?.startsWith('mono_')) {
+      const monoTransactionId = tx.externalId.slice(5);
+      const monoTransaction = await this.monoTransactionRepository.findOne({
+        where: { monoTransactionId },
+        relations: ['monoAccount', 'monoAccount.user'],
+      });
+
+      if (!monoTransaction || monoTransaction.monoAccount?.user?.id !== req.user.id) {
+        throw AppException.notFound(
+          'Transaction not found',
+          'FINANCE_TRANSACTION_NOT_FOUND',
+        );
+      }
+
+      await this.monoTransactionRepository.softDelete(monoTransaction.id);
+      await this.transactionRepository.softDelete(tx.id);
+
+      return { message: 'Linked-account transaction deleted and suppressed' };
+    }
+
+    await this.transactionRepository.softDelete(tx.id);
+    return { message: 'Transaction deleted' };
+  }
+
   @Get('transactions')
   @ApiOperation({
     summary:

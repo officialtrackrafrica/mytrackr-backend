@@ -481,8 +481,40 @@ export class MonoService {
       return false;
     });
 
+    const monoTransactionIds = validTransactions.map((tx) => tx.id || tx._id);
+    const existingTransactions = monoTransactionIds.length
+      ? await this.transactionRepository.find({
+          where: {
+            monoAccountId: account.id,
+            monoTransactionId: In(monoTransactionIds),
+          },
+          withDeleted: true,
+        })
+      : [];
+
+    const suppressedTransactionIds = new Set(
+      existingTransactions
+        .filter((transaction) => !!transaction.deletedAt)
+        .map((transaction) => transaction.monoTransactionId),
+    );
+
+    if (suppressedTransactionIds.size > 0) {
+      this.logger.log(
+        `Skipping ${suppressedTransactionIds.size} user-deleted Mono transactions for account ${account.monoAccountId}`,
+      );
+    }
+
+    const importableTransactions = validTransactions.filter((tx) => {
+      const monoTransactionId = tx.id || tx._id;
+      return !suppressedTransactionIds.has(monoTransactionId);
+    });
+
+    if (importableTransactions.length === 0) {
+      return;
+    }
+
     const entities = await Promise.all(
-      validTransactions.map(async (tx) => {
+      importableTransactions.map(async (tx) => {
         let finalCategory: string | null = null;
         let finalCategorySource = CategorySource.MONO;
         const monoTransactionId = tx.id || tx._id;

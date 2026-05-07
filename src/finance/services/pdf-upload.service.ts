@@ -3,15 +3,8 @@ import pdf from 'pdf-parse';
 import { TransactionDirection } from '../entities/transaction.entity';
 import { CategorizationService } from './categorization.service';
 import { OcrService } from './ocr.service';
-
-interface ParsedRow {
-  date: string;
-  name?: string;
-  amount: number;
-  direction: TransactionDirection;
-  description: string;
-  reference?: string;
-}
+import { StatementAiParserService } from './statement-ai-parser.service';
+import { ParsedRow } from './statement-parser.types';
 
 const EXTRACTED_TEXT_LOG_LIMIT = 4000;
 
@@ -22,6 +15,7 @@ export class PdfUploadService {
   constructor(
     private readonly categorizationService: CategorizationService,
     private readonly ocrService: OcrService,
+    private readonly statementAiParserService: StatementAiParserService,
   ) {}
 
   /**
@@ -94,7 +88,15 @@ export class PdfUploadService {
       .split('\n')
       .map((l: string) => l.trim())
       .filter((l: string) => l.length > 0);
-    const parsedRows: ParsedRow[] = this.extractTransactions(lines);
+    let parsedRows: ParsedRow[] = this.extractTransactions(lines);
+
+    if (parsedRows.length === 0 && this.statementAiParserService.isEnabled()) {
+      this.logger.warn(
+        'Deterministic PDF parser found 0 rows. Falling back to Groq AI parser.',
+      );
+      parsedRows =
+        await this.statementAiParserService.extractTransactionsFromText(text);
+    }
 
     this.logger.log(`Detected ${parsedRows.length} transaction rows`);
 
@@ -108,7 +110,6 @@ export class PdfUploadService {
       businessId,
       userId,
       parsedRows.map((row) => ({
-        bankAccountId: '',
         businessId,
         userId,
         externalId:
@@ -137,7 +138,7 @@ export class PdfUploadService {
     debitStr: string,
     creditStr: string,
   ) {
-    if (desc.includes('Opening Balance') || desc.includes('Closing Balance'))
+    if (this.shouldSkipDescription(desc))
       return;
     const dVal = debitStr === '-' ? 0 : this.parseAmount(debitStr);
     const cVal = creditStr === '-' ? 0 : this.parseAmount(creditStr);
@@ -158,6 +159,46 @@ export class PdfUploadService {
         name: this.extractName(desc),
       });
     }
+  }
+
+  private tryParseMergedColumnsRow(line: string): ParsedRow | null {
+    const mergedColumnsPattern =
+      /^(\d{1,2}\s[A-Za-z]{3}\s(?:20\d{2}|\d{2}))(\d{1,2}\s[A-Za-z]{3}\s(?:20\d{2}|\d{2}))(.+?)([\d,]+\.\d{2}|-)([\d,]+\.\d{2}|-)(-?[\d,]+\.\d{2})$/i;
+
+    const match = line.match(mergedColumnsPattern);
+    if (!match) {
+      return null;
+    }
+
+    const [, postingDate, , description, outflow, inflow] = match;
+    if (this.shouldSkipDescription(description)) {
+      return null;
+    }
+
+    const outflowAmount = outflow === '-' ? 0 : this.parseAmount(outflow);
+    const inflowAmount = inflow === '-' ? 0 : this.parseAmount(inflow);
+
+    if (inflowAmount > 0) {
+      return {
+        date: this.formatDate(postingDate),
+        amount: inflowAmount,
+        direction: TransactionDirection.CREDIT,
+        description: description.trim(),
+        name: this.extractName(description),
+      };
+    }
+
+    if (outflowAmount > 0) {
+      return {
+        date: this.formatDate(postingDate),
+        amount: outflowAmount,
+        direction: TransactionDirection.DEBIT,
+        description: description.trim(),
+        name: this.extractName(description),
+      };
+    }
+
+    return null;
   }
 
   /**
@@ -182,15 +223,22 @@ export class PdfUploadService {
       /^(\d{1,2}-[A-Za-z]{3}-(?:20\d{2}|\d{2}))(?:\d{1,2}-[A-Za-z]{3}-(?:20\d{2}|\d{2}))?(.*)$/i;
     const accessAmountsEnd =
       /^([\d,]+\.\d{2}|-)([\d,]+\.\d{2}|-)([\d,]+\.\d{2}|-)$/;
+    const mergedDateStart =
+      /^(\d{1,2}\s[A-Za-z]{3}\s(?:20\d{2}|\d{2}))(?:\d{1,2}\s[A-Za-z]{3}\s(?:20\d{2}|\d{2}))?(.*)$/i;
+    const mergedAmountsEnd =
+      /^([\d,]+\.\d{2}|-)([\d,]+\.\d{2}|-)(-?[\d,]+\.\d{2})$/;
 
     let pendingTx: { date: string; description: string } | null = null;
 
     for (const line of lines) {
-      if (
-        line.includes('Opening Balance') ||
-        line.includes('Closing Balance') ||
-        line.includes('Cleared Balance')
-      ) {
+      if (this.shouldSkipDescription(line)) {
+        pendingTx = null;
+        continue;
+      }
+
+      const mergedColumnsRow = this.tryParseMergedColumnsRow(line);
+      if (mergedColumnsRow) {
+        rows.push(mergedColumnsRow);
         pendingTx = null;
         continue;
       }
@@ -268,6 +316,28 @@ export class PdfUploadService {
         continue;
       }
 
+      const mergedDateStartMatch = line.match(mergedDateStart);
+      if (mergedDateStartMatch) {
+        pendingTx = {
+          date: mergedDateStartMatch[1],
+          description: mergedDateStartMatch[2].trim(),
+        };
+        continue;
+      }
+
+      const mergedAmountsEndMatch = line.match(mergedAmountsEnd);
+      if (mergedAmountsEndMatch && pendingTx) {
+        this.pushAccessRow(
+          rows,
+          pendingTx.date,
+          pendingTx.description,
+          mergedAmountsEndMatch[1],
+          mergedAmountsEndMatch[2],
+        );
+        pendingTx = null;
+        continue;
+      }
+
       // Multiline Logic: Start of new transaction
       const dateStartMatch = line.match(accessDateStart);
       if (dateStartMatch) {
@@ -299,6 +369,32 @@ export class PdfUploadService {
     }
 
     return rows;
+  }
+
+  private shouldSkipDescription(value: string): boolean {
+    const normalized = value.replace(/\s+/g, ' ').trim().toUpperCase();
+    if (!normalized) {
+      return true;
+    }
+
+    if (
+      normalized.includes('OPENING BALANCE') ||
+      normalized.includes('CLOSING BALANCE') ||
+      normalized.includes('CLEARED BALANCE') ||
+      normalized.includes('POSTING DATEVALUE DATEDESCRIPTIONOUTFLOWINFLOWBALANCE') ||
+      normalized === 'INFLOW VS OUTFLOW' ||
+      normalized === 'CURRENT BALANCE' ||
+      normalized === 'FROM' ||
+      normalized === 'TO'
+    ) {
+      return true;
+    }
+
+    if (/^PAGE \d+ OF \d+$/i.test(normalized)) {
+      return true;
+    }
+
+    return false;
   }
 
   /**

@@ -15,6 +15,7 @@ import { CsvUploadService } from './services/csv-upload.service';
 import { PdfUploadService } from './services/pdf-upload.service';
 import { OcrService } from './services/ocr.service';
 import { BankAccountService } from './services/bank-account.service';
+import { StatementAiParserService } from './services/statement-ai-parser.service';
 import { FinanceController } from './finance.controller';
 import { PaymentsModule } from '../payments/payments.module';
 import { CategorizationModule } from '../categorization/categorization.module';
@@ -46,6 +47,7 @@ import { MonoTransaction } from '../mono/entities/transaction.entity';
     PdfUploadService,
     OcrService,
     BankAccountService,
+    StatementAiParserService,
   ],
   exports: [
     TypeOrmModule,
@@ -54,6 +56,7 @@ import { MonoTransaction } from '../mono/entities/transaction.entity';
     PdfUploadService,
     OcrService,
     BankAccountService,
+    StatementAiParserService,
   ],
 })
 export class FinanceModule {}

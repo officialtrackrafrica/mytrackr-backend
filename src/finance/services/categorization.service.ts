@@ -16,7 +16,7 @@ import { AccountCategory } from '../entities/account-category.entity';
 import { AccountSubCategory } from '../entities/account-subcategory.entity';
 
 export interface RawTransactionDto {
-  bankAccountId: string;
+  bankAccountId?: string;
   businessId?: string;
   userId?: string;
   externalId: string;

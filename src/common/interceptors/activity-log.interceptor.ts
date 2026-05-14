@@ -22,6 +22,10 @@ export class ActivityLogInterceptor implements NestInterceptor {
     'PUT',
     'DELETE',
   ]);
+  private static readonly INCLUDED_GET_ROUTE_PATTERNS = [
+    /^\/finance\/assets$/i,
+    /^\/finance\/liabilities$/i,
+  ];
   private static readonly REDACTED_KEYS = new Set([
     'password',
     'currentPassword',
@@ -51,13 +55,16 @@ export class ActivityLogInterceptor implements NestInterceptor {
     }
 
     const normalizedMethod = String(request.method || '').toUpperCase();
-    if (!ActivityLogInterceptor.MUTATING_METHODS.has(normalizedMethod)) {
+    const resource = this.getResourceName(request);
+    if (
+      !ActivityLogInterceptor.MUTATING_METHODS.has(normalizedMethod) &&
+      !this.shouldLogReadRequest(normalizedMethod, resource)
+    ) {
       return next.handle();
     }
 
     const startedAt = Date.now();
     const action = `HTTP_${normalizedMethod || 'UNKNOWN'}`;
-    const resource = this.getResourceName(request);
     const resourceId = this.extractResourceId(request.params);
     const userId = request.user?.id || null;
     const ipAddress =
@@ -150,6 +157,16 @@ export class ActivityLogInterceptor implements NestInterceptor {
   private shouldSkipLogging(path: string): boolean {
     return ActivityLogInterceptor.EXCLUDED_ROUTE_PATTERNS.some((pattern) =>
       pattern.test(path),
+    );
+  }
+
+  private shouldLogReadRequest(method: string, resource: string): boolean {
+    if (method !== 'GET') {
+      return false;
+    }
+
+    return ActivityLogInterceptor.INCLUDED_GET_ROUTE_PATTERNS.some((pattern) =>
+      pattern.test(resource),
     );
   }
 

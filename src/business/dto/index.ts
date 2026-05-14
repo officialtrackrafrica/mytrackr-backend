@@ -26,7 +26,7 @@ export class UpdateBusinessDto {
   @ApiPropertyOptional({
     description: 'Updated business type',
     enum: BusinessType,
-    example: BusinessType.PRODUCT,
+    example: BusinessType.PRIVATE_LIMITED_COMPANY,
   })
   @IsOptional()
   @IsEnum(BusinessType)
@@ -53,7 +53,7 @@ export class BusinessResponseDto {
   @ApiProperty({
     description: 'Business type',
     enum: BusinessType,
-    example: BusinessType.SERVICE,
+    example: BusinessType.SOLE_PROPRIETORSHIP,
   })
   businessType: BusinessType;
 
@@ -68,4 +68,19 @@ export class BusinessResponseDto {
 
   @ApiProperty({ description: 'Last updated timestamp' })
   updatedAt: Date;
+}
+
+export class BusinessTypeOptionDto {
+  @ApiProperty({
+    description: 'Business type enum value',
+    enum: BusinessType,
+    example: BusinessType.SOLE_PROPRIETORSHIP,
+  })
+  value: BusinessType;
+
+  @ApiProperty({
+    description: 'Human-readable business type label',
+    example: 'Sole Proprietorship',
+  })
+  label: string;
 }

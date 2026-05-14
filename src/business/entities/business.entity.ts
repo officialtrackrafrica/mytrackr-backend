@@ -10,8 +10,11 @@ import {
 import { User } from '../../auth/entities/user.entity';
 
 export enum BusinessType {
-  PRODUCT = 'PRODUCT',
-  SERVICE = 'SERVICE',
+  SOLE_PROPRIETORSHIP = 'SOLE_PROPRIETORSHIP',
+  PRIVATE_LIMITED_COMPANY = 'PRIVATE_LIMITED_COMPANY',
+  PUBLIC_LIMITED_COMPANY = 'PUBLIC_LIMITED_COMPANY',
+  PARTNERSHIP_LIMITED_LLP = 'PARTNERSHIP_LIMITED_LLP',
+  INCORPORATED_TRUSTEES = 'INCORPORATED_TRUSTEES',
 }
 
 @Entity('businesses')
@@ -22,7 +25,11 @@ export class Business {
   @Column({ length: 100 })
   name: string;
 
-  @Column({ type: 'enum', enum: BusinessType, default: BusinessType.SERVICE })
+  @Column({
+    type: 'enum',
+    enum: BusinessType,
+    default: BusinessType.SOLE_PROPRIETORSHIP,
+  })
   businessType: BusinessType;
 
   @Column({ default: 'NGN' })

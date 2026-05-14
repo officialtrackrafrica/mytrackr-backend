@@ -1,5 +1,6 @@
 import {
   IsEmail,
+  IsEnum,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -9,6 +10,7 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PASSWORD_REGEX, PASSWORD_MESSAGE } from './email-login.dto';
+import { BusinessType } from '../../business/entities/business.entity';
 
 export class RegisterWithEmailDto {
   @ApiProperty({
@@ -57,4 +59,13 @@ export class RegisterWithEmailDto {
   @IsOptional()
   @MaxLength(100, { message: 'Business name must be at most 100 characters' })
   businessName?: string;
+
+  @ApiPropertyOptional({
+    description: 'Legal business type',
+    enum: BusinessType,
+    example: BusinessType.SOLE_PROPRIETORSHIP,
+  })
+  @IsEnum(BusinessType)
+  @IsOptional()
+  businessType?: BusinessType;
 }

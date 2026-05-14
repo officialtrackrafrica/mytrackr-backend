@@ -5,7 +5,7 @@ import { JwtService } from '@nestjs/jwt';
 import { v4 as uuidv4 } from 'uuid';
 import * as crypto from 'crypto';
 import { User } from '../entities';
-import { Business } from '../../business/entities/business.entity';
+import { Business, BusinessType } from '../../business/entities/business.entity';
 import { SessionService } from './session.service';
 import { RolesService } from './roles.service';
 // import { MfaService } from './mfa.service';
@@ -590,7 +590,14 @@ export class AuthService {
   async registerWithEmail(
     dto: RegisterWithEmailDto,
   ): Promise<RegisterResponseDto> {
-    const { email, password, firstName, lastName, businessName } = dto;
+    const {
+      email,
+      password,
+      firstName,
+      lastName,
+      businessName,
+      businessType,
+    } = dto;
 
     const existing = await this.usersRepository.findOne({ where: { email } });
     if (existing) {
@@ -622,6 +629,7 @@ export class AuthService {
     const baseBusinessName = businessName?.trim() || `${firstName}'s Business`;
     const newBusiness = this.businessRepository.create({
       name: baseBusinessName,
+      businessType: businessType ?? BusinessType.SOLE_PROPRIETORSHIP,
       owner: savedUser,
       userId: savedUser.id,
     });
@@ -641,7 +649,7 @@ export class AuthService {
   async registerWithGoogle(
     dto: RegisterWithGoogleDto,
   ): Promise<RegisterResponseDto> {
-    const { googleIdToken, firstName, lastName } = dto;
+    const { googleIdToken, firstName, lastName, businessType } = dto;
 
     const googleId = googleIdToken || `google_${Date.now()}`;
 
@@ -669,6 +677,7 @@ export class AuthService {
 
     const newBusiness = this.businessRepository.create({
       name: `${firstName}'s Business`,
+      businessType: businessType ?? BusinessType.SOLE_PROPRIETORSHIP,
       owner: savedUser,
       userId: savedUser.id,
     });
@@ -740,6 +749,7 @@ export class AuthService {
 
     const business = this.businessRepository.create({
       name: `${ownerName}'s Business`,
+      businessType: BusinessType.SOLE_PROPRIETORSHIP,
       owner: user,
       userId: user.id,
     });

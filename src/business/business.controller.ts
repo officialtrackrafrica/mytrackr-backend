@@ -18,7 +18,11 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards';
 import { BusinessService } from './services/business.service';
-import { UpdateBusinessDto, BusinessResponseDto } from './dto';
+import {
+  UpdateBusinessDto,
+  BusinessResponseDto,
+  BusinessTypeOptionDto,
+} from './dto';
 import { SWAGGER_TAGS } from '../common/docs';
 import { ErrorResponseDto } from '../common/errors';
 
@@ -28,6 +32,18 @@ import { ErrorResponseDto } from '../common/errors';
 @ApiCookieAuth('accessToken')
 export class BusinessController {
   constructor(private readonly businessService: BusinessService) {}
+
+  @Get('types')
+  @ApiOperation({ summary: 'Get available business types' })
+  @ApiResponse({
+    status: 200,
+    description: 'Available business types',
+    type: BusinessTypeOptionDto,
+    isArray: true,
+  })
+  getBusinessTypes() {
+    return this.businessService.getBusinessTypes();
+  }
 
   @Get('my-business')
   @ApiOperation({ summary: "Get the authenticated user's business" })

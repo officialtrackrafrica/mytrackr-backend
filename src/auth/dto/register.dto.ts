@@ -7,6 +7,7 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { BusinessType } from '../../business/entities/business.entity';
 
 export class RegisterDto {
   @ApiProperty({
@@ -62,6 +63,16 @@ export class RegisterDto {
   @IsString()
   @IsOptional()
   lastName?: string;
+
+  @ApiProperty({
+    description: 'Legal business type',
+    enum: BusinessType,
+    example: BusinessType.SOLE_PROPRIETORSHIP,
+    required: false,
+  })
+  @IsEnum(BusinessType)
+  @IsOptional()
+  businessType?: BusinessType;
 }
 
 export class RegisterResponseDto {

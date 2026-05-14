@@ -1,15 +1,30 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Business } from '../entities/business.entity';
+import { Business, BusinessType } from '../entities/business.entity';
 import { UpdateBusinessDto } from '../dto';
 
 @Injectable()
 export class BusinessService {
+  private readonly businessTypeLabels: Record<BusinessType, string> = {
+    [BusinessType.SOLE_PROPRIETORSHIP]: 'Sole Proprietorship',
+    [BusinessType.PRIVATE_LIMITED_COMPANY]: 'Private Limited Company',
+    [BusinessType.PUBLIC_LIMITED_COMPANY]: 'Public Limited Company (PLC)',
+    [BusinessType.PARTNERSHIP_LIMITED_LLP]: 'Partnership (Limited/LLP)',
+    [BusinessType.INCORPORATED_TRUSTEES]: 'Incorporated Trustees',
+  };
+
   constructor(
     @InjectRepository(Business)
     private readonly businessRepository: Repository<Business>,
   ) {}
+
+  getBusinessTypes(): Array<{ value: BusinessType; label: string }> {
+    return Object.values(BusinessType).map((value) => ({
+      value,
+      label: this.businessTypeLabels[value],
+    }));
+  }
 
   async getBusinessForUser(userId: string): Promise<Business> {
     const business = await this.businessRepository.findOne({

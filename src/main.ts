@@ -11,6 +11,8 @@ import { SWAGGER_TAGS } from './common/docs';
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule, { bodyParser: false });
+  const httpAdapter = app.get(HttpAdapterHost);
+  const expressApp = app.getHttpAdapter().getInstance();
 
   app.use(cookieParser());
 
@@ -37,7 +39,6 @@ async function bootstrap() {
     }),
   );
 
-  const httpAdapter = app.get(HttpAdapterHost);
   app.useGlobalFilters(
     new AuthErrorFilter(),
     new AllExceptionsFilter(httpAdapter),
@@ -79,9 +80,20 @@ async function bootstrap() {
   });
 
   const document = SwaggerModule.createDocument(app, config.build());
-  SwaggerModule.setup('docs', app, document);
+  SwaggerModule.setup('swagger', app, document, {
+    jsonDocumentUrl: 'swagger-json',
+    yamlDocumentUrl: 'swagger-yaml',
+  });
+
+  expressApp.get('/docs', (_req: any, res: any) => {
+    res.redirect(302, '/swagger');
+  });
+  expressApp.get('/docs/', (_req: any, res: any) => {
+    res.redirect(302, '/swagger');
+  });
 
   await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
   logger.log(`Application running on: ${await app.getUrl()}`);
+  logger.log(`Swagger UI available at: ${await app.getUrl()}/swagger`);
 }
 void bootstrap();

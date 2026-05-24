@@ -29,7 +29,69 @@ export class PnlService {
   async calculatePnl(userId: string, startDate: Date, endDate: Date) {
     const businessId = await this.businessService.getBusinessIdForUser(userId);
 
-    const baseQuery = this.transactionRepository
+    return this.calculatePnlForBusiness(businessId, startDate, endDate);
+  }
+
+  async calculatePnlForBusiness(
+    businessId: string,
+    startDate: Date,
+    endDate: Date,
+  ) {
+    const summary = await this.getCategorisedSummary(
+      businessId,
+      startDate,
+      endDate,
+    );
+
+    const uncategorisedStats = await this.transactionRepository
+      .createQueryBuilder('tx')
+      .where('tx.businessId = :businessId', { businessId })
+      .andWhere('tx.date BETWEEN :startDate AND :endDate', {
+        startDate,
+        endDate,
+      })
+      .andWhere('tx.isCategorised = :isCat', { isCat: false })
+      .select('COUNT(*)', 'count')
+      .addSelect('COALESCE(SUM(tx.amount), 0)', 'totalValue')
+      .getRawOne();
+
+    return {
+      revenue: {
+        lines: summary.incomeLines,
+        total: summary.totalRevenue,
+      },
+      cogs: {
+        lines: summary.cogsLines,
+        total: summary.totalCogs,
+      },
+      grossProfit: summary.grossProfit,
+      grossProfitMargin: summary.grossProfitMargin,
+      expenses: {
+        operating: {
+          lines: summary.operatingExpenseLines,
+          total: summary.totalOperatingExpenses,
+        },
+        other: {
+          lines: summary.otherExpenseLines,
+          total: summary.totalOtherExpenses,
+        },
+        total: summary.totalExpenses,
+      },
+      netProfit: summary.netProfit,
+      netProfitMargin: summary.netProfitMargin,
+      metadata: {
+        uncategorisedCount: parseInt(uncategorisedStats?.count || '0', 10),
+        uncategorisedValue: parseFloat(uncategorisedStats?.totalValue || '0'),
+      },
+    };
+  }
+
+  async getCategorisedSummary(
+    businessId: string,
+    startDate: Date,
+    endDate: Date,
+  ) {
+    const results = await this.transactionRepository
       .createQueryBuilder('tx')
       .where('tx.businessId = :businessId', { businessId })
       .andWhere('tx.date BETWEEN :startDate AND :endDate', {
@@ -39,9 +101,7 @@ export class PnlService {
       .andWhere('tx.isCategorised = :isCat', { isCat: true })
       .andWhere('tx.category != :transfer', {
         transfer: TransactionCategory.TRANSFER,
-      });
-
-    const results = await baseQuery
+      })
       .select('tx.category', 'category')
       .addSelect('tx.subCategory', 'subCategory')
       .addSelect('tx.direction', 'direction')
@@ -70,13 +130,19 @@ export class PnlService {
       ) {
         incomeLines.push({ subCategory: r.subCategory, amount });
         totalRevenue += amount;
-      } else if (
+        continue;
+      }
+
+      if (
         r.category === TransactionCategory.COGS &&
         r.direction === TransactionDirection.DEBIT
       ) {
         cogsLines.push({ subCategory: r.subCategory, amount });
         totalCogs += amount;
-      } else if (
+        continue;
+      }
+
+      if (
         r.category === TransactionCategory.EXPENSE &&
         r.direction === TransactionDirection.DEBIT
       ) {
@@ -100,51 +166,20 @@ export class PnlService {
     const grossProfit = totalRevenue - totalCogs;
     const netProfit = grossProfit - totalExpenses;
 
-    const grossProfitMargin =
-      totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
-    const netProfitMargin =
-      totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
-
-    const uncategorisedStats = await this.transactionRepository
-      .createQueryBuilder('tx')
-      .where('tx.businessId = :businessId', { businessId })
-      .andWhere('tx.date BETWEEN :startDate AND :endDate', {
-        startDate,
-        endDate,
-      })
-      .andWhere('tx.isCategorised = :isCat', { isCat: false })
-      .select('COUNT(*)', 'count')
-      .addSelect('COALESCE(SUM(tx.amount), 0)', 'totalValue')
-      .getRawOne();
-
     return {
-      revenue: {
-        lines: incomeLines,
-        total: totalRevenue,
-      },
-      cogs: {
-        lines: cogsLines,
-        total: totalCogs,
-      },
+      incomeLines,
+      cogsLines,
+      operatingExpenseLines,
+      otherExpenseLines,
+      totalRevenue,
+      totalCogs,
+      totalOperatingExpenses,
+      totalOtherExpenses,
+      totalExpenses,
       grossProfit,
-      grossProfitMargin,
-      expenses: {
-        operating: {
-          lines: operatingExpenseLines,
-          total: totalOperatingExpenses,
-        },
-        other: {
-          lines: otherExpenseLines,
-          total: totalOtherExpenses,
-        },
-        total: totalExpenses,
-      },
+      grossProfitMargin: totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0,
       netProfit,
-      netProfitMargin,
-      metadata: {
-        uncategorisedCount: parseInt(uncategorisedStats?.count || '0', 10),
-        uncategorisedValue: parseFloat(uncategorisedStats?.totalValue || '0'),
-      },
+      netProfitMargin: totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0,
     };
   }
 

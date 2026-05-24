@@ -3,7 +3,6 @@ import * as express from 'express';
 import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-import { apiReference } from '@scalar/nestjs-api-reference';
 import { AppModule } from './app.module';
 import { AuthErrorFilter, AllExceptionsFilter } from './common/filters';
 import { HttpAdapterHost } from '@nestjs/core';
@@ -80,12 +79,7 @@ async function bootstrap() {
   });
 
   const document = SwaggerModule.createDocument(app, config.build());
-  app.use(
-    '/docs',
-    apiReference({
-      content: document,
-    }),
-  );
+  SwaggerModule.setup('docs', app, document);
 
   await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
   logger.log(`Application running on: ${await app.getUrl()}`);

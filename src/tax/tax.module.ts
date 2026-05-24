@@ -6,12 +6,14 @@ import { Transaction } from '../finance/entities/transaction.entity';
 import { Asset } from '../finance/entities/asset.entity';
 import { PaymentsModule } from '../payments/payments.module';
 import { BusinessModule } from '../business/business.module';
+import { ReportsModule } from '../reports/reports.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Transaction, Asset]),
     PaymentsModule,
     BusinessModule,
+    ReportsModule,
   ],
   controllers: [TaxController],
   providers: [TaxService],

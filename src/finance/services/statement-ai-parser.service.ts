@@ -23,6 +23,8 @@ export class StatementAiParserService {
   private readonly statementAiApiKey?: string;
   private readonly statementAiBaseUrl: string;
   private readonly statementAiModel: string;
+  private readonly statementAiTemperature: number;
+  private readonly statementAiTopP: number;
 
   constructor(private readonly configService: ConfigService) {
     this.statementAiApiKey =
@@ -37,6 +39,11 @@ export class StatementAiParserService {
       this.configService.get<string>('STATEMENT_AI_MODEL') ||
       this.configService.get<string>('GROQ_MODEL') ||
       'phi3:mini';
+    this.statementAiTemperature = this.getNumberConfig(
+      'STATEMENT_AI_TEMPERATURE',
+      0,
+    );
+    this.statementAiTopP = this.getNumberConfig('STATEMENT_AI_TOP_P', 0.1);
   }
 
   isEnabled(): boolean {
@@ -66,6 +73,8 @@ export class StatementAiParserService {
       `${this.statementAiBaseUrl}/chat/completions`,
       {
         model: this.statementAiModel,
+        temperature: this.statementAiTemperature,
+        top_p: this.statementAiTopP,
         response_format: { type: 'json_object' },
         messages: [
           {
@@ -79,6 +88,10 @@ export class StatementAiParserService {
               'amount must always be positive.',
               'direction must be CREDIT or DEBIT.',
               'date must be normalized to YYYY-MM-DD.',
+              'Do not infer, repair, or invent missing transactions.',
+              'If the text is ambiguous or incomplete, omit that row.',
+              'If no clearly supported transactions exist, return {"transactions":[]}.',
+              'Every returned row must be directly grounded in the provided text.',
               'If a field is unknown, omit it.',
               'Do not include markdown fences.',
             ].join('\n'),
@@ -215,6 +228,16 @@ export class StatementAiParserService {
     const cleaned = value.replace(/[^0-9.-]/g, '');
     const parsed = Number.parseFloat(cleaned);
     return Number.isFinite(parsed) ? Math.abs(parsed) : 0;
+  }
+
+  private getNumberConfig(key: string, fallback: number): number {
+    const value = this.configService.get<string>(key);
+    if (!value) {
+      return fallback;
+    }
+
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
   }
 
   private normalizeDirection(

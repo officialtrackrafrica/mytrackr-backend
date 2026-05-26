@@ -44,6 +44,9 @@ services:
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASS=${SMTP_PASS}
       - MAIL_FROM=${MAIL_FROM:-noreply@mytrackr.app}
+      - STATEMENT_AI_BASE_URL=${STATEMENT_AI_BASE_URL:-http://ollama:11434/v1}
+      - STATEMENT_AI_MODEL=${STATEMENT_AI_MODEL:-phi3:mini}
+      - STATEMENT_AI_API_KEY=${STATEMENT_AI_API_KEY:-ollama}
       - CATEGORIZATION_ENGINE_URL=categorization-engine:50051
       - OCR_SERVICE_URL=http://ocr-service:8000
     depends_on:
@@ -51,6 +54,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      ollama:
+        condition: service_healthy
+      ollama-pull-phi3-mini:
+        condition: service_completed_successfully
 
   categorization-engine:
     build:
@@ -113,7 +120,34 @@ services:
       - '127.0.0.1:1025:1025'
       - '127.0.0.1:8025:8025'
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: mytrackr-ollama
+    ports:
+      - '127.0.0.1:11434:11434'
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ['CMD', 'ollama', 'list']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  ollama-pull-phi3-mini:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint: ['/bin/sh', '-c']
+    command: 'ollama pull ${OLLAMA_MODEL:-phi3:mini}'
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: 'no'
+
 volumes:
   postgres_data:
   redis_data:
   categorization_engine_data:
+  ollama_data:

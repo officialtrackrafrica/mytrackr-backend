@@ -92,7 +92,7 @@ export class PdfUploadService {
 
     if (parsedRows.length === 0 && this.statementAiParserService.isEnabled()) {
       this.logger.warn(
-        'Deterministic PDF parser found 0 rows. Falling back to Groq AI parser.',
+        'Deterministic PDF parser found 0 rows. Falling back to the local AI parser.',
       );
       parsedRows =
         await this.statementAiParserService.extractTransactionsFromText(text);

@@ -4,93 +4,128 @@ import axios from 'axios';
 import { TransactionDirection } from '../entities/transaction.entity';
 import { ParsedRow } from './statement-parser.types';
 
-interface GroqResponsesApiResult {
-  output_text?: string;
+interface ChatCompletionsApiResult {
+  choices?: Array<{
+    message?: {
+      content?:
+        | string
+        | Array<{
+            type?: string;
+            text?: string;
+          }>;
+    };
+  }>;
 }
 
 @Injectable()
 export class StatementAiParserService {
   private readonly logger = new Logger(StatementAiParserService.name);
-  private readonly groqApiKey?: string;
-  private readonly groqBaseUrl: string;
-  private readonly groqModel: string;
+  private readonly statementAiApiKey?: string;
+  private readonly statementAiBaseUrl: string;
+  private readonly statementAiModel: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.groqApiKey = this.configService.get<string>('GROQ_API_KEY');
-    this.groqBaseUrl =
+    this.statementAiApiKey =
+      this.configService.get<string>('STATEMENT_AI_API_KEY') ||
+      this.configService.get<string>('GROQ_API_KEY') ||
+      'ollama';
+    this.statementAiBaseUrl =
+      this.configService.get<string>('STATEMENT_AI_BASE_URL') ||
       this.configService.get<string>('GROQ_BASE_URL') ||
-      'https://api.groq.com/openai/v1';
-    this.groqModel =
-      this.configService.get<string>('GROQ_MODEL') || 'openai/gpt-oss-20b';
+      'http://ollama:11434/v1';
+    this.statementAiModel =
+      this.configService.get<string>('STATEMENT_AI_MODEL') ||
+      this.configService.get<string>('GROQ_MODEL') ||
+      'phi3:mini';
   }
 
   isEnabled(): boolean {
-    return !!this.groqApiKey;
+    return !!this.statementAiBaseUrl && !!this.statementAiModel;
   }
 
   async extractTransactionsFromText(text: string): Promise<ParsedRow[]> {
-    if (!this.groqApiKey) {
+    if (!this.isEnabled()) {
       this.logger.warn(
-        'Groq fallback parser skipped because GROQ_API_KEY is not configured.',
+        'AI fallback parser skipped because STATEMENT_AI_BASE_URL or STATEMENT_AI_MODEL is not configured.',
       );
       return [];
     }
 
-    const prompt = [
-      'Extract bank transactions from the statement text below.',
-      'Return JSON only with this exact shape:',
-      '{"transactions":[{"date":"YYYY-MM-DD","description":"string","amount":123.45,"direction":"CREDIT|DEBIT","name":"optional string","reference":"optional string"}]}',
-      'Rules:',
-      '- Return only actual transaction rows.',
-      '- Exclude headers, summaries, opening balance, closing balance, page numbers, and totals.',
-      '- amount must always be a positive number.',
-      '- direction must be CREDIT or DEBIT.',
-      '- date must be normalized to YYYY-MM-DD.',
-      '- If a field is unknown, omit it.',
-      '- Do not include markdown fences.',
-      '',
-      'Statement text:',
-      text,
-    ].join('\n');
+    this.logger.log(
+      `Calling AI fallback parser with model ${this.statementAiModel}`,
+    );
 
-    this.logger.log(`Calling Groq fallback parser with model ${this.groqModel}`);
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (this.statementAiApiKey) {
+      headers.Authorization = `Bearer ${this.statementAiApiKey}`;
+    }
 
-    const response = await axios.post<GroqResponsesApiResult>(
-      `${this.groqBaseUrl}/responses`,
+    const response = await axios.post<ChatCompletionsApiResult>(
+      `${this.statementAiBaseUrl}/chat/completions`,
       {
-        model: this.groqModel,
-        input: prompt,
+        model: this.statementAiModel,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: [
+              'Extract bank transactions from statement text.',
+              'Return JSON only with this exact shape:',
+              '{"transactions":[{"date":"YYYY-MM-DD","description":"string","amount":123.45,"direction":"CREDIT|DEBIT","name":"optional string","reference":"optional string"}]}',
+              'Return only actual transaction rows.',
+              'Exclude headers, summaries, balances, page numbers, and totals.',
+              'amount must always be positive.',
+              'direction must be CREDIT or DEBIT.',
+              'date must be normalized to YYYY-MM-DD.',
+              'If a field is unknown, omit it.',
+              'Do not include markdown fences.',
+            ].join('\n'),
+          },
+          {
+            role: 'user',
+            content: text,
+          },
+        ],
       },
       {
-        headers: {
-          Authorization: `Bearer ${this.groqApiKey}`,
-          'Content-Type': 'application/json',
-        },
+        headers,
         timeout: 120000,
       },
     );
 
-    const outputText = response.data?.output_text?.trim() || '';
+    const rawContent = response.data?.choices?.[0]?.message?.content;
+    const outputText =
+      typeof rawContent === 'string'
+        ? rawContent.trim()
+        : Array.isArray(rawContent)
+          ? rawContent
+              .map((part) => (typeof part?.text === 'string' ? part.text : ''))
+              .join('')
+              .trim()
+          : '';
+
     if (!outputText) {
-      this.logger.warn('Groq fallback parser returned an empty response.');
+      this.logger.warn('AI fallback parser returned an empty response.');
       return [];
     }
 
     this.logger.log(
-      `Groq raw output preview (first 4000 chars): ${outputText.slice(0, 4000)}`,
+      `AI raw output preview (first 4000 chars): ${outputText.slice(0, 4000)}`,
     );
 
-    const parsed = this.parseGroqOutput(outputText);
+    const parsed = this.parseAiOutput(outputText);
     this.logger.log(
-      `Groq fallback parser returned ${parsed.length} normalized transaction rows`,
+      `AI fallback parser returned ${parsed.length} normalized transaction rows`,
     );
     return parsed;
   }
 
-  private parseGroqOutput(outputText: string): ParsedRow[] {
+  private parseAiOutput(outputText: string): ParsedRow[] {
     const jsonString = this.extractJsonObject(outputText);
     if (!jsonString) {
-      this.logger.warn('Groq output did not contain a valid JSON object.');
+      this.logger.warn('AI output did not contain a valid JSON object.');
       return [];
     }
 
@@ -106,7 +141,7 @@ export class StatementAiParserService {
         .map((item) => this.normalizeRow(item))
         .filter((row): row is ParsedRow => !!row);
     } catch (error: any) {
-      this.logger.error(`Failed to parse Groq JSON output: ${error.message}`);
+      this.logger.error(`Failed to parse AI JSON output: ${error.message}`);
       return [];
     }
   }

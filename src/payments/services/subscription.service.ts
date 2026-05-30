@@ -3,9 +3,13 @@ import {
   NotFoundException,
   Logger,
   BadRequestException,
+  OnModuleDestroy,
+  OnModuleInit,
+  Inject,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { LessThanOrEqual, Repository } from 'typeorm';
+import Redis from 'ioredis';
 import { Plan } from '../entities/plan.entity';
 import { Subscription } from '../entities/subscription.entity';
 import { PaymentTransaction } from '../entities/payment-transaction.entity';
@@ -28,14 +32,20 @@ import {
   Integration,
   IntegrationBillingStatus,
 } from '../../integrations/entities/integration.entity';
+import { REDIS_CLIENT } from '../../common/redis';
 
 const ADDITIONAL_BANK_ACCOUNT_FEE_KEY = 'billing.additional_bank_account_fee';
 const ADDITIONAL_BANK_ACCOUNT_FEE_TYPE = 'additional_bank_account_fee';
 const INTEGRATION_API_KEY_PAYMENT_TYPE = 'integration_api_key_subscription';
+const SCHEDULED_SUBSCRIPTION_LOCK_KEY = 'subscriptions:activation:lock';
+const SCHEDULED_SUBSCRIPTION_LOCK_TTL_SECONDS = 55;
+const SCHEDULED_SUBSCRIPTION_CHECK_INTERVAL_MS = 60_000;
 
 @Injectable()
-export class SubscriptionService {
+export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(SubscriptionService.name);
+  private activationInterval?: NodeJS.Timeout;
+  private readonly lockOwner = `subscription-worker-${process.pid}-${Date.now()}`;
 
   constructor(
     @InjectRepository(Plan)
@@ -54,18 +64,27 @@ export class SubscriptionService {
     private readonly integrationPlanRepository: Repository<IntegrationPlan>,
     private readonly paymentFactory: PaymentFactoryService,
     private readonly paystackService: PaystackService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
+
+  onModuleInit() {
+    this.activationInterval = setInterval(() => {
+      void this.processScheduledSubscriptions();
+    }, SCHEDULED_SUBSCRIPTION_CHECK_INTERVAL_MS);
+  }
+
+  onModuleDestroy() {
+    if (this.activationInterval) {
+      clearInterval(this.activationInterval);
+    }
+  }
 
   async getAllPlans() {
     return this.planRepository.find({ where: { isActive: true } });
   }
 
   async getUserSubscriptionStatus(userId: string) {
-    const sub = await this.subRepository.findOne({
-      where: { user: { id: userId }, status: 'active' },
-      relations: ['plan'],
-      order: { createdAt: 'DESC' },
-    });
+    const sub = await this.activateScheduledSubscriptionIfDue(userId);
 
     if (!sub) {
       const freePlan = await this.getFallbackBasicPlan();
@@ -452,26 +471,30 @@ export class SubscriptionService {
     });
 
     if (!plan || !user) return;
+    const existingActiveSubscription = await this.subRepository.findOne({
+      where: { user: { id: userId }, status: 'active' },
+      relations: ['plan'],
+      order: { createdAt: 'DESC' },
+    });
 
-    await this.subRepository.update(
-      { user: { id: userId }, status: 'active' },
-      { status: 'canceled', canceledAt: new Date() },
+    const now = new Date();
+    const hasRemainingActiveTime = Boolean(
+      existingActiveSubscription?.currentPeriodEnd &&
+        existingActiveSubscription.currentPeriodEnd > now,
     );
+    const isSamePlanRenewal =
+      existingActiveSubscription?.plan?.id === plan.id;
 
-    const startDate = new Date();
-    const endDate = new Date(startDate);
-
-    if (
-      plan.interval === 'year' ||
-      plan.interval === 'annually' ||
-      plan.interval === 'yearly'
-    ) {
-      endDate.setFullYear(endDate.getFullYear() + 1);
-    } else if (plan.interval === 'month' || plan.interval === 'monthly') {
-      endDate.setMonth(endDate.getMonth() + 1);
-    } else {
-      endDate.setDate(endDate.getDate() + 30);
+    if (!hasRemainingActiveTime && existingActiveSubscription) {
+      existingActiveSubscription.status = 'canceled';
+      existingActiveSubscription.canceledAt = now;
+      await this.subRepository.save(existingActiveSubscription);
     }
+
+    const startDate = hasRemainingActiveTime
+      ? new Date(existingActiveSubscription!.currentPeriodEnd)
+      : now;
+    const endDate = this.calculatePeriodEnd(startDate, plan.interval);
 
     let gatewaySubscriptionId = '';
     let gatewayEmailToken = '';
@@ -489,6 +512,78 @@ export class SubscriptionService {
       gatewayEmailToken = created.emailToken;
     }
 
+    if (hasRemainingActiveTime && existingActiveSubscription && isSamePlanRenewal) {
+      existingActiveSubscription.plan = plan;
+      existingActiveSubscription.currentPeriodEnd = endDate;
+      existingActiveSubscription.gatewaySubscriptionId = gatewaySubscriptionId;
+      existingActiveSubscription.gatewayCustomerCode =
+        customerCode || existingActiveSubscription.gatewayCustomerCode;
+      existingActiveSubscription.gatewayEmailToken = gatewayEmailToken;
+      existingActiveSubscription.paymentAuthorization =
+        authorization || existingActiveSubscription.paymentAuthorization;
+      existingActiveSubscription.cancelAtPeriodEnd = false;
+      existingActiveSubscription.canceledAt = null;
+      existingActiveSubscription.status = 'active';
+
+      await this.subRepository.save(existingActiveSubscription);
+      this.logger.log(
+        `Extended plan ${plan.name} for user ${user.id} until ${endDate.toISOString()}`,
+      );
+      return;
+    }
+
+    if (hasRemainingActiveTime && existingActiveSubscription) {
+      const scheduledStartDate = new Date(
+        existingActiveSubscription.currentPeriodEnd!,
+      );
+      const scheduledEndDate = this.calculatePeriodEnd(
+        scheduledStartDate,
+        plan.interval,
+      );
+      const existingScheduledSubscription = await this.subRepository.findOne({
+        where: { user: { id: userId }, status: 'scheduled' },
+        relations: ['plan'],
+        order: { createdAt: 'DESC' },
+      });
+
+      if (existingScheduledSubscription) {
+        existingScheduledSubscription.plan = plan;
+        existingScheduledSubscription.currentPeriodStart = scheduledStartDate;
+        existingScheduledSubscription.currentPeriodEnd = scheduledEndDate;
+        existingScheduledSubscription.gatewaySubscriptionId =
+          gatewaySubscriptionId;
+        existingScheduledSubscription.gatewayCustomerCode =
+          customerCode || existingScheduledSubscription.gatewayCustomerCode;
+        existingScheduledSubscription.gatewayEmailToken = gatewayEmailToken;
+        existingScheduledSubscription.paymentAuthorization =
+          authorization || existingScheduledSubscription.paymentAuthorization;
+        existingScheduledSubscription.cancelAtPeriodEnd = false;
+        existingScheduledSubscription.canceledAt = null;
+
+        await this.subRepository.save(existingScheduledSubscription);
+      } else {
+        const scheduledSubscription = this.subRepository.create({
+          user,
+          plan,
+          status: 'scheduled',
+          currentPeriodStart: scheduledStartDate,
+          currentPeriodEnd: scheduledEndDate,
+          gatewaySubscriptionId,
+          gatewayCustomerCode: customerCode,
+          gatewayEmailToken,
+          paymentAuthorization: authorization || null,
+          cancelAtPeriodEnd: false,
+        });
+
+        await this.subRepository.save(scheduledSubscription);
+      }
+
+      this.logger.log(
+        `Queued plan ${plan.name} for user ${user.id} starting ${scheduledStartDate.toISOString()}`,
+      );
+      return;
+    }
+
     const sub = this.subRepository.create({
       user,
       plan,
@@ -504,6 +599,179 @@ export class SubscriptionService {
 
     await this.subRepository.save(sub);
     this.logger.log(`Provisioned plan ${plan.name} for user ${user.id}`);
+  }
+
+  private calculatePeriodEnd(startDate: Date, interval: string): Date {
+    const endDate = new Date(startDate);
+
+    if (
+      interval === 'year' ||
+      interval === 'annually' ||
+      interval === 'yearly'
+    ) {
+      endDate.setFullYear(endDate.getFullYear() + 1);
+    } else if (interval === 'month' || interval === 'monthly') {
+      endDate.setMonth(endDate.getMonth() + 1);
+    } else {
+      endDate.setDate(endDate.getDate() + 30);
+    }
+
+    return endDate;
+  }
+
+  private async activateScheduledSubscriptionIfDue(
+    userId: string,
+  ): Promise<Subscription | null> {
+    const now = new Date();
+    const activeSubscription = await this.subRepository.findOne({
+      where: { user: { id: userId }, status: 'active' },
+      relations: ['plan'],
+      order: { createdAt: 'DESC' },
+    });
+
+    if (
+      activeSubscription &&
+      (!activeSubscription.currentPeriodEnd ||
+        activeSubscription.currentPeriodEnd >= now)
+    ) {
+      return activeSubscription;
+    }
+
+    if (
+      activeSubscription?.currentPeriodEnd &&
+      activeSubscription.currentPeriodEnd < now
+    ) {
+      activeSubscription.status = 'past_due';
+      await this.subRepository.save(activeSubscription);
+    }
+
+    const scheduledSubscription = await this.subRepository.findOne({
+      where: {
+        user: { id: userId },
+        status: 'scheduled',
+        currentPeriodStart: LessThanOrEqual(now),
+      },
+      relations: ['plan'],
+      order: { currentPeriodStart: 'ASC' },
+    });
+
+    if (!scheduledSubscription) {
+      return null;
+    }
+
+    const activatedSubscription = await this.activateScheduledSubscriptionRecord(
+      scheduledSubscription.id,
+      now,
+    );
+    return activatedSubscription;
+  }
+
+  private async processScheduledSubscriptions(): Promise<void> {
+    const lockAcquired = await this.acquireScheduledSubscriptionLock();
+    if (!lockAcquired) {
+      return;
+    }
+
+    try {
+      const now = new Date();
+      const dueScheduledSubscriptions = await this.subRepository.find({
+        where: {
+          status: 'scheduled',
+          currentPeriodStart: LessThanOrEqual(now),
+        },
+        relations: ['user', 'plan'],
+        order: { currentPeriodStart: 'ASC' },
+      });
+
+      for (const scheduledSubscription of dueScheduledSubscriptions) {
+        const activeSubscription = await this.subRepository.findOne({
+          where: {
+            user: { id: scheduledSubscription.user.id },
+            status: 'active',
+          },
+          order: { createdAt: 'DESC' },
+        });
+
+        if (
+          activeSubscription?.currentPeriodEnd &&
+          activeSubscription.currentPeriodEnd > now
+        ) {
+          continue;
+        }
+
+        if (activeSubscription) {
+          activeSubscription.status = 'past_due';
+          await this.subRepository.save(activeSubscription);
+        }
+
+        const activatedSubscription =
+          await this.activateScheduledSubscriptionRecord(
+            scheduledSubscription.id,
+            now,
+          );
+        if (!activatedSubscription) {
+          continue;
+        }
+
+        this.logger.log(
+          `Activated scheduled plan ${scheduledSubscription.plan.name} for user ${scheduledSubscription.user.id}`,
+        );
+      }
+    } finally {
+      await this.releaseScheduledSubscriptionLock();
+    }
+  }
+
+  private async acquireScheduledSubscriptionLock(): Promise<boolean> {
+    const result = await this.redis.set(
+      SCHEDULED_SUBSCRIPTION_LOCK_KEY,
+      this.lockOwner,
+      'EX',
+      SCHEDULED_SUBSCRIPTION_LOCK_TTL_SECONDS,
+      'NX',
+    );
+    return result === 'OK';
+  }
+
+  private async releaseScheduledSubscriptionLock(): Promise<void> {
+    await this.redis.eval(
+      `
+        if redis.call("get", KEYS[1]) == ARGV[1] then
+          return redis.call("del", KEYS[1])
+        end
+        return 0
+      `,
+      1,
+      SCHEDULED_SUBSCRIPTION_LOCK_KEY,
+      this.lockOwner,
+    );
+  }
+
+  private async activateScheduledSubscriptionRecord(
+    subscriptionId: string,
+    now: Date,
+  ): Promise<Subscription | null> {
+    const activationResult = await this.subRepository
+      .createQueryBuilder()
+      .update(Subscription)
+      .set({
+        status: 'active',
+        cancelAtPeriodEnd: false,
+        canceledAt: null,
+      })
+      .where('id = :subscriptionId', { subscriptionId })
+      .andWhere('status = :status', { status: 'scheduled' })
+      .andWhere('currentPeriodStart <= :now', { now })
+      .execute();
+
+    if (!activationResult.affected) {
+      return null;
+    }
+
+    return this.subRepository.findOne({
+      where: { id: subscriptionId },
+      relations: ['plan'],
+    });
   }
 
   private async activatePaidIntegration(

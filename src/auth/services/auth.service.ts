@@ -74,13 +74,26 @@ export class AuthService {
     return crypto.createHash('sha256').update(code).digest('hex');
   }
 
+  private normalizeEmail(email?: string | null): string | undefined {
+    return email?.trim().toLowerCase();
+  }
+
+  private normalizeEmailOrPhone(value: string): string {
+    const trimmed = value.trim();
+    if (trimmed.includes('@')) {
+      return this.normalizeEmail(trimmed)!;
+    }
+    return trimmed;
+  }
+
   async loginWithEmail(
     loginDto: EmailLoginDto,
     deviceInfo?: any,
   ): Promise<LoginResponseDto> {
-    const { email, password } = loginDto;
+    const normalizedEmail = this.normalizeEmail(loginDto.email);
+    const { password } = loginDto;
     const user = await this.usersRepository.findOne({
-      where: { email },
+      where: { email: normalizedEmail },
       relations: ['roles'],
     });
     return this.validateAndLoginUser(user, password, deviceInfo);
@@ -165,8 +178,6 @@ export class AuthService {
       };
     }
     */
-
-    await this.sessionService.revokeAndBlacklistAllForUser(user.id);
 
     const session = await this.sessionService.createSession(
       user.id,
@@ -311,9 +322,12 @@ export class AuthService {
       firstName,
       lastName,
     } = registerDto;
+    const normalizedEmail = this.normalizeEmail(email);
 
-    if (method === 'email' && email) {
-      const existing = await this.usersRepository.findOne({ where: { email } });
+    if (method === 'email' && normalizedEmail) {
+      const existing = await this.usersRepository.findOne({
+        where: { email: normalizedEmail },
+      });
       if (existing) {
         throw new AuthError(
           'USER_EXISTS',
@@ -376,7 +390,7 @@ export class AuthService {
     const verificationCodeExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     const newUser = this.usersRepository.create({
-      email: method === 'email' ? email : undefined,
+      email: method === 'email' ? normalizedEmail : undefined,
       phone: method === 'phone' ? phone : undefined,
       passwordHash,
       firstName,
@@ -391,14 +405,14 @@ export class AuthService {
     await this.usersRepository.save(newUser);
 
     await this.emailService.sendOtpEmail(
-      email || phone!,
+      normalizedEmail || phone!,
       firstName,
       verificationCode,
     );
 
     return {
       success: true,
-      message: `Verification code sent to ${method === 'email' ? email : phone}`,
+      message: `Verification code sent to ${method === 'email' ? normalizedEmail : phone}`,
       requiresVerification: true,
     };
   }
@@ -407,8 +421,12 @@ export class AuthService {
     emailOrPhone: string,
     code: string,
   ): Promise<LoginResponseDto> {
+    const normalizedEmailOrPhone = this.normalizeEmailOrPhone(emailOrPhone);
     const user = await this.usersRepository.findOne({
-      where: [{ email: emailOrPhone }, { phone: emailOrPhone }],
+      where: [
+        { email: normalizedEmailOrPhone },
+        { phone: normalizedEmailOrPhone },
+      ],
     });
 
     if (!user) {
@@ -452,8 +470,12 @@ export class AuthService {
   }
 
   async resendVerification(emailOrPhone: string): Promise<{ message: string }> {
+    const normalizedEmailOrPhone = this.normalizeEmailOrPhone(emailOrPhone);
     const user = await this.usersRepository.findOne({
-      where: [{ email: emailOrPhone }, { phone: emailOrPhone }],
+      where: [
+        { email: normalizedEmailOrPhone },
+        { phone: normalizedEmailOrPhone },
+      ],
     });
 
     if (!user) {
@@ -520,8 +542,10 @@ export class AuthService {
   }
 
   async forgotPassword(dto: ForgotPasswordDto): Promise<{ message: string }> {
-    const { email } = dto;
-    const user = await this.usersRepository.findOne({ where: { email } });
+    const normalizedEmail = this.normalizeEmail(dto.email);
+    const user = await this.usersRepository.findOne({
+      where: { email: normalizedEmail },
+    });
 
     if (!user) {
       return { message: 'If email exists, a password reset OTP has been sent' };
@@ -536,7 +560,7 @@ export class AuthService {
     });
 
     await this.emailService.sendPasswordResetOtpEmail(
-      email,
+      normalizedEmail!,
       user.firstName,
       resetToken,
     );
@@ -545,10 +569,11 @@ export class AuthService {
   }
 
   async resetPassword(dto: ResetPasswordDto): Promise<{ message: string }> {
-    const { email, token, newPassword } = dto;
+    const normalizedEmail = this.normalizeEmail(dto.email);
+    const { token, newPassword } = dto;
 
     const user = await this.usersRepository.findOne({
-      where: { email },
+      where: { email: normalizedEmail },
     });
 
     if (
@@ -598,8 +623,11 @@ export class AuthService {
       businessName,
       businessType,
     } = dto;
+    const normalizedEmail = this.normalizeEmail(email);
 
-    const existing = await this.usersRepository.findOne({ where: { email } });
+    const existing = await this.usersRepository.findOne({
+      where: { email: normalizedEmail },
+    });
     if (existing) {
       throw new AuthError(
         'USER_EXISTS',
@@ -613,7 +641,7 @@ export class AuthService {
     const verificationCodeExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     const newUser = this.usersRepository.create({
-      email,
+      email: normalizedEmail,
       passwordHash,
       firstName,
       lastName,
@@ -635,13 +663,17 @@ export class AuthService {
     });
     await this.businessRepository.save(newBusiness);
 
-    await this.emailService.sendOtpEmail(email, firstName, verificationCode);
+    await this.emailService.sendOtpEmail(
+      normalizedEmail!,
+      firstName,
+      verificationCode,
+    );
     // Asynchronously send a welcome email so they receive it right after registration
-    await this.emailService.sendWelcomeEmail(email, firstName);
+    await this.emailService.sendWelcomeEmail(normalizedEmail!, firstName);
 
     return {
       success: true,
-      message: `Verification code sent to ${email}`,
+      message: `Verification code sent to ${normalizedEmail}`,
       requiresVerification: true,
     };
   }
@@ -775,6 +807,10 @@ export class AuthService {
 
   async logoutSession(sessionId: string): Promise<void> {
     await this.sessionService.revokeSessionWithTokens(sessionId);
+  }
+
+  async logoutAllSessions(userId: string): Promise<void> {
+    await this.sessionService.revokeAllUserSessions(userId);
   }
 
   sanitizeUser(user: User): UserResponseDto {

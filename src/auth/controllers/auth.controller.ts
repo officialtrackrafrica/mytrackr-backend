@@ -423,6 +423,33 @@ export class AuthController {
     return { message: 'Logged out successfully' };
   }
 
+  @Post('logout-all')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'Logout from all devices and clear auth cookies',
+  })
+  @ApiCookieAuth('accessToken')
+  @ApiResponse({ status: 200, description: 'Logged out from all devices' })
+  async logoutAll(
+    @Req() req: any,
+    @Res({ passthrough: true }) res: ExpressResponse,
+  ): Promise<{ message: string }> {
+    const userId: string | undefined = req.user?.id;
+    if (!userId) {
+      throw new HttpException(
+        {
+          error: 'USER_NOT_FOUND',
+          message: 'Authenticated user not found',
+        },
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+
+    await this.authService.logoutAllSessions(userId);
+    clearCookies(res);
+    return { message: 'Logged out from all devices successfully' };
+  }
+
   @Get('google')
   @UseGuards(GoogleAuthGuard)
   @ApiOperation({

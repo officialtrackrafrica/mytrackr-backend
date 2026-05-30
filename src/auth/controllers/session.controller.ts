@@ -5,6 +5,7 @@ import {
   Post,
   Param,
   Request,
+  Res,
   UseGuards,
   HttpException,
   HttpStatus,
@@ -15,7 +16,7 @@ import {
   ApiResponse,
   ApiCookieAuth,
 } from '@nestjs/swagger';
-import { SessionService } from '../services';
+import { AuthService, SessionService } from '../services';
 import { JwtAuthGuard } from '../guards';
 import { PoliciesGuard } from '../../casl/guards/policies.guard';
 import { CheckPolicies } from '../../casl/decorators/check-policies.decorator';
@@ -23,6 +24,10 @@ import { AppAbility } from '../../casl/casl-ability.factory';
 import { Action } from '../../casl/action.enum';
 import { SessionListDto } from '../dto';
 import { SWAGGER_TAGS } from '../../common/docs';
+
+interface ExpressResponse {
+  clearCookie(name: string): this;
+}
 
 interface AuthenticatedRequest {
   user: {
@@ -36,7 +41,10 @@ interface AuthenticatedRequest {
 @UseGuards(JwtAuthGuard, PoliciesGuard)
 @ApiCookieAuth('accessToken')
 export class SessionController {
-  constructor(private sessionService: SessionService) {}
+  constructor(
+    private sessionService: SessionService,
+    private authService: AuthService,
+  ) {}
 
   @Get()
   @CheckPolicies((ability: AppAbility) => ability.can(Action.Read, 'Session'))
@@ -96,10 +104,13 @@ export class SessionController {
   @ApiResponse({ status: 200, description: 'All sessions revoked' })
   async logoutAll(
     @Request() req: AuthenticatedRequest,
+    @Res({ passthrough: true }) res: ExpressResponse,
   ): Promise<{ success: boolean }> {
     const userId = req.user.id;
 
-    await this.sessionService.revokeAllUserSessions(userId);
+    await this.authService.logoutAllSessions(userId);
+    res.clearCookie('accessToken');
+    res.clearCookie('refreshToken');
 
     return { success: true };
   }

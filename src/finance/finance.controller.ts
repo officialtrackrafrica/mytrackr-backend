@@ -182,6 +182,14 @@ export class FinanceController {
 
   @Get('assets')
   @ApiOperation({ summary: "List all assets for the user's business" })
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, type: Number, example: 20 })
+  @ApiQuery({
+    name: 'includeArchived',
+    required: false,
+    type: Boolean,
+    example: false,
+  })
   @ApiResponse({
     status: 200,
     description: 'Paginated list of assets',
@@ -309,6 +317,14 @@ export class FinanceController {
 
   @Get('liabilities')
   @ApiOperation({ summary: "List all liabilities for the user's business" })
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, type: Number, example: 20 })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: LiabilityStatus,
+    example: LiabilityStatus.ACTIVE,
+  })
   @ApiResponse({
     status: 200,
     description: 'Paginated list of liabilities',

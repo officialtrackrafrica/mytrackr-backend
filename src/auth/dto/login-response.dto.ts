@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { BusinessType } from '../../business/entities/business.entity';
 
 export class UserResponseDto {
   @ApiProperty({ description: 'User ID', example: 'user-123' })
@@ -36,6 +37,13 @@ export class UserResponseDto {
     required: false,
   })
   timezone?: string;
+
+  @ApiProperty({
+    description: 'Business type',
+    enum: BusinessType,
+    required: false,
+  })
+  businessType?: BusinessType;
 
   @ApiProperty({ description: 'Account creation date' })
   createdAt: Date;

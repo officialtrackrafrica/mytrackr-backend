@@ -28,6 +28,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, SelectQueryBuilder } from 'typeorm';
 import { JwtAuthGuard } from '../auth/guards';
+import { Public } from '../auth/decorators/public.decorator';
 import { PlanGuard } from '../common/access-control/guards/plan.guard';
 import { RequirePlan } from '../common/access-control/decorators/require-plan.decorator';
 import { BusinessService } from '../business/services/business.service';
@@ -289,11 +290,9 @@ export class FinanceController {
     description: 'Hierarchical list of categories',
     type: [AccountCategoryResponseDto],
   })
-  async listCategories(@Req() req: any) {
-    const businessId = await this.businessService.getBusinessIdForUser(
-      req.user.id,
-    );
-    return this.categorizationService.listCategories(businessId);
+  @Public()
+  async listCategories() {
+    return this.categorizationService.listCategories();
   }
 
   // @Post('transactions/repair')

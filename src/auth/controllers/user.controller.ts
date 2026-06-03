@@ -41,6 +41,7 @@ import { Action } from '../../casl/action.enum';
 import { AppAbility } from '../../casl/casl-ability.factory';
 import { AdminAuditService } from '../../admin/services/admin-audit.service';
 import { AuditLogQueryDto } from '../../admin/dto';
+import { BusinessType } from '../../business/entities/business.entity';
 
 interface AuthenticatedRequest {
   user: {
@@ -76,6 +77,7 @@ export class UserController {
   ): Promise<UserResponseDto> {
     const user = await this.usersRepository.findOne({
       where: { id: req.user.id },
+      relations: ['business'],
     });
 
     if (!user) {
@@ -113,6 +115,7 @@ export class UserController {
 
     const user = await this.usersRepository.findOne({
       where: { id: req.user.id },
+      relations: ['business'],
     });
 
     if (!user) {
@@ -216,6 +219,7 @@ export class UserController {
       profilePicture: user.profilePicture,
       country: user.country,
       timezone: user.timezone,
+      businessType: user.business?.businessType as BusinessType | undefined,
       isVerified: user.isVerified,
       createdAt: user.createdAt,
     };

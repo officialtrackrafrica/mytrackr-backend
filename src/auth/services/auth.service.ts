@@ -820,6 +820,7 @@ export class AuthService {
       firstName: user.firstName,
       lastName: user.lastName,
       profilePicture: user.profilePicture,
+      businessType: user.business?.businessType,
       isVerified: user.isVerified,
       createdAt: user.createdAt,
     };

@@ -83,6 +83,13 @@ async function bootstrap() {
   SwaggerModule.setup('swagger', app, document, {
     jsonDocumentUrl: 'swagger-json',
     yamlDocumentUrl: 'swagger-yaml',
+    swaggerOptions: {
+      withCredentials: true,
+      requestInterceptor: (req: any) => {
+        req.credentials = 'include';
+        return req;
+      },
+    },
   });
 
   expressApp.get('/docs', (_req: any, res: any) => {

@@ -92,9 +92,12 @@ export class CreateLiabilityDto {
   @IsString()
   name: string;
 
-  @ApiProperty({ enum: LiabilityType })
-  @IsEnum(LiabilityType)
-  liabilityType: LiabilityType;
+  @ApiProperty({
+    description: 'Liability type UUID from GET /finance/liabilities/types',
+    example: '1e9b7a2c-6f3d-4d11-8c7a-2f4d8c9a2001',
+  })
+  @IsUUID()
+  liabilityTypeId: string;
 
   @ApiProperty({ example: 500000 })
   @IsNumber()
@@ -127,6 +130,14 @@ export class UpdateLiabilityDto {
   @IsOptional()
   @IsString()
   name?: string;
+
+  @ApiPropertyOptional({
+    description: 'Liability type UUID from GET /finance/liabilities/types',
+    example: '1e9b7a2c-6f3d-4d11-8c7a-2f4d8c9a2001',
+  })
+  @IsOptional()
+  @IsUUID()
+  liabilityTypeId?: string;
 
   @ApiPropertyOptional({ example: 300000 })
   @IsOptional()
@@ -371,6 +382,11 @@ export class AssetCategoryOptionDto {
 export class LiabilityResponseDto {
   @ApiProperty() id: string;
   @ApiProperty() name: string;
+  @ApiProperty({
+    description: 'Liability type UUID from GET /finance/liabilities/types',
+    example: '1e9b7a2c-6f3d-4d11-8c7a-2f4d8c9a2001',
+  })
+  liabilityTypeId: string;
   @ApiProperty({ enum: LiabilityType }) liabilityType: LiabilityType;
   @ApiProperty() amountOwed: number;
   @ApiPropertyOptional() originalAmount?: number;
@@ -380,6 +396,24 @@ export class LiabilityResponseDto {
   @ApiProperty() businessId: string;
   @ApiProperty() createdAt: Date;
   @ApiProperty() updatedAt: Date;
+}
+
+export class LiabilityTypeOptionDto {
+  @ApiProperty({ example: '1e9b7a2c-6f3d-4d11-8c7a-2f4d8c9a2001' })
+  id: string;
+
+  @ApiProperty({
+    example: 'Business Loan',
+    description:
+      'Exact liability type value stored by the backend after resolving the UUID',
+  })
+  value: LiabilityType;
+
+  @ApiProperty({
+    example: 'Business Loan',
+    description: 'Human-readable label for display',
+  })
+  label: string;
 }
 
 export class CategorizationRuleResponseDto {

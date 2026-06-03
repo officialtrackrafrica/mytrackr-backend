@@ -33,7 +33,11 @@ import { PlanGuard } from '../common/access-control/guards/plan.guard';
 import { RequirePlan } from '../common/access-control/decorators/require-plan.decorator';
 import { BusinessService } from '../business/services/business.service';
 import { Asset, AssetCategory } from './entities/asset.entity';
-import { Liability, LiabilityStatus } from './entities/liability.entity';
+import {
+  Liability,
+  LiabilityStatus,
+  LiabilityType,
+} from './entities/liability.entity';
 import { Transaction, CategorySource } from './entities/transaction.entity';
 import { AccountCategory } from './entities/account-category.entity';
 import { AccountSubCategory } from './entities/account-subcategory.entity';
@@ -53,6 +57,7 @@ import {
   UpdateTransactionDto,
   AssetResponseDto,
   LiabilityResponseDto,
+  LiabilityTypeOptionDto,
   TransactionResponseDto,
   ArchiveMessageResponseDto,
   CsvUploadResponseDto,
@@ -109,6 +114,33 @@ export class FinanceController {
       id: '0d8a9f1d-5c6d-4c22-9e5b-9b6b5d5f1008',
       value: AssetCategory.OTHER,
       label: AssetCategory.OTHER,
+    },
+  ];
+  private readonly liabilityTypeOptions: LiabilityTypeOptionDto[] = [
+    {
+      id: '1e9b7a2c-6f3d-4d11-8c7a-2f4d8c9a2001',
+      value: LiabilityType.BUSINESS_LOAN,
+      label: LiabilityType.BUSINESS_LOAN,
+    },
+    {
+      id: '1e9b7a2c-6f3d-4d11-8c7a-2f4d8c9a2002',
+      value: LiabilityType.COOPERATIVE_LOAN,
+      label: LiabilityType.COOPERATIVE_LOAN,
+    },
+    {
+      id: '1e9b7a2c-6f3d-4d11-8c7a-2f4d8c9a2003',
+      value: LiabilityType.FAMILY_LOAN,
+      label: LiabilityType.FAMILY_LOAN,
+    },
+    {
+      id: '1e9b7a2c-6f3d-4d11-8c7a-2f4d8c9a2004',
+      value: LiabilityType.SUPPLIER_DEBT,
+      label: LiabilityType.SUPPLIER_DEBT,
+    },
+    {
+      id: '1e9b7a2c-6f3d-4d11-8c7a-2f4d8c9a2005',
+      value: LiabilityType.OTHER,
+      label: LiabilityType.OTHER,
     },
   ];
 
@@ -250,6 +282,18 @@ export class FinanceController {
     return { message: 'Asset archived' };
   }
 
+  @Get('liabilities/types')
+  @ApiOperation({ summary: 'List available liability types' })
+  @ApiResponse({
+    status: 200,
+    description: 'Available liability types with stable IDs and values',
+    type: [LiabilityTypeOptionDto],
+  })
+  @Public()
+  listLiabilityTypes() {
+    return this.liabilityTypeOptions;
+  }
+
   @Get('liabilities')
   @ApiOperation({ summary: "List all liabilities for the user's business" })
   @ApiQuery({ name: 'status', required: false, type: String })
@@ -267,10 +311,11 @@ export class FinanceController {
     if (status) {
       where.status = status;
     }
-    return this.liabilityRepository.find({
+    const liabilities = await this.liabilityRepository.find({
       where,
       order: { createdAt: 'DESC' },
     });
+    return liabilities.map((liability) => this.serializeLiability(liability));
   }
 
   @Post('liabilities')
@@ -286,8 +331,13 @@ export class FinanceController {
     type: ErrorResponseDto,
   })
   async createLiability(@Body() dto: CreateLiabilityDto) {
-    const liability = this.liabilityRepository.create(dto);
-    return this.liabilityRepository.save(liability);
+    const liabilityType = this.resolveLiabilityType(dto.liabilityTypeId);
+    const liability = this.liabilityRepository.create({
+      ...dto,
+      liabilityType,
+    });
+    const saved = await this.liabilityRepository.save(liability);
+    return this.serializeLiability(saved);
   }
 
   @Patch('liabilities/:id')
@@ -318,8 +368,15 @@ export class FinanceController {
         'FINANCE_LIABILITY_NOT_FOUND',
       );
     }
-    await this.liabilityRepository.update(id, dto);
-    return this.liabilityRepository.findOneBy({ id });
+    const updateData: Partial<Liability> = { ...dto } as Partial<Liability>;
+    if (dto.liabilityTypeId) {
+      updateData.liabilityType = this.resolveLiabilityType(dto.liabilityTypeId);
+    }
+    delete (updateData as any).liabilityTypeId;
+
+    await this.liabilityRepository.update(id, updateData);
+    const updated = await this.liabilityRepository.findOneBy({ id });
+    return updated ? this.serializeLiability(updated) : updated;
   }
 
   @Delete('liabilities/:id')
@@ -735,6 +792,33 @@ export class FinanceController {
     return {
       ...asset,
       categoryId,
+    };
+  }
+
+  private resolveLiabilityType(liabilityTypeId: string): LiabilityType {
+    const match = this.liabilityTypeOptions.find(
+      (option) => option.id === liabilityTypeId,
+    );
+
+    if (!match) {
+      throw AppException.badRequest(
+        'Invalid liabilityTypeId - use GET /finance/liabilities/types to find valid IDs.',
+        'FINANCE_INVALID_LIABILITY_TYPE',
+      );
+    }
+
+    return match.value;
+  }
+
+  private serializeLiability(liability: Liability) {
+    const liabilityTypeId =
+      this.liabilityTypeOptions.find(
+        (option) => option.value === liability.liabilityType,
+      )?.id || '';
+
+    return {
+      ...liability,
+      liabilityTypeId,
     };
   }
 

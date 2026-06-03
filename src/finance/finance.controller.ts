@@ -66,6 +66,10 @@ import {
   TransactionSummaryResponseDto,
   AccountCategoryResponseDto,
   AssetCategoryOptionDto,
+  AssetQueryDto,
+  LiabilityQueryDto,
+  PaginatedAssetResponseDto,
+  PaginatedLiabilityResponseDto,
 } from './dto';
 
 @ApiTags(SWAGGER_TAGS[5].name)
@@ -178,29 +182,38 @@ export class FinanceController {
 
   @Get('assets')
   @ApiOperation({ summary: "List all assets for the user's business" })
-  @ApiQuery({ name: 'includeArchived', required: false, type: Boolean })
   @ApiResponse({
     status: 200,
-    description: 'List of assets',
-    type: [AssetResponseDto],
+    description: 'Paginated list of assets',
+    type: PaginatedAssetResponseDto,
   })
-  async listAssets(
-    @Req() req: any,
-    @Query('includeArchived') includeArchived?: string,
-  ) {
+  async listAssets(@Req() req: any, @Query() queryDto: AssetQueryDto) {
     const businessId = await this.businessService.getBusinessIdForUser(
       req.user.id,
     );
+    const { page = 1, limit = 20, includeArchived = false } = queryDto;
     const where: any = { businessId };
 
-    if (includeArchived !== 'true') {
+    if (!includeArchived) {
       where.isArchived = false;
     }
-    const assets = await this.assetRepository.find({
+
+    const skip = (page - 1) * limit;
+    const [assets, total] = await this.assetRepository.findAndCount({
       where,
       order: { createdAt: 'DESC' },
+      skip,
+      take: limit,
     });
-    return assets.map((asset) => this.serializeAsset(asset));
+    return {
+      data: assets.map((asset) => this.serializeAsset(asset)),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
   @Post('assets')
@@ -296,26 +309,41 @@ export class FinanceController {
 
   @Get('liabilities')
   @ApiOperation({ summary: "List all liabilities for the user's business" })
-  @ApiQuery({ name: 'status', required: false, type: String })
   @ApiResponse({
     status: 200,
-    description: 'List of liabilities',
-    type: [LiabilityResponseDto],
+    description: 'Paginated list of liabilities',
+    type: PaginatedLiabilityResponseDto,
   })
-  async listLiabilities(@Req() req: any, @Query('status') status?: string) {
+  async listLiabilities(
+    @Req() req: any,
+    @Query() queryDto: LiabilityQueryDto,
+  ) {
     const businessId = await this.businessService.getBusinessIdForUser(
       req.user.id,
     );
+    const { page = 1, limit = 20, status } = queryDto;
     const where: any = { businessId };
 
     if (status) {
       where.status = status;
     }
-    const liabilities = await this.liabilityRepository.find({
+
+    const skip = (page - 1) * limit;
+    const [liabilities, total] = await this.liabilityRepository.findAndCount({
       where,
       order: { createdAt: 'DESC' },
+      skip,
+      take: limit,
     });
-    return liabilities.map((liability) => this.serializeLiability(liability));
+    return {
+      data: liabilities.map((liability) => this.serializeLiability(liability)),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
   @Post('liabilities')

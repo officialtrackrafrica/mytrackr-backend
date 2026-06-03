@@ -341,6 +341,45 @@ export class TransactionQueryDto {
   sortOrder?: 'ASC' | 'DESC' = 'DESC';
 }
 
+export class AssetQueryDto {
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  page?: number = 1;
+
+  @ApiPropertyOptional({ example: 20 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  limit?: number = 20;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  @Type(() => Boolean)
+  includeArchived?: boolean;
+}
+
+export class LiabilityQueryDto {
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  page?: number = 1;
+
+  @ApiPropertyOptional({ example: 20 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  limit?: number = 20;
+
+  @ApiPropertyOptional({ example: 'ACTIVE', enum: LiabilityStatus })
+  @IsOptional()
+  @IsEnum(LiabilityStatus)
+  status?: LiabilityStatus;
+}
+
 // ─── Response DTOs ───────────────────────────────────────────────────────────
 
 export class AssetResponseDto {
@@ -499,6 +538,32 @@ export class PaginatedTransactionResponseDto {
     totalCategorized: number;
     totalUncategorized: number;
   };
+
+  @ApiProperty()
+  meta: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
+}
+
+export class PaginatedAssetResponseDto {
+  @ApiProperty({ type: [AssetResponseDto] })
+  data: AssetResponseDto[];
+
+  @ApiProperty()
+  meta: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
+}
+
+export class PaginatedLiabilityResponseDto {
+  @ApiProperty({ type: [LiabilityResponseDto] })
+  data: LiabilityResponseDto[];
 
   @ApiProperty()
   meta: {

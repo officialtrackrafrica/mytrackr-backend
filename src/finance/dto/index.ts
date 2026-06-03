@@ -24,9 +24,12 @@ export class CreateAssetDto {
   @IsString()
   name: string;
 
-  @ApiProperty({ enum: AssetCategory })
-  @IsEnum(AssetCategory)
-  category: AssetCategory;
+  @ApiProperty({
+    description: 'Asset category UUID from GET /finance/assets/categories',
+    example: '0d8a9f1d-5c6d-4c22-9e5b-9b6b5d5f1006',
+  })
+  @IsUUID()
+  categoryId: string;
 
   @ApiProperty({ example: 1500000 })
   @IsNumber()
@@ -59,10 +62,13 @@ export class UpdateAssetDto {
   @IsString()
   name?: string;
 
-  @ApiPropertyOptional({ enum: AssetCategory })
+  @ApiPropertyOptional({
+    description: 'Asset category UUID from GET /finance/assets/categories',
+    example: '0d8a9f1d-5c6d-4c22-9e5b-9b6b5d5f1006',
+  })
   @IsOptional()
-  @IsEnum(AssetCategory)
-  category?: AssetCategory;
+  @IsUUID()
+  categoryId?: string;
 
   @ApiPropertyOptional({ example: 1100000 })
   @IsOptional()
@@ -329,6 +335,11 @@ export class TransactionQueryDto {
 export class AssetResponseDto {
   @ApiProperty() id: string;
   @ApiProperty() name: string;
+  @ApiProperty({
+    description: 'Asset category UUID from GET /finance/assets/categories',
+    example: '0d8a9f1d-5c6d-4c22-9e5b-9b6b5d5f1006',
+  })
+  categoryId: string;
   @ApiProperty({ enum: AssetCategory }) category: AssetCategory;
   @ApiProperty() purchaseValue: number;
   @ApiProperty() currentValue: number;
@@ -338,6 +349,23 @@ export class AssetResponseDto {
   @ApiProperty() isArchived: boolean;
   @ApiProperty() createdAt: Date;
   @ApiProperty() updatedAt: Date;
+}
+
+export class AssetCategoryOptionDto {
+  @ApiProperty({ example: '0d8a9f1d-5c6d-4c22-9e5b-9b6b5d5f1001' })
+  id: string;
+
+  @ApiProperty({
+    example: 'Cash in Bank Account',
+    description: 'Exact value to pass as category when creating or updating an asset',
+  })
+  value: AssetCategory;
+
+  @ApiProperty({
+    example: 'Cash in Bank Account',
+    description: 'Human-readable label for display',
+  })
+  label: string;
 }
 
 export class LiabilityResponseDto {

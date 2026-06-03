@@ -32,7 +32,7 @@ import { Public } from '../auth/decorators/public.decorator';
 import { PlanGuard } from '../common/access-control/guards/plan.guard';
 import { RequirePlan } from '../common/access-control/decorators/require-plan.decorator';
 import { BusinessService } from '../business/services/business.service';
-import { Asset } from './entities/asset.entity';
+import { Asset, AssetCategory } from './entities/asset.entity';
 import { Liability, LiabilityStatus } from './entities/liability.entity';
 import { Transaction, CategorySource } from './entities/transaction.entity';
 import { AccountCategory } from './entities/account-category.entity';
@@ -60,6 +60,7 @@ import {
   PaginatedTransactionResponseDto,
   TransactionSummaryResponseDto,
   AccountCategoryResponseDto,
+  AssetCategoryOptionDto,
 } from './dto';
 
 @ApiTags(SWAGGER_TAGS[5].name)
@@ -68,6 +69,48 @@ import {
 @ApiCookieAuth('accessToken')
 export class FinanceController {
   private readonly logger = new Logger(FinanceController.name);
+  private readonly assetCategoryOptions: AssetCategoryOptionDto[] = [
+    {
+      id: '0d8a9f1d-5c6d-4c22-9e5b-9b6b5d5f1001',
+      value: AssetCategory.CASH_BANK,
+      label: AssetCategory.CASH_BANK,
+    },
+    {
+      id: '0d8a9f1d-5c6d-4c22-9e5b-9b6b5d5f1002',
+      value: AssetCategory.CASH_HAND,
+      label: AssetCategory.CASH_HAND,
+    },
+    {
+      id: '0d8a9f1d-5c6d-4c22-9e5b-9b6b5d5f1003',
+      value: AssetCategory.INVENTORY,
+      label: AssetCategory.INVENTORY,
+    },
+    {
+      id: '0d8a9f1d-5c6d-4c22-9e5b-9b6b5d5f1004',
+      value: AssetCategory.RECEIVABLES,
+      label: AssetCategory.RECEIVABLES,
+    },
+    {
+      id: '0d8a9f1d-5c6d-4c22-9e5b-9b6b5d5f1005',
+      value: AssetCategory.LAND_BUILDINGS,
+      label: AssetCategory.LAND_BUILDINGS,
+    },
+    {
+      id: '0d8a9f1d-5c6d-4c22-9e5b-9b6b5d5f1006',
+      value: AssetCategory.EQUIPMENT,
+      label: AssetCategory.EQUIPMENT,
+    },
+    {
+      id: '0d8a9f1d-5c6d-4c22-9e5b-9b6b5d5f1007',
+      value: AssetCategory.FURNITURE,
+      label: AssetCategory.FURNITURE,
+    },
+    {
+      id: '0d8a9f1d-5c6d-4c22-9e5b-9b6b5d5f1008',
+      value: AssetCategory.OTHER,
+      label: AssetCategory.OTHER,
+    },
+  ];
 
   constructor(
     private readonly businessService: BusinessService,
@@ -89,6 +132,18 @@ export class FinanceController {
     private readonly bankAccountService: BankAccountService,
   ) {}
 
+  @Get('assets/categories')
+  @ApiOperation({ summary: 'List available asset categories' })
+  @ApiResponse({
+    status: 200,
+    description: 'Available asset categories with stable IDs and values',
+    type: [AssetCategoryOptionDto],
+  })
+  @Public()
+  listAssetCategories() {
+    return this.assetCategoryOptions;
+  }
+
   @Get('assets')
   @ApiOperation({ summary: "List all assets for the user's business" })
   @ApiQuery({ name: 'includeArchived', required: false, type: Boolean })
@@ -109,7 +164,11 @@ export class FinanceController {
     if (includeArchived !== 'true') {
       where.isArchived = false;
     }
-    return this.assetRepository.find({ where, order: { createdAt: 'DESC' } });
+    const assets = await this.assetRepository.find({
+      where,
+      order: { createdAt: 'DESC' },
+    });
+    return assets.map((asset) => this.serializeAsset(asset));
   }
 
   @Post('assets')
@@ -125,8 +184,13 @@ export class FinanceController {
     type: ErrorResponseDto,
   })
   async createAsset(@Body() dto: CreateAssetDto) {
-    const asset = this.assetRepository.create(dto);
-    return this.assetRepository.save(asset);
+    const category = this.resolveAssetCategory(dto.categoryId);
+    const asset = this.assetRepository.create({
+      ...dto,
+      category,
+    });
+    const saved = await this.assetRepository.save(asset);
+    return this.serializeAsset(saved);
   }
 
   @Patch('assets/:id')
@@ -154,8 +218,15 @@ export class FinanceController {
     if (!asset) {
       throw AppException.notFound('Asset not found', 'FINANCE_ASSET_NOT_FOUND');
     }
-    await this.assetRepository.update(id, dto);
-    return this.assetRepository.findOneBy({ id });
+    const updateData: Partial<Asset> = { ...dto } as Partial<Asset>;
+    if (dto.categoryId) {
+      updateData.category = this.resolveAssetCategory(dto.categoryId);
+    }
+    delete (updateData as any).categoryId;
+
+    await this.assetRepository.update(id, updateData);
+    const updated = await this.assetRepository.findOneBy({ id });
+    return updated ? this.serializeAsset(updated) : updated;
   }
 
   @Delete('assets/:id')
@@ -639,6 +710,32 @@ export class FinanceController {
       externalId: `mono_${monoTransaction.monoTransactionId}`,
       businessId,
     });
+  }
+
+  private resolveAssetCategory(categoryId: string): AssetCategory {
+    const match = this.assetCategoryOptions.find(
+      (option) => option.id === categoryId,
+    );
+
+    if (!match) {
+      throw AppException.badRequest(
+        'Invalid categoryId - use GET /finance/assets/categories to find valid IDs.',
+        'FINANCE_INVALID_ASSET_CATEGORY',
+      );
+    }
+
+    return match.value;
+  }
+
+  private serializeAsset(asset: Asset) {
+    const categoryId =
+      this.assetCategoryOptions.find((option) => option.value === asset.category)
+        ?.id || '';
+
+    return {
+      ...asset,
+      categoryId,
+    };
   }
 
   private buildTransactionQuery(

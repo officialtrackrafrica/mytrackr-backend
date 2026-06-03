@@ -66,8 +66,6 @@ import {
   TransactionSummaryResponseDto,
   AccountCategoryResponseDto,
   AssetCategoryOptionDto,
-  AssetQueryDto,
-  LiabilityQueryDto,
   PaginatedAssetResponseDto,
   PaginatedLiabilityResponseDto,
 } from './dto';
@@ -195,11 +193,18 @@ export class FinanceController {
     description: 'Paginated list of assets',
     type: PaginatedAssetResponseDto,
   })
-  async listAssets(@Req() req: any, @Query() queryDto: AssetQueryDto) {
+  async listAssets(
+    @Req() req: any,
+    @Query('page') pageRaw?: string,
+    @Query('limit') limitRaw?: string,
+    @Query('includeArchived') includeArchivedRaw?: string,
+  ) {
     const businessId = await this.businessService.getBusinessIdForUser(
       req.user.id,
     );
-    const { page = 1, limit = 20, includeArchived = false } = queryDto;
+    const page = pageRaw ? Number(pageRaw) : 1;
+    const limit = limitRaw ? Number(limitRaw) : 20;
+    const includeArchived = includeArchivedRaw === 'true';
     const where: any = { businessId };
 
     if (!includeArchived) {
@@ -332,12 +337,15 @@ export class FinanceController {
   })
   async listLiabilities(
     @Req() req: any,
-    @Query() queryDto: LiabilityQueryDto,
+    @Query('page') pageRaw?: string,
+    @Query('limit') limitRaw?: string,
+    @Query('status') status?: LiabilityStatus,
   ) {
     const businessId = await this.businessService.getBusinessIdForUser(
       req.user.id,
     );
-    const { page = 1, limit = 20, status } = queryDto;
+    const page = pageRaw ? Number(pageRaw) : 1;
+    const limit = limitRaw ? Number(limitRaw) : 20;
     const where: any = { businessId };
 
     if (status) {

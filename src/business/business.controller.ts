@@ -16,6 +16,7 @@ import {
   ApiBody,
   ApiParam,
 } from '@nestjs/swagger';
+import { Public } from '../auth/decorators/public.decorator';
 import { JwtAuthGuard } from '../auth/guards';
 import { BusinessService } from './services/business.service';
 import {
@@ -33,6 +34,7 @@ import { ErrorResponseDto } from '../common/errors';
 export class BusinessController {
   constructor(private readonly businessService: BusinessService) {}
 
+  @Public()
   @Get('types')
   @ApiOperation({ summary: 'Get available business types' })
   @ApiResponse({

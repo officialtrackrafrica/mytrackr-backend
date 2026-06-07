@@ -29,9 +29,7 @@ import {
   UpdateSettingDto,
   ToggleFeatureFlagDto,
   BroadcastNotificationDto,
-  CreateNotificationTemplateDto,
   SendUncategorizedTransactionReminderDto,
-  UpdateNotificationTemplateDto,
   WebhookQueryDto,
 } from '../dto';
 
@@ -208,34 +206,6 @@ export class AdminOpsController {
       req.ip,
     );
     return result;
-  }
-
-  @Get('notifications/templates')
-  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
-  @ApiOperation({ summary: 'List notification templates' })
-  @ApiResponse({ status: 200, description: 'Notification templates' })
-  async getTemplates() {
-    return this.systemService.getNotificationTemplates();
-  }
-
-  @Post('notifications/templates')
-  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
-  @ApiOperation({ summary: 'Create a notification template' })
-  @ApiResponse({ status: 201, description: 'Template created' })
-  async createTemplate(@Body() dto: CreateNotificationTemplateDto) {
-    return this.systemService.createNotificationTemplate(dto);
-  }
-
-  @Patch('notifications/templates/:id')
-  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
-  @ApiOperation({ summary: 'Update a notification template' })
-  @ApiResponse({ status: 200, description: 'Template updated' })
-  @ApiResponse({ status: 404, description: 'Template not found' })
-  async updateTemplate(
-    @Param('id') id: string,
-    @Body() dto: UpdateNotificationTemplateDto,
-  ) {
-    return this.systemService.updateNotificationTemplate(id, dto);
   }
 
   @Get('webhooks/logs')

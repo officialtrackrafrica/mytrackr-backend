@@ -123,18 +123,30 @@ export class CitCalculationDto {
   totalAssetsConsidered: number;
 }
 
-export class ProjectionDto {
+export class TaxPeriodDto {
   @ApiProperty({
-    description: 'Number of months elapsed in the current year',
-    example: 5,
+    description: 'Year used for the monthly tax calculation',
+    example: 2026,
   })
-  monthsElapsed: number;
+  year: number;
 
   @ApiProperty({
-    description: 'Annualized net profit projection for the current year',
-    example: 7200000,
+    description: 'Month number used for the monthly tax calculation',
+    example: 6,
   })
-  projectedAnnualNetProfit: number;
+  month: number;
+
+  @ApiProperty({
+    description: 'Start of the calculation period in ISO format',
+    example: '2026-06-01T00:00:00.000Z',
+  })
+  startDate: string;
+
+  @ApiProperty({
+    description: 'End of the calculation period in ISO format',
+    example: '2026-06-30T23:59:59.999Z',
+  })
+  endDate: string;
 }
 
 export class DeductionsDto {
@@ -179,9 +191,71 @@ export class DeductionsDto {
   total: number;
 }
 
+export class TaxMonthSnapshotDto {
+  @ApiProperty({
+    description: 'Month and date range covered by this tax snapshot',
+    type: TaxPeriodDto,
+  })
+  period: TaxPeriodDto;
+
+  @ApiProperty({
+    description: 'Actual net profit found in transactions for the covered period',
+    example: 3000000,
+  })
+  netProfit: number;
+
+  @ApiProperty({
+    description: 'Total revenue for the covered period',
+    example: 10000000,
+  })
+  totalRevenue: number;
+
+  @ApiProperty({
+    description: 'Total cost of goods or services already reflected in net profit',
+    example: 2500000,
+  })
+  totalCogs: number;
+
+  @ApiProperty({
+    description: 'Total expenses already reflected in net profit',
+    example: 4500000,
+  })
+  totalExpenses: number;
+
+  @ApiProperty({
+    description: 'Deduction totals applied to PIT and CIT for the covered period',
+    type: DeductionsDto,
+  })
+  deductions: DeductionsDto;
+
+  @ApiProperty({
+    description: 'Net profit remaining after deductible expenses are applied',
+    example: 1850000,
+  })
+  taxableProfit: number;
+
+  @ApiProperty({
+    description: 'Monthly PIT calculation details',
+    type: PitCalculationDto,
+  })
+  pitCalculation: PitCalculationDto;
+
+  @ApiProperty({
+    description: 'Monthly CIT calculation details',
+    type: CitCalculationDto,
+  })
+  citCalculation: CitCalculationDto;
+}
+
 export class TaxEstimateResponseDto {
   @ApiProperty({ description: 'The tax year for the estimate', example: 2025 })
   year: number;
+
+  @ApiProperty({
+    description: 'Month represented by the main tax calculation',
+    type: TaxPeriodDto,
+  })
+  period: TaxPeriodDto;
 
   @ApiProperty({
     description: 'Actual net profit found in transactions for the selected year',
@@ -214,12 +288,12 @@ export class TaxEstimateResponseDto {
   totalAssets: number;
 
   @ApiProperty({
-    description: 'Current-year projection metadata, otherwise null',
+    description: 'Projection is no longer used for this endpoint',
     required: false,
     nullable: true,
-    type: ProjectionDto,
+    example: null,
   })
-  projection: ProjectionDto | null;
+  projection: null;
 
   @ApiProperty({
     description: 'Deduction totals applied to PIT and CIT estimates',
@@ -244,4 +318,13 @@ export class TaxEstimateResponseDto {
     type: CitCalculationDto,
   })
   citCalculation: CitCalculationDto;
+
+  @ApiProperty({
+    description:
+      'Accumulated calculation from January 1 to the end of the previous month within the same selected year, if available',
+    required: false,
+    nullable: true,
+    type: TaxMonthSnapshotDto,
+  })
+  previousMonth: TaxMonthSnapshotDto | null;
 }

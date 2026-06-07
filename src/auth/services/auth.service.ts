@@ -821,6 +821,23 @@ export class AuthService {
       lastName: user.lastName,
       profilePicture: user.profilePicture,
       businessType: user.business?.businessType,
+      notificationPreferences: {
+        appUpdates: {
+          email: user.notificationPreferences?.appUpdates?.email ?? true,
+          push: user.notificationPreferences?.appUpdates?.push ?? false,
+          sms: user.notificationPreferences?.appUpdates?.sms ?? false,
+        },
+        reminders: {
+          email: user.notificationPreferences?.reminders?.email ?? true,
+          push: user.notificationPreferences?.reminders?.push ?? false,
+          sms: user.notificationPreferences?.reminders?.sms ?? false,
+        },
+        userActivities: {
+          email: user.notificationPreferences?.userActivities?.email ?? false,
+          push: user.notificationPreferences?.userActivities?.push ?? false,
+          sms: user.notificationPreferences?.userActivities?.sms ?? false,
+        },
+      },
       isVerified: user.isVerified,
       createdAt: user.createdAt,
     };

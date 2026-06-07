@@ -5,7 +5,6 @@ import { ConfigModule } from '@nestjs/config';
 import {
   AuditLog,
   SystemSetting,
-  NotificationTemplate,
   SupportTicket,
   Dispute,
   WebhookLog,
@@ -43,7 +42,6 @@ import { StorageModule } from '../storage/storage.module';
     TypeOrmModule.forFeature([
       AuditLog,
       SystemSetting,
-      NotificationTemplate,
       SupportTicket,
       Dispute,
       WebhookLog,

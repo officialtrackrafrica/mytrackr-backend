@@ -98,6 +98,25 @@ export class User {
     uploadedAt: Date;
   }[];
 
+  @Column({ type: 'jsonb', nullable: true })
+  notificationPreferences?: {
+    appUpdates: {
+      email: boolean;
+      push: boolean;
+      sms: boolean;
+    };
+    reminders: {
+      email: boolean;
+      push: boolean;
+      sms: boolean;
+    };
+    userActivities: {
+      email: boolean;
+      push: boolean;
+      sms: boolean;
+    };
+  };
+
   @OneToMany(() => Session, (session) => session.user)
   sessions: Session[];
 

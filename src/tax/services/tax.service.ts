@@ -29,17 +29,6 @@ export class TaxService {
   ) {
     const businessId = await this.businessService.getBusinessIdForUser(userId);
 
-    const startDate = new Date(year, 0, 1);
-    const endDate = new Date(year, 11, 31, 23, 59, 59);
-
-    const pnlSummary = await this.pnlService.getCategorisedSummary(
-      businessId,
-      startDate,
-      endDate,
-    );
-    const totalRevenue = pnlSummary.totalRevenue;
-    const netProfit = pnlSummary.netProfit;
-
     const assets = await this.assetRepository.find({
       where: { businessId, isArchived: false },
     });
@@ -49,18 +38,116 @@ export class TaxService {
     );
 
     const now = new Date();
-    const currentYear = now.getFullYear();
-    let projectedNetProfit = netProfit;
-    let isProjection = false;
+    const currentMonthNumber = now.getMonth();
+    const currentMonth = await this.buildTaxPeriodEstimate(
+      businessId,
+      this.getMonthDateRange(year, currentMonthNumber),
+      userDeductions,
+      totalAssets,
+    );
 
-    if (year === currentYear) {
-      const monthsElapsed = now.getMonth() + 1; // Jan = 1, Dec = 12
-      if (monthsElapsed < 12) {
-        projectedNetProfit = netProfit * (12 / monthsElapsed);
-        isProjection = true;
-      }
-    }
+    const previousMonth =
+      currentMonthNumber > 0
+        ? await this.buildTaxPeriodEstimate(
+            businessId,
+            this.getYearToPreviousMonthDateRange(year, currentMonthNumber - 1),
+            userDeductions,
+            totalAssets,
+          )
+        : null;
 
+    return {
+      year,
+      period: currentMonth.period,
+      netProfit: currentMonth.netProfit,
+      totalRevenue: currentMonth.totalRevenue,
+      totalExpenses: currentMonth.totalExpenses,
+      totalCogs: currentMonth.totalCogs,
+      totalAssets,
+      projection: null,
+      deductions: currentMonth.deductions,
+      taxableProfit: currentMonth.taxableProfit,
+      pitCalculation: currentMonth.pitCalculation,
+      citCalculation: currentMonth.citCalculation,
+      previousMonth,
+    };
+  }
+
+  private async buildTaxPeriodEstimate(
+    businessId: string,
+    period: {
+      year: number;
+      month: number;
+      startDate: Date;
+      endDate: Date;
+    },
+    userDeductions: number,
+    totalAssets: number,
+  ) {
+    const pnlSummary = await this.pnlService.getCategorisedSummary(
+      businessId,
+      period.startDate,
+      period.endDate,
+    );
+    const deductionTotals = await this.getDeductionTotals(
+      businessId,
+      period.startDate,
+      period.endDate,
+      userDeductions,
+    );
+    const pitCalculation = this.calculatePIT(
+      pnlSummary.netProfit,
+      pnlSummary.totalRevenue,
+      deductionTotals.total,
+    );
+
+    return {
+      period: {
+        year: period.year,
+        month: period.month,
+        startDate: period.startDate.toISOString(),
+        endDate: period.endDate.toISOString(),
+      },
+      netProfit: pnlSummary.netProfit,
+      totalRevenue: pnlSummary.totalRevenue,
+      totalExpenses: pnlSummary.totalExpenses,
+      totalCogs: pnlSummary.totalCogs,
+      deductions: deductionTotals,
+      taxableProfit: Math.max(0, pnlSummary.netProfit - deductionTotals.total),
+      pitCalculation,
+      citCalculation: this.calculateCIT(
+        pnlSummary.totalRevenue,
+        pnlSummary.netProfit,
+        deductionTotals.total,
+        totalAssets,
+      ),
+    };
+  }
+
+  private getMonthDateRange(year: number, month: number) {
+    return {
+      year,
+      month: month + 1,
+      startDate: new Date(year, month, 1),
+      endDate: new Date(year, month + 1, 0, 23, 59, 59, 999),
+    };
+  }
+
+  private getYearToPreviousMonthDateRange(year: number, month: number) {
+    return {
+      year,
+      month: month + 1,
+      startDate: new Date(year, 0, 1),
+      endDate: new Date(year, month + 1, 0, 23, 59, 59, 999),
+    };
+  }
+
+  private async getDeductionTotals(
+    businessId: string,
+    startDate: Date,
+    endDate: Date,
+    userDeductions: number,
+  ) {
     const deductionsResults = await this.transactionRepository
       .createQueryBuilder('tx')
       .where('tx.businessId = :businessId', { businessId })
@@ -123,52 +210,18 @@ export class TaxService {
       totalDeductions += amount;
     });
 
-    const totalHealthInsurance =
-      deductionsMap.hmo +
-      deductionsMap.nhis +
-      deductionsMap['national health insurance scheme'];
-    const totalLifeInsurance =
-      deductionsMap['life insurance'] + deductionsMap['life assurance'];
-    const totalHousingFund =
-      deductionsMap.nhf + deductionsMap['national housing fund'];
-    const rentExpense = parseFloat(rentExpenseResult?.total || '0');
-
-    const pitCalculation = this.calculatePIT(
-      projectedNetProfit,
-      totalRevenue,
-      totalDeductions + userDeductions,
-    );
-
     return {
-      year,
-      netProfit,
-      totalRevenue,
-      totalExpenses: pnlSummary.totalExpenses,
-      totalCogs: pnlSummary.totalCogs,
-      totalAssets,
-      projection: isProjection
-        ? {
-            monthsElapsed: now.getMonth() + 1,
-            projectedAnnualNetProfit: projectedNetProfit,
-          }
-        : null,
-      deductions: {
-        healthInsurance: totalHealthInsurance,
-        lifeInsurance: totalLifeInsurance,
-        pension: deductionsMap.pension,
-        housingFund: totalHousingFund,
-        rent: rentExpense,
-        extra: userDeductions,
-        total: totalDeductions + userDeductions,
-      },
-      taxableProfit: Math.max(0, projectedNetProfit - (totalDeductions + userDeductions)),
-      pitCalculation,
-      citCalculation: this.calculateCIT(
-        totalRevenue,
-        projectedNetProfit,
-        totalDeductions + userDeductions,
-        totalAssets,
-      ),
+      healthInsurance:
+        deductionsMap.hmo +
+        deductionsMap.nhis +
+        deductionsMap['national health insurance scheme'],
+      lifeInsurance:
+        deductionsMap['life insurance'] + deductionsMap['life assurance'],
+      pension: deductionsMap.pension,
+      housingFund: deductionsMap.nhf + deductionsMap['national housing fund'],
+      rent: parseFloat(rentExpenseResult?.total || '0'),
+      extra: userDeductions,
+      total: totalDeductions + userDeductions,
     };
   }
 
@@ -278,6 +331,7 @@ export class TaxService {
       totalRevenue: 0,
       totalAssets: 0,
       projection: null,
+      previousMonth: null,
       pitCalculation: this.calculatePIT(0, 0, 0),
       citCalculation: this.calculateCIT(0, 0, 0, 0),
     };

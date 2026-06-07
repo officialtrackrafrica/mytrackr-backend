@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { BusinessType } from '../../business/entities/business.entity';
+import { NotificationPreferencesDto } from './notification-preferences.dto';
 
 export class UserResponseDto {
   @ApiProperty({ description: 'User ID', example: 'user-123' })
@@ -44,6 +45,12 @@ export class UserResponseDto {
     required: false,
   })
   businessType?: BusinessType;
+
+  @ApiProperty({
+    description: 'User notification preferences',
+    type: NotificationPreferencesDto,
+  })
+  notificationPreferences: NotificationPreferencesDto;
 
   @ApiProperty({ description: 'Account creation date' })
   createdAt: Date;

@@ -33,6 +33,8 @@ import {
   UserResponseDto,
   ChangePasswordDto,
   UploadProfilePictureDto,
+  NotificationPreferencesDto,
+  UpdateNotificationPreferencesDto,
 } from '../dto';
 import { SWAGGER_TAGS } from '../../common/docs';
 import { AuthService } from '../services/auth.service';
@@ -87,6 +89,28 @@ export class UserController {
     return this.sanitizeUser(user);
   }
 
+  @Get('me/notification-preferences')
+  @ApiOperation({ summary: 'Get my notification preferences' })
+  @ApiResponse({
+    status: 200,
+    description: 'Current user notification preferences',
+    type: NotificationPreferencesDto,
+  })
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Read, 'User'))
+  async getMyNotificationPreferences(
+    @Request() req: AuthenticatedRequest,
+  ): Promise<NotificationPreferencesDto> {
+    const user = await this.usersRepository.findOne({
+      where: { id: req.user.id },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return this.resolveNotificationPreferences(user.notificationPreferences);
+  }
+
   @Patch('me')
   @ApiOperation({ summary: 'Update current user profile' })
   @ApiResponse({
@@ -123,6 +147,38 @@ export class UserController {
     }
 
     return this.sanitizeUser(user);
+  }
+
+  @Patch('me/notification-preferences')
+  @ApiOperation({ summary: 'Update my notification preferences' })
+  @ApiResponse({
+    status: 200,
+    description: 'Notification preferences updated',
+    type: NotificationPreferencesDto,
+  })
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Update, 'User'))
+  async updateMyNotificationPreferences(
+    @Request() req: AuthenticatedRequest,
+    @Body() updateDto: UpdateNotificationPreferencesDto,
+  ): Promise<NotificationPreferencesDto> {
+    const user = await this.usersRepository.findOne({
+      where: { id: req.user.id },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const merged = this.mergeNotificationPreferences(
+      this.resolveNotificationPreferences(user.notificationPreferences),
+      updateDto,
+    );
+
+    await this.usersRepository.update(req.user.id, {
+      notificationPreferences: merged,
+    });
+
+    return merged;
   }
 
   @Post('change-password')
@@ -220,8 +276,47 @@ export class UserController {
       country: user.country,
       timezone: user.timezone,
       businessType: user.business?.businessType as BusinessType | undefined,
+      notificationPreferences: this.resolveNotificationPreferences(
+        user.notificationPreferences,
+      ),
       isVerified: user.isVerified,
       createdAt: user.createdAt,
+    };
+  }
+
+  private resolveNotificationPreferences(
+    preferences?: User['notificationPreferences'] | null,
+  ): NotificationPreferencesDto {
+    const defaults: NotificationPreferencesDto = {
+      appUpdates: { email: true, push: false, sms: false },
+      reminders: { email: true, push: false, sms: false },
+      userActivities: { email: false, push: false, sms: false },
+    };
+
+    return this.mergeNotificationPreferences(defaults, preferences || {});
+  }
+
+  private mergeNotificationPreferences(
+    current: NotificationPreferencesDto,
+    updates: {
+      appUpdates?: Partial<NotificationPreferencesDto['appUpdates']>;
+      reminders?: Partial<NotificationPreferencesDto['reminders']>;
+      userActivities?: Partial<NotificationPreferencesDto['userActivities']>;
+    },
+  ): NotificationPreferencesDto {
+    return {
+      appUpdates: {
+        ...current.appUpdates,
+        ...(updates.appUpdates || {}),
+      },
+      reminders: {
+        ...current.reminders,
+        ...(updates.reminders || {}),
+      },
+      userActivities: {
+        ...current.userActivities,
+        ...(updates.userActivities || {}),
+      },
     };
   }
 

@@ -211,68 +211,6 @@ export class SendUncategorizedTransactionReminderDto {
   dryRun?: boolean = false;
 }
 
-export class CreateNotificationTemplateDto {
-  @ApiProperty({ description: 'Template name (unique)' })
-  @IsString()
-  name: string;
-
-  @ApiProperty({ description: 'Email/notification subject' })
-  @IsString()
-  subject: string;
-
-  @ApiProperty({ description: 'Template body with variables' })
-  @IsString()
-  body: string;
-
-  @ApiPropertyOptional({
-    enum: ['email', 'push', 'sms'],
-    default: 'email',
-  })
-  @IsOptional()
-  @IsString()
-  channel?: string = 'email';
-
-  @ApiPropertyOptional({
-    description: 'Template variables',
-    type: [String],
-  })
-  @IsOptional()
-  @IsArray()
-  variables?: string[];
-}
-
-export class UpdateNotificationTemplateDto {
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  name?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  subject?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  body?: string;
-
-  @ApiPropertyOptional({ enum: ['email', 'push', 'sms'] })
-  @IsOptional()
-  @IsString()
-  channel?: string;
-
-  @ApiPropertyOptional({ type: [String] })
-  @IsOptional()
-  @IsArray()
-  variables?: string[];
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
-  isActive?: boolean;
-}
-
 export class UpdateTicketDto {
   @ApiPropertyOptional({
     enum: ['open', 'in_progress', 'resolved', 'closed'],

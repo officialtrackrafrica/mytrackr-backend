@@ -3,7 +3,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { SystemSetting } from '../entities/system-setting.entity';
-import { NotificationTemplate } from '../entities/notification-template.entity';
 import { SupportTicket } from '../entities/support-ticket.entity';
 import { Dispute } from '../entities/dispute.entity';
 import { WebhookLog } from '../entities/webhook-log.entity';
@@ -15,8 +14,6 @@ import {
   TicketQueryDto,
   DisputeQueryDto,
   WebhookQueryDto,
-  CreateNotificationTemplateDto,
-  UpdateNotificationTemplateDto,
   UpdateTicketDto,
   ResolveDisputeDto,
   CreateSupportTicketDto,
@@ -31,8 +28,6 @@ export class AdminSystemService {
   constructor(
     @InjectRepository(SystemSetting)
     private readonly settingsRepository: Repository<SystemSetting>,
-    @InjectRepository(NotificationTemplate)
-    private readonly templatesRepository: Repository<NotificationTemplate>,
     @InjectRepository(SupportTicket)
     private readonly ticketsRepository: Repository<SupportTicket>,
     @InjectRepository(Dispute)
@@ -119,30 +114,6 @@ export class AdminSystemService {
     return flag;
   }
 
-  async getNotificationTemplates() {
-    return this.templatesRepository.find({
-      order: { createdAt: 'DESC' },
-    });
-  }
-
-  async createNotificationTemplate(dto: CreateNotificationTemplateDto) {
-    const template = this.templatesRepository.create(dto);
-    return this.templatesRepository.save(template);
-  }
-
-  async updateNotificationTemplate(
-    id: string,
-    dto: UpdateNotificationTemplateDto,
-  ) {
-    const template = await this.templatesRepository.findOne({
-      where: { id },
-    });
-    if (!template) throw new NotFoundException('Template not found');
-
-    Object.assign(template, dto);
-    return this.templatesRepository.save(template);
-  }
-
   broadcastNotification(
     title: string,
     message: string,
@@ -198,6 +169,7 @@ export class AdminSystemService {
           u.email,
           u."firstName" AS "firstName",
           u."lastName" AS "lastName",
+          u."notificationPreferences" AS "notificationPreferences",
           SUM(reminders.count)::int AS "uncategorizedCount"
         FROM users u
         INNER JOIN (
@@ -223,18 +195,24 @@ export class AdminSystemService {
         ) reminders
           ON reminders."userId" = u.id
         WHERE u.email IS NOT NULL
-        GROUP BY u.id, u.email, u."firstName", u."lastName"
+        GROUP BY u.id, u.email, u."firstName", u."lastName", u."notificationPreferences"
         ORDER BY "uncategorizedCount" DESC, u.email ASC
       `,
     );
 
-    const recipients = targets.map((target: any) => ({
-      userId: target.id,
-      email: target.email,
-      firstName: target.firstName || null,
-      lastName: target.lastName || null,
-      uncategorizedCount: Number(target.uncategorizedCount || 0),
-    }));
+    const recipients = targets
+      .map((target: any) => ({
+        userId: target.id,
+        email: target.email,
+        firstName: target.firstName || null,
+        lastName: target.lastName || null,
+        uncategorizedCount: Number(target.uncategorizedCount || 0),
+        notificationPreferences: target.notificationPreferences || null,
+      }))
+      .filter(
+        (recipient) =>
+          recipient.notificationPreferences?.reminders?.email !== false,
+      );
 
     if (dryRun) {
       return {

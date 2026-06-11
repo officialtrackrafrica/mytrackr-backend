@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class TaxBandBreakdownDto {
   @ApiProperty({
@@ -277,10 +277,9 @@ export class TaxEstimateResponseDto {
   })
   totalAssets: number;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     description: 'Projection is no longer used for this endpoint',
     type: 'object',
-    required: false,
     nullable: true,
     example: null,
   })

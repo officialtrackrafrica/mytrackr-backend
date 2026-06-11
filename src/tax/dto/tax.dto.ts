@@ -280,6 +280,7 @@ export class TaxEstimateResponseDto {
   @ApiPropertyOptional({
     description: 'Projection is no longer used for this endpoint',
     type: 'object',
+    additionalProperties: false,
     nullable: true,
     example: null,
   })

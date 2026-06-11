@@ -42,11 +42,6 @@ export class PitCalculationDto {
   })
   estimatedAnnualTax: number;
 
-  @ApiProperty({
-    description: 'Monthly amount to reserve for PIT',
-    example: 50250,
-  })
-  estimatedMonthlySetAside: number;
 
   @ApiProperty({
     description: 'Minimum tax floor used in the estimate',
@@ -104,11 +99,6 @@ export class CitCalculationDto {
   })
   estimatedAnnualTax: number;
 
-  @ApiProperty({
-    description: 'Monthly amount to reserve for CIT',
-    example: 75000,
-  })
-  estimatedMonthlySetAside: number;
 
   @ApiProperty({
     description: 'Whether the company is exempt from CIT based on the rule set',
@@ -289,11 +279,12 @@ export class TaxEstimateResponseDto {
 
   @ApiProperty({
     description: 'Projection is no longer used for this endpoint',
+    type: 'object',
     required: false,
     nullable: true,
     example: null,
   })
-  projection: null;
+  projection: Record<string, never> | null;
 
   @ApiProperty({
     description: 'Deduction totals applied to PIT and CIT estimates',

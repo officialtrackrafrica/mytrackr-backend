@@ -279,7 +279,6 @@ export class TaxService {
       chargeableIncome,
       consolidatedReliefAllowance,
       estimatedAnnualTax,
-      estimatedMonthlySetAside: estimatedAnnualTax / 12,
       minimumTaxFloor: minimumTax,
       minimumTaxApplied: estimatedAnnualTax === minimumTax && minimumTax > totalTax,
       breakdown,
@@ -319,7 +318,6 @@ export class TaxService {
       estimatedTaxableProfit: assessableProfit,
       taxRateApplied: `${taxRate * 100}%`,
       estimatedAnnualTax,
-      estimatedMonthlySetAside: estimatedAnnualTax / 12,
       isExempt: taxRate === 0,
       totalAssetsConsidered: totalAssets,
     };

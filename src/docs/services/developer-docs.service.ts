@@ -158,6 +158,9 @@ export class DeveloperDocsService {
         path: '/integrations',
         auth: 'Session cookie',
         summary: 'List integrations for the authenticated user.',
+        requestExample: this.json({
+          note: 'No request body. Send the authenticated session cookie.',
+        }),
         responseExample: this.json([
           {
             id: 'ff77a8db-cf6c-4f58-b9d0-2c6a7f9c2011',
@@ -181,6 +184,14 @@ export class DeveloperDocsService {
         auth: 'Public',
         summary: 'Fetch browser-safe configuration for embeds.',
         notes: ['Optionally send the Origin header when allowedOrigins is configured.'],
+        requestExample: this.json({
+          params: {
+            publicKey: 'mt_pk_7f7dfab2485e51dc15f94be5fb6681cb',
+          },
+          headers: {
+            origin: 'https://shop.example.com',
+          },
+        }),
         responseExample: this.json({
           publicKey: 'mt_pk_7f7dfab2485e51dc15f94be5fb6681cb',
           name: 'Main website',
@@ -201,6 +212,11 @@ export class DeveloperDocsService {
         path: '/integrations/private/config',
         auth: 'x-mytrackr-api-key',
         summary: 'Fetch private integration config for server-side plugins.',
+        requestExample: this.json({
+          headers: {
+            'x-mytrackr-api-key': 'mt_sk_your_secret_key',
+          },
+        }),
         responseExample: this.json({
           integration: {
             id: 'ff77a8db-cf6c-4f58-b9d0-2c6a7f9c2011',
@@ -283,6 +299,15 @@ export class DeveloperDocsService {
         path: '/integrations/private/metrics',
         auth: 'x-mytrackr-api-key',
         summary: 'Read aggregated ecommerce metrics for a date range.',
+        requestExample: this.json({
+          headers: {
+            'x-mytrackr-api-key': 'mt_sk_your_secret_key',
+          },
+          query: {
+            startDate: '2026-06-01',
+            endDate: '2026-06-30',
+          },
+        }),
         responseExample: this.json({
           period: {
             start: '2026-06-01T00:00:00.000Z',
@@ -362,6 +387,12 @@ export class DeveloperDocsService {
         path: '/integrations/:id/rotate-key',
         auth: 'Session cookie',
         summary: 'Rotate the secret API key for an active integration.',
+        requestExample: this.json({
+          params: {
+            id: 'ff77a8db-cf6c-4f58-b9d0-2c6a7f9c2011',
+          },
+          note: 'No request body. Send the authenticated session cookie.',
+        }),
         responseExample: this.json({
           id: 'ff77a8db-cf6c-4f58-b9d0-2c6a7f9c2011',
           name: 'Main website',

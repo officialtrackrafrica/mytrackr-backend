@@ -17,6 +17,8 @@ import { FinancialCategoriesSeed } from './financial-categories.seed';
 import { CategorizationRulesSeed } from './categorization-rules.seed';
 import { SystemSettingsSeed } from './system-settings.seed';
 import { IntegrationPlansSeed } from './integration-plans.seed';
+import { Subscription } from '../../payments/entities/subscription.entity';
+import { SubscriptionPlanMigrationSeed } from './subscription-plan-migration.seed';
 
 @Module({
   imports: [
@@ -24,6 +26,7 @@ import { IntegrationPlansSeed } from './integration-plans.seed';
       User,
       Role,
       Plan,
+      Subscription,
       IntegrationPlan,
       SystemSetting,
       AccountCategory,
@@ -42,6 +45,7 @@ import { IntegrationPlansSeed } from './integration-plans.seed';
     FinancialCategoriesSeed,
     CategorizationRulesSeed,
     SystemSettingsSeed,
+    SubscriptionPlanMigrationSeed,
   ],
   exports: [SeedingService],
 })

@@ -25,11 +25,14 @@ export class CreateIntegrationDto {
   platform: IntegrationPlatform;
 
   @ApiProperty({
-    description: 'API-key pricing plan',
-    example: 'starter',
+    description:
+      'Deprecated. Website integrations now use the customer app subscription plan.',
+    example: 'web',
+    required: false,
   })
+  @IsOptional()
   @IsString()
-  planSlug: string;
+  planSlug?: string;
 
   @ApiPropertyOptional({
     type: [String],
@@ -145,8 +148,8 @@ export class CreatedIntegrationResponseDto extends IntegrationResponseDto {
   })
   apiKey: string;
 
-  @ApiProperty({ type: IntegrationCheckoutResponseDto })
-  checkout: IntegrationCheckoutResponseDto;
+  @ApiPropertyOptional({ type: IntegrationCheckoutResponseDto })
+  checkout?: IntegrationCheckoutResponseDto;
 }
 
 export class PublicIntegrationConfigDto {

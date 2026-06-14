@@ -18,7 +18,9 @@ import {
 } from '../../finance/entities/transaction.entity';
 import { PaymentTransaction } from '../../payments/entities/payment-transaction.entity';
 import { Plan } from '../../payments/entities/plan.entity';
+import { Subscription } from '../../payments/entities/subscription.entity';
 import { PaymentFactoryService } from '../../payments/services/payment-factory.service';
+import { normalizePlanSlug } from '../../common/access-control/plan-entitlements';
 import {
   CreateIntegrationEventDto,
   IntegrationMetricsQueryDto,
@@ -43,7 +45,7 @@ import {
   IntegrationBillingStatus,
 } from '../entities/integration.entity';
 
-const INTEGRATION_API_KEY_PAYMENT_TYPE = 'integration_api_key_subscription';
+const WEBSITE_INTEGRATION_ALLOWED_PLAN_SLUGS = new Set(['web', 'unlimited']);
 
 @Injectable()
 export class IntegrationsService {
@@ -52,6 +54,8 @@ export class IntegrationsService {
     private readonly integrationRepository: Repository<Integration>,
     @InjectRepository(Plan)
     private readonly planRepository: Repository<Plan>,
+    @InjectRepository(Subscription)
+    private readonly subscriptionRepository: Repository<Subscription>,
     @InjectRepository(IntegrationPlan)
     private readonly integrationPlanRepository: Repository<IntegrationPlan>,
     @InjectRepository(PaymentTransaction)
@@ -91,27 +95,26 @@ export class IntegrationsService {
 
   async create(userId: string, dto: CreateIntegrationDto) {
     const business = await this.businessService.getBusinessForUser(userId);
-    const plan = await this.findActivePlanBySlug(dto.planSlug);
+    const appSubscription = await this.getWebsiteIntegrationSubscription(userId);
     const apiKey = this.generateSecretKey();
     const integration = this.integrationRepository.create({
       ...dto,
       user: { id: userId } as any,
       business,
-      plan,
+      plan: null,
       publicKey: this.generatePublicKey(),
       apiKeyPrefix: apiKey.slice(0, 16),
       apiKeyHash: this.hashApiKey(apiKey),
       allowedOrigins: dto.allowedOrigins || [],
       isActive: true,
-      billingStatus: IntegrationBillingStatus.PENDING,
+      billingStatus: IntegrationBillingStatus.ACTIVE,
+      currentPeriodEnd: appSubscription.currentPeriodEnd || null,
     });
 
     const saved = await this.integrationRepository.save(integration);
-    const checkout = await this.initializeCheckout(userId, saved.id);
     return {
       ...this.toResponse(saved),
       apiKey,
-      checkout,
     };
   }
 
@@ -185,49 +188,10 @@ export class IntegrationsService {
   }
 
   async initializeCheckout(userId: string, id: string) {
-    const integration = await this.findOwnedIntegration(userId, id);
-    if (!integration.plan) {
-      throw new BadRequestException('Integration has no API-key pricing plan');
-    }
-
-    if (integration.billingStatus === IntegrationBillingStatus.ACTIVE) {
-      throw new BadRequestException('Integration API key is already active');
-    }
-
-    const user = await this.integrationRepository.manager.findOne(User, {
-      where: { id: userId },
-    });
-    const email = user?.email;
-    if (!email) {
-      throw new BadRequestException('An email address is required for payment');
-    }
-
-    const gatewayName = 'paystack';
-    const gateway = this.paymentFactory.getGateway(gatewayName);
-    const reference = `int_${randomBytes(8).toString('hex')}`;
-
-    const tx = this.txRepository.create({
-      user: { id: userId } as any,
-      amount: integration.plan.price,
-      currency: integration.plan.currency,
-      gateway: gatewayName,
-      reference,
-      status: 'pending',
-      metadata: {
-        type: INTEGRATION_API_KEY_PAYMENT_TYPE,
-        integrationId: integration.id,
-        integrationPlanId: integration.plan.id,
-      },
-    });
-
-    await this.txRepository.save(tx);
-
-    return gateway.initializePayment({
-      amount: Math.round(Number(integration.plan.price) * 100),
-      email,
-      reference,
-      metadata: tx.metadata,
-    });
+    await this.findOwnedIntegration(userId, id);
+    throw new BadRequestException(
+      'Website integrations no longer generate a separate payment link. Use an active Web or Unlimited subscription plan.',
+    );
   }
 
   async authenticateApiKey(apiKey: string) {
@@ -1013,6 +977,41 @@ export class IntegrationsService {
     }
 
     return plan;
+  }
+
+  private async getWebsiteIntegrationSubscription(userId: string) {
+    const subscription = await this.subscriptionRepository.findOne({
+      where: { user: { id: userId }, status: 'active' },
+      relations: ['plan'],
+      order: { createdAt: 'DESC' },
+    });
+
+    if (!subscription?.plan) {
+      throw new ForbiddenException(
+        'Website integrations require an active Web or Unlimited subscription plan.',
+      );
+    }
+
+    if (
+      subscription.currentPeriodEnd &&
+      subscription.currentPeriodEnd < new Date()
+    ) {
+      throw new ForbiddenException(
+        'Your subscription has expired. Renew a Web or Unlimited plan to use website integrations.',
+      );
+    }
+
+    const normalizedPlanSlug = normalizePlanSlug(subscription.plan);
+    if (
+      !normalizedPlanSlug ||
+      !WEBSITE_INTEGRATION_ALLOWED_PLAN_SLUGS.has(normalizedPlanSlug)
+    ) {
+      throw new ForbiddenException(
+        'Website integrations require a Web or Unlimited subscription plan.',
+      );
+    }
+
+    return subscription;
   }
 
   private hashApiKey(apiKey: string) {

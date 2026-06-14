@@ -1,32 +1,56 @@
 import type { Plan } from '../../payments/entities/plan.entity';
 
-export type PlanSlug = 'basic' | 'pro' | 'pro-plus';
+export type PlanSlug =
+  | 'basic'
+  | 'starter'
+  | 'web'
+  | 'solo'
+  | 'duo'
+  | 'unlimited';
 
-export const PLAN_SLUGS: PlanSlug[] = ['basic', 'pro', 'pro-plus'];
+export const PLAN_SLUGS: PlanSlug[] = [
+  'basic',
+  'starter',
+  'web',
+  'solo',
+  'duo',
+  'unlimited',
+];
 
 export const PLAN_ALIASES: Record<string, PlanSlug> = {
   basic: 'basic',
   free: 'basic',
-  pro: 'pro',
-  'pro-yearly': 'pro',
-  premium: 'pro',
-  'premium-yearly': 'pro',
-  'pro+': 'pro-plus',
-  'pro-plus': 'pro-plus',
-  'pro-plus-yearly': 'pro-plus',
-  proplus: 'pro-plus',
+  starter: 'starter',
+  web: 'web',
+  solo: 'solo',
+  duo: 'duo',
+  unlimited: 'unlimited',
+  pro: 'solo',
+  'pro-yearly': 'solo',
+  premium: 'solo',
+  'premium-yearly': 'solo',
+  'pro+': 'duo',
+  'pro-plus': 'duo',
+  'pro-plus-yearly': 'duo',
+  proplus: 'duo',
 };
 
 export const PLAN_RANK: Record<PlanSlug, number> = {
   basic: 1,
-  pro: 2,
-  'pro-plus': 3,
+  starter: 2,
+  web: 2,
+  solo: 2,
+  duo: 3,
+  unlimited: 4,
 };
 
 export const BANK_ACCOUNT_LIMIT_BY_PLAN: Record<PlanSlug, number> = {
   basic: 0,
-  pro: 1,
-  'pro-plus': 2,
+  starter: 0,
+  web: 0,
+  solo: 1,
+  duo: 2,
+  unlimited: Number.MAX_SAFE_INTEGER,
 };
 
 export function normalizePlanSlug(plan?: Pick<Plan, 'slug' | 'name'> | null) {

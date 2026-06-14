@@ -119,7 +119,10 @@ export class IntegrationsController {
   @ApiCookieAuth('accessToken')
   @Post(':id/checkout')
   @ApiParam({ name: 'id', description: 'Integration ID' })
-  @ApiOperation({ summary: 'Initialize payment for an integration API key' })
+  @ApiOperation({
+    summary:
+      'Deprecated checkout endpoint for integration API keys. Website integrations now use app subscriptions.',
+  })
   @ApiResponse({ status: 201, type: IntegrationCheckoutResponseDto })
   async initializeCheckout(@Req() req: any, @Param('id') id: string) {
     return this.integrationsService.initializeCheckout(req.user.id, id);

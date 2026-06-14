@@ -138,9 +138,10 @@ export class SubscriptionController {
   @UseGuards(JwtAuthGuard)
   @Post('subscribe')
   @ApiOperation({
-    summary: 'Initialize a new Basic, Pro, or Pro+ subscription payment',
+    summary:
+      'Initialize a new Starter, Web, Solo, Duo, or Unlimited subscription payment',
     description:
-      'Starts the recurring billing flow. Use planSlug basic, pro, or pro-plus. If no planSlug is provided, it defaults to pro.',
+      'Starts the recurring billing flow. Use planSlug starter, web, solo, duo, or unlimited. If no planSlug is provided, it defaults to solo.',
   })
   @ApiBody({ type: InitializeSubscriptionDto })
   @ApiResponse({

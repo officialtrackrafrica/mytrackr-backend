@@ -4,6 +4,7 @@ import { BusinessModule } from '../business/business.module';
 import { Transaction } from '../finance/entities/transaction.entity';
 import { PaymentTransaction } from '../payments/entities/payment-transaction.entity';
 import { Plan } from '../payments/entities/plan.entity';
+import { Subscription } from '../payments/entities/subscription.entity';
 import { PaymentsModule } from '../payments/payments.module';
 import { SecurityModule } from '../security/security.module';
 import { IntegrationsController } from './controllers/integrations.controller';
@@ -27,6 +28,7 @@ import { IntegrationsService } from './services/integrations.service';
       PaymentTransaction,
       PaystackConnection,
       Plan,
+      Subscription,
       Transaction,
     ]),
     BusinessModule,

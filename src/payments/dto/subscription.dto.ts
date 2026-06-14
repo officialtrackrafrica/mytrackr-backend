@@ -4,12 +4,12 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 export class InitializeSubscriptionDto {
   @ApiPropertyOptional({
     description: 'The subscription plan to checkout',
-    enum: ['basic', 'pro', 'pro-plus'],
-    default: 'pro',
+    enum: ['starter', 'web', 'solo', 'duo', 'unlimited'],
+    default: 'solo',
   })
   @IsOptional()
-  @IsIn(['basic', 'pro', 'pro-plus'])
-  planSlug?: 'basic' | 'pro' | 'pro-plus' = 'pro';
+  @IsIn(['starter', 'web', 'solo', 'duo', 'unlimited'])
+  planSlug?: 'starter' | 'web' | 'solo' | 'duo' | 'unlimited' = 'solo';
 
   @ApiPropertyOptional({
     description: 'The preferred billing interval',

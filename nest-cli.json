@@ -11,6 +11,10 @@
       {
         "include": "proto/**/*.proto",
         "watchAssets": true
+      },
+      {
+        "include": "docs/templates/**/*",
+        "watchAssets": true
       }
     ],
     "deleteOutDir": true

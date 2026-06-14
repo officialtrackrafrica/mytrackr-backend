@@ -6,6 +6,7 @@ import { FinancialCategoriesSeed } from './financial-categories.seed';
 import { CategorizationRulesSeed } from './categorization-rules.seed';
 import { SystemSettingsSeed } from './system-settings.seed';
 import { IntegrationPlansSeed } from './integration-plans.seed';
+import { SubscriptionPlanMigrationSeed } from './subscription-plan-migration.seed';
 
 @Injectable()
 export class SeedingService implements OnModuleInit {
@@ -16,6 +17,7 @@ export class SeedingService implements OnModuleInit {
     private readonly adminSeed: AdminSeed,
     private readonly plansSeed: PlansSeed,
     private readonly integrationPlansSeed: IntegrationPlansSeed,
+    private readonly subscriptionPlanMigrationSeed: SubscriptionPlanMigrationSeed,
     private readonly financialCategoriesSeed: FinancialCategoriesSeed,
     private readonly categorizationRulesSeed: CategorizationRulesSeed,
     private readonly systemSettingsSeed: SystemSettingsSeed,
@@ -28,6 +30,7 @@ export class SeedingService implements OnModuleInit {
       await this.adminSeed.run();
       await this.plansSeed.run();
       await this.integrationPlansSeed.run();
+      await this.subscriptionPlanMigrationSeed.run();
       await this.financialCategoriesSeed.run();
       await this.categorizationRulesSeed.run();
       await this.systemSettingsSeed.run();

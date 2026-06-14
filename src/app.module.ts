@@ -28,6 +28,7 @@ import { HealthModule } from './health/health.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { ActivityLogInterceptor } from './common/interceptors/activity-log.interceptor';
 import { AdminAuditService } from './admin/services/admin-audit.service';
+import { DocsModule } from './docs/docs.module';
 
 @Module({
   imports: [
@@ -76,6 +77,7 @@ import { AdminAuditService } from './admin/services/admin-audit.service';
     EmailModule,
     HealthModule,
     IntegrationsModule,
+    DocsModule,
   ],
   controllers: [AppController],
   providers: [

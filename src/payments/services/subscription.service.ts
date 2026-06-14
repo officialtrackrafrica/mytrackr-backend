@@ -80,7 +80,10 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getAllPlans() {
-    return this.planRepository.find({ where: { isActive: true } });
+    return this.planRepository.find({
+      where: { isActive: true },
+      order: { price: 'ASC' },
+    });
   }
 
   async getUserSubscriptionStatus(userId: string) {
@@ -213,7 +216,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
 
   async initializeSubscription(user: User, dto?: InitializeSubscriptionDto) {
     const interval = dto?.interval || 'monthly';
-    const requestedSlug = dto?.planSlug || 'pro';
+    const requestedSlug = dto?.planSlug || 'solo';
     const planSlug = this.resolveCheckoutPlanSlug(requestedSlug, interval);
 
     const plan = await this.planRepository.findOne({
@@ -839,12 +842,13 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
 
   private async getIncludedBankAccountLimit(userId: string): Promise<number> {
     const { activePlan } = await this.getUserSubscriptionStatus(userId);
-    const planSlug = normalizePlanSlug(activePlan) || 'basic';
+    const planSlug = normalizePlanSlug(activePlan) || 'starter';
     return BANK_ACCOUNT_LIMIT_BY_PLAN[planSlug];
   }
 
   private async getFallbackBasicPlan(): Promise<Plan | null> {
     return (
+      (await this.planRepository.findOne({ where: { slug: 'starter' } })) ||
       (await this.planRepository.findOne({ where: { slug: 'basic' } })) ||
       (await this.planRepository.findOne({ where: { slug: 'free' } }))
     );
@@ -858,8 +862,10 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('Invalid subscription plan');
     }
 
-    if (interval === 'annually' && requestedSlug !== 'basic') {
-      return `${requestedSlug}-yearly`;
+    if (interval === 'annually') {
+      throw new BadRequestException(
+        'Annual billing is not available for the current subscription plans.',
+      );
     }
 
     return requestedSlug;
@@ -893,7 +899,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     const type = this.getBillingTransactionType(tx);
 
     if (type === 'subscription_initialization') {
-      return 'Premium Subscription';
+      return 'Subscription Payment';
     }
 
     if (type === ADDITIONAL_BANK_ACCOUNT_FEE_TYPE) {

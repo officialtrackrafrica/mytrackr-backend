@@ -36,6 +36,7 @@ import {
 import { CaslModule } from '../casl/casl.module';
 import { SecurityModule } from '../security/security.module';
 import { StorageModule } from '../storage/storage.module';
+import { IntegrationsModule } from '../integrations/integrations.module';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { StorageModule } from '../storage/storage.module';
     CaslModule,
     SecurityModule,
     StorageModule,
+    IntegrationsModule,
   ],
   controllers: [
     AdminUsersController,

@@ -522,6 +522,36 @@ export class TransactionResponseDto {
   @ApiProperty() createdAt: Date;
 }
 
+export class TransactionCategorySuggestionDto {
+  @ApiProperty({ example: '71cc0462-9eef-471f-b8dd-61df76f281a2' })
+  categoryId: string;
+
+  @ApiProperty({ example: 'Operating Expenses' })
+  categoryName: string;
+
+  @ApiProperty({ example: 'EXPENSE' })
+  categoryType: string;
+
+  @ApiPropertyOptional({ example: '8be44f8c-b278-4922-9d6d-8f307a9941f5' })
+  subCategoryId?: string;
+
+  @ApiPropertyOptional({ example: 'Transportation' })
+  subCategoryName?: string;
+
+  @ApiProperty({ example: 0.88 })
+  confidence: number;
+
+  @ApiProperty({
+    example: 'Narration looks like transport or mobility spending.',
+  })
+  reason: string;
+}
+
+export class TransactionCategorySuggestionsResponseDto {
+  @ApiProperty({ type: [TransactionCategorySuggestionDto] })
+  suggestions: TransactionCategorySuggestionDto[];
+}
+
 export class PaginatedTransactionResponseDto {
   @ApiProperty({ type: [TransactionResponseDto] })
   data: TransactionResponseDto[];

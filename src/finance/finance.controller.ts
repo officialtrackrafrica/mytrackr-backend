@@ -46,6 +46,7 @@ import { CategorizationService } from './services/categorization.service';
 import { CsvUploadService } from './services/csv-upload.service';
 import { PdfUploadService } from './services/pdf-upload.service';
 import { BankAccountService } from './services/bank-account.service';
+import { CategorySuggestionService } from './services/category-suggestion.service';
 import { SWAGGER_TAGS } from '../common/docs';
 import { AppException, ErrorResponseDto } from '../common/errors';
 import {
@@ -65,6 +66,7 @@ import {
   PaginatedTransactionResponseDto,
   TransactionSummaryResponseDto,
   AccountCategoryResponseDto,
+  TransactionCategorySuggestionsResponseDto,
   AssetCategoryOptionDto,
   PaginatedAssetResponseDto,
   PaginatedLiabilityResponseDto,
@@ -164,6 +166,7 @@ export class FinanceController {
     private readonly subCategoryRepository: Repository<AccountSubCategory>,
     private readonly categorizationService: CategorizationService,
     private readonly bankAccountService: BankAccountService,
+    private readonly categorySuggestionService: CategorySuggestionService,
   ) {}
 
   @Get('assets/categories')
@@ -657,6 +660,47 @@ export class FinanceController {
     return this.serializeTransaction(
       await this.transactionRepository.findOneBy({ id: tx.id }),
     );
+  }
+
+  @Post('transactions/:id/category-suggestions')
+  @ApiOperation({
+    summary: 'Generate constrained category suggestions for a transaction',
+    description:
+      'Uses the configured AI model to suggest categories and subcategories, but only returns matches from the existing MyTrackr category tree.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Suggested categories for the transaction',
+    type: TransactionCategorySuggestionsResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Transaction not found',
+    type: ErrorResponseDto,
+  })
+  async getTransactionCategorySuggestions(
+    @Req() req: any,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const businessId = await this.businessService.getBusinessIdForUser(
+      req.user.id,
+    );
+    const tx = await this.resolveFinanceTransaction(req.user.id, businessId, id);
+    if (!tx) {
+      throw AppException.notFound(
+        'Transaction not found',
+        'FINANCE_TRANSACTION_NOT_FOUND',
+      );
+    }
+
+    const suggestions =
+      await this.categorySuggestionService.suggestForTransaction(
+        tx,
+        businessId,
+        req.user.id,
+      );
+
+    return { suggestions };
   }
 
   @Delete('transactions/:id')

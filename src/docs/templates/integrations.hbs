@@ -7,24 +7,27 @@
     <meta name="description" content="{{description}}" />
     <style>
       :root {
-        --bg: #f4efe6;
-        --paper: #fffaf2;
-        --ink: #182028;
-        --muted: #5f6a72;
-        --line: #d9cdbd;
-        --accent: #0d6b5f;
-        --accent-2: #d56f3e;
-        --code: #132128;
+        --bg: #f4f4f5;
+        --paper: #ffffff;
+        --ink: #101828;
+        --muted: #475467;
+        --line: #eaecf0;
+        --line-strong: #d0d5dd;
+        --accent: #0b4a6f;
+        --accent-strong: #083a57;
+        --success: #027a48;
+        --panel: #f9fafb;
+        --code: #101828;
+        --code-border: #1d2939;
       }
       * { box-sizing: border-box; }
       body {
         margin: 0;
-        font-family: Georgia, "Times New Roman", serif;
+        font-family: "Inter", "Segoe UI", Helvetica, Arial, sans-serif;
         color: var(--ink);
         background:
-          radial-gradient(circle at top left, rgba(213, 111, 62, 0.16), transparent 30%),
-          radial-gradient(circle at top right, rgba(13, 107, 95, 0.16), transparent 26%),
-          linear-gradient(180deg, #f7f0e3 0%, var(--bg) 100%);
+          radial-gradient(circle at top right, rgba(11, 74, 111, 0.14), transparent 24%),
+          linear-gradient(180deg, #eef2f6 0%, var(--bg) 280px, var(--bg) 100%);
       }
       a { color: var(--accent); }
       .wrap {
@@ -32,28 +35,109 @@
         margin: 0 auto;
         padding: 32px 0 64px;
       }
-      .hero {
-        background: rgba(255, 250, 242, 0.84);
+      .shell {
+        display: grid;
+        grid-template-columns: 280px minmax(0, 1fr);
+        gap: 24px;
+        align-items: start;
+      }
+      .nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 18px;
+      }
+      .sidebar {
+        position: sticky;
+        top: 24px;
+      }
+      .sidebar-card {
+        background: rgba(255, 255, 255, 0.9);
         border: 1px solid var(--line);
-        border-radius: 28px;
-        padding: 32px;
-        box-shadow: 0 20px 40px rgba(24, 32, 40, 0.08);
+        border-radius: 20px;
+        padding: 18px;
+        box-shadow: 0 8px 24px rgba(16, 24, 40, 0.05);
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 800;
+        font-size: 1rem;
+        letter-spacing: 0.01em;
+      }
+      .brand-mark {
+        width: 38px;
+        height: 38px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #101828 0%, #0b4a6f 100%);
+        color: #fff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font: 800 0.95rem/1 "Inter", "Segoe UI", Helvetica, Arial, sans-serif;
+        box-shadow: 0 12px 24px rgba(11, 74, 111, 0.22);
+      }
+      .nav-links {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: 18px;
+      }
+      .nav-links a {
+        text-decoration: none;
+        font: 600 0.92rem/1.2 "Inter", "Segoe UI", Helvetica, Arial, sans-serif;
+        color: var(--ink);
+        background: rgba(255, 255, 255, 0.7);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 11px 13px;
+      }
+      .nav-links a:hover {
+        border-color: var(--line-strong);
+        background: #fff;
+      }
+      .hero {
+        position: relative;
+        overflow: hidden;
+        background:
+          linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 45%),
+          linear-gradient(180deg, #101828 0%, #0f1723 100%);
+        border: 1px solid #1d2939;
+        border-radius: 24px;
+        padding: 36px;
+        box-shadow: 0 24px 48px rgba(16, 24, 40, 0.16);
       }
       .eyebrow {
-        font: 600 12px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        letter-spacing: 0.16em;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font: 700 12px/1.2 "Inter", "Segoe UI", Helvetica, Arial, sans-serif;
+        letter-spacing: 0.12em;
         text-transform: uppercase;
-        color: var(--accent-2);
+        color: #98a2b3;
+      }
+      .eyebrow::before {
+        content: "";
+        width: 28px;
+        height: 1px;
+        background: #667085;
       }
       h1, h2, h3 {
         margin: 0 0 12px;
-        line-height: 1.05;
+        line-height: 1.1;
       }
-      h1 { font-size: clamp(2.4rem, 5vw, 4.7rem); max-width: 12ch; }
+      h1 {
+        font-size: clamp(2.4rem, 5vw, 4.9rem);
+        max-width: 11ch;
+        color: #ffffff;
+        letter-spacing: -0.04em;
+      }
       h2 { font-size: clamp(1.6rem, 3vw, 2.2rem); margin-top: 28px; }
-      h3 { font-size: 1.15rem; }
+      h3 { font-size: 1.1rem; color: var(--ink); }
       p, li {
-        font: 400 1rem/1.65 "Segoe UI", Arial, sans-serif;
+        font: 400 1rem/1.65 "Inter", "Segoe UI", Helvetica, Arial, sans-serif;
         color: var(--muted);
       }
       .hero-grid,
@@ -65,19 +149,50 @@
         grid-template-columns: 2fr 1fr;
         align-items: start;
       }
+      .hero-copy p {
+        color: #cfd4dc;
+        max-width: 62ch;
+        font-size: 1.02rem;
+      }
+      .hero-stats {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 22px;
+      }
+      .hero-stat {
+        min-width: 150px;
+        padding: 14px 16px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      .hero-stat strong {
+        display: block;
+        color: #ffffff;
+        font-size: 1.25rem;
+        margin-bottom: 4px;
+      }
+      .hero-stat span {
+        color: #98a2b3;
+        font-size: 0.9rem;
+      }
       .links,
       .card,
       .endpoint,
       .snippet {
         background: var(--paper);
         border: 1px solid var(--line);
-        border-radius: 22px;
+        border-radius: 20px;
       }
       .links,
       .card,
       .endpoint,
       .snippet {
         padding: 20px;
+      }
+      .links {
+        background: rgba(255, 255, 255, 0.96);
       }
       .link-list {
         display: flex;
@@ -88,28 +203,29 @@
         display: block;
         padding: 12px 14px;
         border-radius: 14px;
-        background: #f1eadf;
+        background: #f2f4f7;
+        border: 1px solid var(--line);
         text-decoration: none;
-        font: 600 0.96rem/1.3 "Segoe UI", Arial, sans-serif;
+        font: 600 0.96rem/1.3 "Inter", "Segoe UI", Helvetica, Arial, sans-serif;
       }
       .section {
-        margin-top: 26px;
+        margin-top: 32px;
       }
       .grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
       .endpoint-grid {
         display: grid;
-        gap: 16px;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px;
+        grid-template-columns: 1fr;
       }
       .badge {
         display: inline-block;
         padding: 6px 10px;
         border-radius: 999px;
-        background: #e8f0ee;
-        color: var(--accent);
-        font: 700 0.76rem/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        background: #ecfdf3;
+        color: var(--success);
+        font: 700 0.76rem/1 "Inter", "Segoe UI", Helvetica, Arial, sans-serif;
         letter-spacing: 0.08em;
         text-transform: uppercase;
       }
@@ -120,8 +236,51 @@
       }
       .meta {
         margin: 8px 0 0;
-        font: 600 0.9rem/1.4 "Segoe UI", Arial, sans-serif;
+        font: 600 0.9rem/1.4 "Inter", "Segoe UI", Helvetica, Arial, sans-serif;
         color: var(--ink);
+      }
+      .card,
+      .endpoint,
+      .snippet {
+        box-shadow: 0 8px 24px rgba(16, 24, 40, 0.04);
+      }
+      .endpoint-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 10px;
+      }
+      .endpoint-auth {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 10px;
+        border-radius: 999px;
+        background: #f8fafc;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        font: 600 0.82rem/1 "Inter", "Segoe UI", Helvetica, Arial, sans-serif;
+      }
+      .endpoint-body {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(340px, 0.92fr);
+        gap: 18px;
+        margin-top: 12px;
+      }
+      .endpoint-copy p {
+        margin: 0;
+      }
+      .endpoint-copy ul {
+        margin-top: 12px;
+      }
+      .endpoint-examples {
+        display: grid;
+        gap: 14px;
+      }
+      .example-block h3 {
+        margin-bottom: 8px;
+        font-size: 0.96rem;
       }
       pre {
         margin: 12px 0 0;
@@ -129,11 +288,21 @@
         overflow: auto;
         border-radius: 16px;
         background: var(--code);
+        border: 1px solid var(--code-border);
         color: #f5f7f7;
         font: 0.88rem/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       }
       code {
         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      .inline-code {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: #f2f4f7;
+        border: 1px solid var(--line);
+        color: var(--ink);
+        font-size: 0.92em;
       }
       ul {
         padding-left: 20px;
@@ -142,10 +311,44 @@
       .mini {
         font-size: 0.92rem;
       }
+      .callout {
+        margin-top: 18px;
+        padding: 16px 18px;
+        border-radius: 16px;
+        background: #f2f4f7;
+        border: 1px solid var(--line);
+      }
+      .callout strong {
+        color: var(--ink);
+      }
+      .section-kicker {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--accent);
+        font: 700 0.8rem/1 "Inter", "Segoe UI", Helvetica, Arial, sans-serif;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .sidebar-note {
+        margin-top: 18px;
+        padding-top: 18px;
+        border-top: 1px solid var(--line);
+      }
       @media (max-width: 900px) {
+        .shell {
+          grid-template-columns: 1fr;
+        }
+        .sidebar {
+          position: static;
+        }
+        .nav {
+          flex-direction: column;
+          align-items: flex-start;
+        }
         .hero-grid,
         .grid,
-        .endpoint-grid {
+        .endpoint-grid,
+        .endpoint-body {
           grid-template-columns: 1fr;
         }
         .wrap {
@@ -159,31 +362,73 @@
   </head>
   <body>
     <main class="wrap">
-      <section class="hero">
-        <div class="hero-grid">
-          <div>
-            <div class="eyebrow">Developer Guide</div>
-            <h1>{{title}}</h1>
-            <p>
-              Build React, WordPress, or custom website integrations against MyTrackr's current server-side endpoints.
-              This page covers the production flow after the subscription changes: integrations are enabled by the app subscription,
-              not by a separate integration checkout.
-            </p>
-          </div>
-          <aside class="links">
-            <h3>Reference</h3>
-            <div class="link-list">
-              <a class="link-pill" href="{{swaggerUrl}}">Open Swagger UI</a>
-              <a class="link-pill" href="{{swaggerJsonUrl}}">Open Swagger JSON</a>
+      <div class="shell">
+        <aside class="sidebar">
+          <div class="sidebar-card">
+            <div class="brand">
+              <span class="brand-mark">M</span>
+              <span>MyTrackr for Developers</span>
             </div>
-            <p class="mini">
-              Base URL: <code>{{baseUrl}}</code>
-            </p>
-          </aside>
-        </div>
-      </section>
+            <div class="nav-links">
+              <a href="#flow">Flow</a>
+              <a href="#setup-endpoints">Setup</a>
+              <a href="#runtime-endpoints">Runtime</a>
+              <a href="#webhook-receiver">Webhooks</a>
+              <a href="#code-examples">Examples</a>
+            </div>
+            <div class="sidebar-note">
+              <h3>Quick Access</h3>
+              <div class="link-list">
+                <a class="link-pill" href="{{swaggerUrl}}">Open Swagger UI</a>
+                <a class="link-pill" href="{{swaggerJsonUrl}}">Open Swagger JSON</a>
+              </div>
+              <p class="mini">
+                Base URL: <span class="inline-code">{{baseUrl}}</span>
+              </p>
+            </div>
+          </div>
+        </aside>
 
-      <section class="section">
+        <div>
+          <section class="hero">
+            <div class="hero-grid">
+              <div class="hero-copy">
+                <div class="eyebrow">Developer Guide</div>
+                <h1>{{title}}</h1>
+                <p>
+                  Connect storefronts, push ecommerce events, and expose clean financial visibility inside MyTrackr.
+                  This guide covers the current production flow: integrations are enabled by the app subscription, not by a separate checkout.
+                </p>
+                <div class="hero-stats">
+                  <div class="hero-stat">
+                    <strong>Web or Unlimited</strong>
+                    <span>Required subscription</span>
+                  </div>
+                  <div class="hero-stat">
+                    <strong>Server-to-server</strong>
+                    <span>Primary integration model</span>
+                  </div>
+                  <div class="hero-stat">
+                    <strong>/swagger-json</strong>
+                    <span>Machine-readable reference</span>
+                  </div>
+                </div>
+              </div>
+              <aside class="links">
+                <h3>Start Here</h3>
+                <p class="mini">
+                  Create the integration while logged into the app, then keep the returned
+                  <span class="inline-code">apiKey</span> on your server.
+                </p>
+                <div class="callout">
+                  <strong>Important:</strong> browser-facing code should use the public config endpoint. Private config, event ingestion, metrics, and Paystack sync belong on your backend.
+                </div>
+              </aside>
+            </div>
+          </section>
+
+      <section class="section" id="flow">
+        <span class="section-kicker">Overview</span>
         <h2>Prerequisites</h2>
         <div class="grid">
           <div class="card">
@@ -206,6 +451,7 @@
       </section>
 
       <section class="section">
+        <span class="section-kicker">Guide</span>
         <h2>Integration Flow</h2>
         <div class="grid">
           {{#each steps}}
@@ -218,37 +464,95 @@
       </section>
 
       {{#each endpointGroups}}
-      <section class="section">
+      <section class="section" id="{{id}}">
+        <span class="section-kicker">Reference</span>
         <h2>{{title}} Endpoints</h2>
         <div class="endpoint-grid">
           {{#each endpoints}}
           <article class="endpoint">
-            <span class="badge">{{method}}</span>
-            <div class="path">{{path}}</div>
-            <p class="meta">Auth: {{auth}}</p>
-            <p>{{summary}}</p>
-            {{#if notes}}
-            <ul>
-              {{#each notes}}
-              <li>{{this}}</li>
-              {{/each}}
-            </ul>
-            {{/if}}
-            {{#if requestExample}}
-            <h3>Request</h3>
-            <pre><code>{{requestExample}}</code></pre>
-            {{/if}}
-            {{#if responseExample}}
-            <h3>Response</h3>
-            <pre><code>{{responseExample}}</code></pre>
-            {{/if}}
+            <div class="endpoint-head">
+              <div>
+                <span class="badge">{{method}}</span>
+                <div class="path">{{path}}</div>
+              </div>
+              <span class="endpoint-auth">Auth: {{auth}}</span>
+            </div>
+            <div class="endpoint-body">
+              <div class="endpoint-copy">
+                <p>{{summary}}</p>
+                {{#if notes}}
+                <ul>
+                  {{#each notes}}
+                  <li>{{this}}</li>
+                  {{/each}}
+                </ul>
+                {{/if}}
+              </div>
+              <div class="endpoint-examples">
+                {{#if requestExample}}
+                <div class="example-block">
+                  <h3>Request</h3>
+                  <pre><code>{{requestExample}}</code></pre>
+                </div>
+                {{/if}}
+                {{#if responseExample}}
+                <div class="example-block">
+                  <h3>Response</h3>
+                  <pre><code>{{responseExample}}</code></pre>
+                </div>
+                {{/if}}
+              </div>
+            </div>
           </article>
           {{/each}}
         </div>
       </section>
       {{/each}}
 
-      <section class="section">
+      <section class="section" id="webhook-receiver">
+        <span class="section-kicker">Delivery</span>
+        <h2>Webhook Receiver</h2>
+        <div class="grid">
+          <article class="card">
+            <h3>When MyTrackr calls your webhookUrl</h3>
+            <p>
+              If an integration has a <span class="inline-code">webhookUrl</span>, MyTrackr sends outbound POST webhooks for lifecycle,
+              event-ingestion, and Paystack sync updates.
+            </p>
+            <ul>
+              {{#each webhookEvents}}
+              <li><code>{{this}}</code></li>
+              {{/each}}
+            </ul>
+          </article>
+          <article class="card">
+            <h3>Headers</h3>
+            <ul>
+              {{#each webhookHeaders}}
+              <li><span class="inline-code">{{name}}</span>: {{description}}</li>
+              {{/each}}
+            </ul>
+          </article>
+        </div>
+        <div class="grid">
+          <article class="snippet">
+            <h3>Webhook Envelope</h3>
+            <pre><code>{{webhookPayloadExample}}</code></pre>
+          </article>
+          <article class="snippet">
+            <h3>Another Event Example</h3>
+            <pre><code>{{webhookVerificationExample}}</code></pre>
+          </article>
+        </div>
+        <div class="callout">
+          <strong>Signature verification:</strong> compute an HMAC-SHA256 of the raw request body using
+          <span class="inline-code">INTEGRATION_WEBHOOK_SECRET</span> and compare it with
+          <span class="inline-code">x-mytrackr-signature</span>.
+        </div>
+      </section>
+
+      <section class="section" id="code-examples">
+        <span class="section-kicker">Implementation</span>
         <h2>Code Examples</h2>
         <div class="grid">
           {{#each codeExamples}}
@@ -260,6 +564,8 @@
           {{/each}}
         </div>
       </section>
+        </div>
+      </div>
     </main>
   </body>
 </html>

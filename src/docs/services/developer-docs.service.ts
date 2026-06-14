@@ -24,6 +24,11 @@ type DocCodeExample = {
   code: string;
 };
 
+type WebhookHeader = {
+  name: string;
+  description: string;
+};
+
 @Injectable()
 export class DeveloperDocsService {
   private readonly template = Handlebars.compile(
@@ -52,10 +57,12 @@ export class DeveloperDocsService {
       ],
       endpointGroups: [
         {
+          id: 'setup-endpoints',
           title: 'Setup',
           endpoints: endpoints.slice(0, 4),
         },
         {
+          id: 'runtime-endpoints',
           title: 'Runtime',
           endpoints: endpoints.slice(4, 9),
         },
@@ -67,6 +74,19 @@ export class DeveloperDocsService {
         'order.cancelled',
         'payment.failed',
       ],
+      webhookEvents: [
+        'integration.created',
+        'integration.updated',
+        'integration.revoked',
+        'integration.event.received',
+        'integration.paystack.connected',
+        'integration.paystack.disconnected',
+        'integration.paystack.sync.completed',
+        'integration.paystack.sync.failed',
+      ],
+      webhookHeaders: this.getWebhookHeaders(),
+      webhookPayloadExample: this.getWebhookPayloadExample(),
+      webhookVerificationExample: this.getWebhookVerificationExample(),
     });
   }
 
@@ -404,7 +424,102 @@ if (!response.ok) {
 const data = await response.json();
 console.log(data.business.name);`,
       },
+      {
+        title: 'Verify MyTrackr webhook signatures in Node.js',
+        language: 'js',
+        code: `import crypto from "crypto";
+
+export function verifyMyTrackrWebhook(rawBody, signatureHeader) {
+  const secret = process.env.INTEGRATION_WEBHOOK_SECRET;
+  if (!secret || !signatureHeader) {
+    return false;
+  }
+
+  const expected = "sha256=" + crypto
+    .createHmac("sha256", secret)
+    .update(rawBody)
+    .digest("hex");
+
+  const expectedBuffer = Buffer.from(expected);
+  const receivedBuffer = Buffer.from(signatureHeader);
+
+  return (
+    expectedBuffer.length === receivedBuffer.length &&
+    crypto.timingSafeEqual(expectedBuffer, receivedBuffer)
+  );
+}`,
+      },
     ];
+  }
+
+  private getWebhookHeaders(): WebhookHeader[] {
+    return [
+      {
+        name: 'x-mytrackr-event',
+        description: 'The outbound webhook event name.',
+      },
+      {
+        name: 'x-mytrackr-delivery-id',
+        description: 'Unique delivery identifier for deduplication and troubleshooting.',
+      },
+      {
+        name: 'x-mytrackr-timestamp',
+        description: 'ISO timestamp for when MyTrackr created the delivery.',
+      },
+      {
+        name: 'x-mytrackr-signature',
+        description:
+          'Present when INTEGRATION_WEBHOOK_SECRET is configured. Format: sha256=<hmac of raw JSON body>.',
+      },
+    ];
+  }
+
+  private getWebhookPayloadExample() {
+    return this.json({
+      id: '1e1d59f7-3e2a-4ac8-bf09-2e95d2ad4d8f',
+      event: 'integration.event.received',
+      createdAt: '2026-06-14T10:30:00.000Z',
+      integration: {
+        id: 'ff77a8db-cf6c-4f58-b9d0-2c6a7f9c2011',
+        name: 'Main website',
+        platform: 'react',
+        publicKey: 'mt_pk_7f7dfab2485e51dc15f94be5fb6681cb',
+        webhookUrl: 'https://shop.example.com/api/mytrackr/webhook',
+        redirectUrl: 'https://shop.example.com/mytrackr/callback',
+        billingStatus: 'active',
+        isActive: true,
+      },
+      data: {
+        id: '8b8109a2-2712-4f5d-9a78-cfbb97212d75',
+        event: 'order.paid',
+        externalId: 'woo_order_12345',
+        orderId: 'order_12345',
+        amount: 25000,
+        currency: 'NGN',
+        paymentProvider: 'paystack',
+        occurredAt: '2026-06-14T10:30:00.000Z',
+        customer: {
+          email: 'customer@example.com',
+          name: 'Ada Customer',
+        },
+      },
+    });
+  }
+
+  private getWebhookVerificationExample() {
+    return this.json({
+      event: 'integration.paystack.sync.completed',
+      data: {
+        imported: 25,
+        skipped: 3,
+        fetched: 28,
+        fetchedTransactions: 26,
+        fetchedRefunds: 2,
+        startDate: '2026-06-01T00:00:00.000Z',
+        endDate: '2026-06-30T00:00:00.000Z',
+        connectionId: 'cad65b2c-d876-462d-9f31-a3cc680fef98',
+      },
+    });
   }
 
   private json(value: unknown) {

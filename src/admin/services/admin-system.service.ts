@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  Logger,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -10,6 +15,7 @@ import { DataSource } from 'typeorm';
 import Redis from 'ioredis';
 import { StorageService } from '../../storage/storage.service';
 import { EmailService } from '../../email/email.service';
+import { IntegrationWebhookService } from '../../integrations/services/integration-webhook.service';
 import {
   TicketQueryDto,
   DisputeQueryDto,
@@ -38,6 +44,7 @@ export class AdminSystemService {
     private readonly dataSource: DataSource,
     private readonly storageService: StorageService,
     private readonly emailService: EmailService,
+    private readonly integrationWebhookService: IntegrationWebhookService,
   ) {
     this.initRedis();
   }
@@ -406,19 +413,13 @@ export class AdminSystemService {
     const log = await this.webhookLogRepository.findOne({ where: { id } });
     if (!log) throw new NotFoundException('Webhook log not found');
 
-    log.retryCount += 1;
-    log.status = 'received';
-    await this.webhookLogRepository.save(log);
+    if (log.source === 'integrations.outbound') {
+      return this.integrationWebhookService.retryWebhookLog(id);
+    }
 
-    this.logger.log(
-      `Webhook ${id} queued for retry (attempt ${log.retryCount})`,
+    throw new BadRequestException(
+      'Retry is only implemented for outbound integration webhooks.',
     );
-
-    return {
-      message: 'Webhook queued for retry',
-      id: log.id,
-      retryCount: log.retryCount,
-    };
   }
 
   async getSystemHealth() {

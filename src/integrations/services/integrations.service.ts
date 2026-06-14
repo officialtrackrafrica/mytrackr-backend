@@ -21,6 +21,7 @@ import { Plan } from '../../payments/entities/plan.entity';
 import { Subscription } from '../../payments/entities/subscription.entity';
 import { PaymentFactoryService } from '../../payments/services/payment-factory.service';
 import { normalizePlanSlug } from '../../common/access-control/plan-entitlements';
+import { IntegrationWebhookService } from './integration-webhook.service';
 import {
   CreateIntegrationEventDto,
   IntegrationMetricsQueryDto,
@@ -72,6 +73,7 @@ export class IntegrationsService {
     private readonly paymentFactory: PaymentFactoryService,
     private readonly configService: ConfigService,
     private readonly encryptionService: EncryptionService,
+    private readonly integrationWebhookService: IntegrationWebhookService,
   ) {}
 
   async getPlans() {
@@ -112,6 +114,15 @@ export class IntegrationsService {
     });
 
     const saved = await this.integrationRepository.save(integration);
+    await this.integrationWebhookService.deliver(
+      saved,
+      'integration.created',
+      {
+        allowedOrigins: saved.allowedOrigins,
+        redirectUrl: saved.redirectUrl || null,
+        webhookUrl: saved.webhookUrl || null,
+      },
+    );
     return {
       ...this.toResponse(saved),
       apiKey,
@@ -131,6 +142,17 @@ export class IntegrationsService {
     const integration = await this.findOwnedIntegration(userId, id);
     Object.assign(integration, dto);
     const saved = await this.integrationRepository.save(integration);
+    await this.integrationWebhookService.deliver(
+      saved,
+      'integration.updated',
+      {
+        updatedFields: Object.keys(dto),
+        allowedOrigins: saved.allowedOrigins,
+        redirectUrl: saved.redirectUrl || null,
+        webhookUrl: saved.webhookUrl || null,
+        isActive: saved.isActive,
+      },
+    );
     return this.toResponse(saved);
   }
 
@@ -155,7 +177,14 @@ export class IntegrationsService {
   async revoke(userId: string, id: string) {
     const integration = await this.findOwnedIntegration(userId, id);
     integration.isActive = false;
-    await this.integrationRepository.save(integration);
+    const saved = await this.integrationRepository.save(integration);
+    await this.integrationWebhookService.deliver(
+      saved,
+      'integration.revoked',
+      {
+        revokedAt: new Date().toISOString(),
+      },
+    );
     return { message: 'Integration revoked' };
   }
 
@@ -296,6 +325,24 @@ export class IntegrationsService {
 
     const saved = await this.eventRepository.save(event);
     await this.mirrorFinanceTransactions(integration, saved);
+    await this.integrationWebhookService.deliver(
+      integration,
+      'integration.event.received',
+      {
+        id: saved.id,
+        event: saved.event,
+        externalId: saved.externalId,
+        orderId: saved.orderId || null,
+        amount: Number(saved.amount),
+        currency: saved.currency,
+        paymentProvider: saved.paymentProvider || null,
+        occurredAt: saved.occurredAt.toISOString(),
+        customer: {
+          email: saved.customerEmail || null,
+          name: saved.customerName || null,
+        },
+      },
+    );
 
     return {
       id: saved.id,
@@ -408,6 +455,17 @@ export class IntegrationsService {
     connection.lastSyncError = null;
 
     const saved = await this.paystackConnectionRepository.save(connection);
+    await this.integrationWebhookService.deliver(
+      integration,
+      'integration.paystack.connected',
+      {
+        connectionId: saved.id,
+        keyPreview: saved.keyLast4 ? `****${saved.keyLast4}` : null,
+        businessName: saved.businessName || null,
+        businessEmail: saved.businessEmail || null,
+        country: saved.country || null,
+      },
+    );
     return this.toPaystackConnectionResponse(saved);
   }
 
@@ -434,6 +492,14 @@ export class IntegrationsService {
 
     connection.isActive = false;
     await this.paystackConnectionRepository.save(connection);
+    await this.integrationWebhookService.deliver(
+      integration,
+      'integration.paystack.disconnected',
+      {
+        connectionId: connection.id,
+        disconnectedAt: new Date().toISOString(),
+      },
+    );
     return { message: 'Paystack connection disconnected' };
   }
 
@@ -558,7 +624,7 @@ export class IntegrationsService {
       connection.lastSyncError = null;
       await this.paystackConnectionRepository.save(connection);
 
-      return {
+      const result = {
         imported,
         skipped,
         fetched: transactions.length + refunds.length,
@@ -566,10 +632,38 @@ export class IntegrationsService {
         fetchedRefunds: refunds.length,
         connection: this.toPaystackConnectionResponse(connection),
       };
+
+      await this.integrationWebhookService.deliver(
+        integration,
+        'integration.paystack.sync.completed',
+        {
+          imported,
+          skipped,
+          fetched: result.fetched,
+          fetchedTransactions: transactions.length,
+          fetchedRefunds: refunds.length,
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
+          connectionId: connection.id,
+        },
+      );
+
+      return result;
     } catch (error) {
       connection.lastSyncError =
         error instanceof Error ? error.message : 'Paystack sync failed';
       await this.paystackConnectionRepository.save(connection);
+      await this.integrationWebhookService.deliver(
+        integration,
+        'integration.paystack.sync.failed',
+        {
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
+          connectionId: connection.id,
+          error:
+            error instanceof Error ? error.message : 'Paystack sync failed',
+        },
+      );
       throw error;
     }
   }

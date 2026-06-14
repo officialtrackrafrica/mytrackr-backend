@@ -7,6 +7,7 @@ import { Plan } from '../payments/entities/plan.entity';
 import { Subscription } from '../payments/entities/subscription.entity';
 import { PaymentsModule } from '../payments/payments.module';
 import { SecurityModule } from '../security/security.module';
+import { WebhookLog } from '../admin/entities';
 import { IntegrationsController } from './controllers/integrations.controller';
 import { IntegrationPlan } from './entities/integration-plan.entity';
 import {
@@ -17,6 +18,7 @@ import { Integration } from './entities/integration.entity';
 import { PaystackConnection } from './entities/paystack-connection.entity';
 import { IntegrationApiKeyGuard } from './guards/integration-api-key.guard';
 import { IntegrationsService } from './services/integrations.service';
+import { IntegrationWebhookService } from './services/integration-webhook.service';
 
 @Module({
   imports: [
@@ -27,6 +29,7 @@ import { IntegrationsService } from './services/integrations.service';
       IntegrationPlan,
       PaymentTransaction,
       PaystackConnection,
+      WebhookLog,
       Plan,
       Subscription,
       Transaction,
@@ -36,7 +39,11 @@ import { IntegrationsService } from './services/integrations.service';
     SecurityModule,
   ],
   controllers: [IntegrationsController],
-  providers: [IntegrationsService, IntegrationApiKeyGuard],
-  exports: [IntegrationsService],
+  providers: [
+    IntegrationsService,
+    IntegrationApiKeyGuard,
+    IntegrationWebhookService,
+  ],
+  exports: [IntegrationsService, IntegrationWebhookService],
 })
 export class IntegrationsModule {}

@@ -17,6 +17,12 @@ interface ChatCompletionsApiResult {
   }>;
 }
 
+interface OllamaChatApiResult {
+  message?: {
+    content?: string;
+  };
+}
+
 @Injectable()
 export class StatementAiParserService {
   private readonly logger = new Logger(StatementAiParserService.name);
@@ -69,55 +75,24 @@ export class StatementAiParserService {
       headers.Authorization = `Bearer ${this.statementAiApiKey}`;
     }
 
-    const response = await axios.post<ChatCompletionsApiResult>(
-      `${this.statementAiBaseUrl}/chat/completions`,
-      {
-        model: this.statementAiModel,
-        temperature: this.statementAiTemperature,
-        top_p: this.statementAiTopP,
-        response_format: { type: 'json_object' },
-        messages: [
-          {
-            role: 'system',
-            content: [
-              'Extract bank transactions from statement text.',
-              'Return JSON only with this exact shape:',
-              '{"transactions":[{"date":"YYYY-MM-DD","description":"string","amount":123.45,"direction":"CREDIT|DEBIT","name":"optional string","reference":"optional string"}]}',
-              'Return only actual transaction rows.',
-              'Exclude headers, summaries, balances, page numbers, and totals.',
-              'amount must always be positive.',
-              'direction must be CREDIT or DEBIT.',
-              'date must be normalized to YYYY-MM-DD.',
-              'Do not infer, repair, or invent missing transactions.',
-              'If the text is ambiguous or incomplete, omit that row.',
-              'If no clearly supported transactions exist, return {"transactions":[]}.',
-              'Every returned row must be directly grounded in the provided text.',
-              'If a field is unknown, omit it.',
-              'Do not include markdown fences.',
-            ].join('\n'),
-          },
-          {
-            role: 'user',
-            content: text,
-          },
-        ],
-      },
-      {
-        headers,
-        timeout: 120000,
-      },
-    );
+    const systemPrompt = [
+      'Extract bank transactions from statement text.',
+      'Return JSON only with this exact shape:',
+      '{"transactions":[{"date":"YYYY-MM-DD","description":"string","amount":123.45,"direction":"CREDIT|DEBIT","name":"optional string","reference":"optional string"}]}',
+      'Return only actual transaction rows.',
+      'Exclude headers, summaries, balances, page numbers, and totals.',
+      'amount must always be positive.',
+      'direction must be CREDIT or DEBIT.',
+      'date must be normalized to YYYY-MM-DD.',
+      'Do not infer, repair, or invent missing transactions.',
+      'If the text is ambiguous or incomplete, omit that row.',
+      'If no clearly supported transactions exist, return {"transactions":[]}.',
+      'Every returned row must be directly grounded in the provided text.',
+      'If a field is unknown, omit it.',
+      'Do not include markdown fences.',
+    ].join('\n');
 
-    const rawContent = response.data?.choices?.[0]?.message?.content;
-    const outputText =
-      typeof rawContent === 'string'
-        ? rawContent.trim()
-        : Array.isArray(rawContent)
-          ? rawContent
-              .map((part) => (typeof part?.text === 'string' ? part.text : ''))
-              .join('')
-              .trim()
-          : '';
+    const outputText = await this.callAiParser(headers, systemPrompt, text);
 
     if (!outputText) {
       this.logger.warn('AI fallback parser returned an empty response.');
@@ -133,6 +108,79 @@ export class StatementAiParserService {
       `AI fallback parser returned ${parsed.length} normalized transaction rows`,
     );
     return parsed;
+  }
+
+  private async callAiParser(
+    headers: Record<string, string>,
+    systemPrompt: string,
+    text: string,
+  ): Promise<string> {
+    try {
+      const response = await axios.post<ChatCompletionsApiResult>(
+        this.resolveOpenAiCompatibleEndpoint(),
+        {
+          model: this.statementAiModel,
+          temperature: this.statementAiTemperature,
+          top_p: this.statementAiTopP,
+          response_format: { type: 'json_object' },
+          messages: [
+            {
+              role: 'system',
+              content: systemPrompt,
+            },
+            {
+              role: 'user',
+              content: text,
+            },
+          ],
+        },
+        {
+          headers,
+          timeout: 120000,
+        },
+      );
+
+      return this.extractOpenAiContent(response.data);
+    } catch (error: any) {
+      if (!this.shouldRetryWithOllamaNative(error)) {
+        throw error;
+      }
+
+      this.logger.warn(
+        `OpenAI-compatible AI endpoint returned 404. Retrying with Ollama native chat API at ${this.resolveOllamaNativeEndpoint()}.`,
+      );
+
+      const response = await axios.post<OllamaChatApiResult>(
+        this.resolveOllamaNativeEndpoint(),
+        {
+          model: this.statementAiModel,
+          stream: false,
+          format: 'json',
+          options: {
+            temperature: this.statementAiTemperature,
+            top_p: this.statementAiTopP,
+          },
+          messages: [
+            {
+              role: 'system',
+              content: systemPrompt,
+            },
+            {
+              role: 'user',
+              content: text,
+            },
+          ],
+        },
+        {
+          headers,
+          timeout: 120000,
+        },
+      );
+
+      return typeof response.data?.message?.content === 'string'
+        ? response.data.message.content.trim()
+        : '';
+    }
   }
 
   private parseAiOutput(outputText: string): ParsedRow[] {
@@ -172,6 +220,47 @@ export class StatementAiParserService {
     }
 
     return outputText.slice(start, end + 1).trim();
+  }
+
+  private extractOpenAiContent(response: ChatCompletionsApiResult): string {
+    const rawContent = response?.choices?.[0]?.message?.content;
+    return typeof rawContent === 'string'
+      ? rawContent.trim()
+      : Array.isArray(rawContent)
+        ? rawContent
+            .map((part) => (typeof part?.text === 'string' ? part.text : ''))
+            .join('')
+            .trim()
+        : '';
+  }
+
+  private shouldRetryWithOllamaNative(error: unknown): boolean {
+    return (
+      axios.isAxiosError(error) &&
+      error.response?.status === 404 &&
+      !this.isExplicitEndpoint(this.statementAiBaseUrl)
+    );
+  }
+
+  private resolveOpenAiCompatibleEndpoint(): string {
+    const baseUrl = this.statementAiBaseUrl.replace(/\/+$/, '');
+    if (this.isExplicitEndpoint(baseUrl)) {
+      return baseUrl;
+    }
+
+    return baseUrl.endsWith('/v1')
+      ? `${baseUrl}/chat/completions`
+      : `${baseUrl}/v1/chat/completions`;
+  }
+
+  private resolveOllamaNativeEndpoint(): string {
+    const baseUrl = this.statementAiBaseUrl.replace(/\/+$/, '');
+    const withoutV1 = baseUrl.replace(/\/v1$/i, '');
+    return `${withoutV1}/api/chat`;
+  }
+
+  private isExplicitEndpoint(url: string): boolean {
+    return /\/(?:chat\/completions|api\/chat)$/i.test(url);
   }
 
   private normalizeRow(item: Record<string, unknown>): ParsedRow | null {

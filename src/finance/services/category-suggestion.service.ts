@@ -35,6 +35,12 @@ interface ChatCompletionsApiResult {
   }>;
 }
 
+interface OllamaChatApiResult {
+  message?: {
+    content?: string;
+  };
+}
+
 @Injectable()
 export class CategorySuggestionService {
   private readonly logger = new Logger(CategorySuggestionService.name);
@@ -98,54 +104,35 @@ export class CategorySuggestionService {
         headers.Authorization = `Bearer ${this.aiApiKey}`;
       }
 
-      const response = await axios.post<ChatCompletionsApiResult>(
-        `${this.aiBaseUrl}/chat/completions`,
-        {
-          model: this.aiModel,
-          temperature: this.aiTemperature,
-          top_p: this.aiTopP,
-          response_format: { type: 'json_object' },
-          messages: [
-            {
-              role: 'system',
-              content: [
-                'You are a transaction categorization assistant for MyTrackr.',
-                'You must suggest only from the provided category and subcategory list.',
-                'Never invent a category or subcategory outside the provided catalog.',
-                'Return JSON only with this exact shape:',
-                '{"suggestions":[{"categoryName":"string","categoryType":"string","subCategoryName":"string or omitted","confidence":0.0,"reason":"string"}]}',
-                'Return at most 3 suggestions.',
-                'Confidence must be between 0 and 1.',
-                'Prefer a valid subcategory when possible.',
-                'If unsure, still pick the closest valid option from the catalog.',
-                'Do not include markdown fences.',
-              ].join('\n'),
-            },
-            {
-              role: 'user',
-              content: JSON.stringify({
-                transaction: {
-                  description: transaction.description,
-                  name: transaction.name || undefined,
-                  amount: Number(transaction.amount),
-                  direction: transaction.direction,
-                  monoCategory: transaction.monoCategory || undefined,
-                  existingAiCategory: transaction.aiCategory || undefined,
-                  notes: transaction.notes || undefined,
-                },
-                allowedCatalog,
-                userId,
-              }),
-            },
-          ],
+      const systemPrompt = [
+        'You are a transaction categorization assistant for MyTrackr.',
+        'You must suggest only from the provided category and subcategory list.',
+        'Never invent a category or subcategory outside the provided catalog.',
+        'Return JSON only with this exact shape:',
+        '{"suggestions":[{"categoryName":"string","categoryType":"string","subCategoryName":"string or omitted","confidence":0.0,"reason":"string"}]}',
+        'Return at most 3 suggestions.',
+        'Confidence must be between 0 and 1.',
+        'Prefer a valid subcategory when possible.',
+        'If unsure, still pick the closest valid option from the catalog.',
+        'Do not include markdown fences.',
+      ].join('\n');
+      const userPrompt = JSON.stringify({
+        transaction: {
+          description: transaction.description,
+          name: transaction.name || undefined,
+          amount: Number(transaction.amount),
+          direction: transaction.direction,
+          monoCategory: transaction.monoCategory || undefined,
+          existingAiCategory: transaction.aiCategory || undefined,
+          notes: transaction.notes || undefined,
         },
-        {
-          headers,
-          timeout: 30000,
-        },
-      );
+        allowedCatalog,
+        userId,
+      });
 
-      const suggestions = this.parseAiSuggestions(response.data);
+      const response = await this.callAi(headers, systemPrompt, userPrompt);
+
+      const suggestions = this.parseAiSuggestions(response);
       const validated = this.validateSuggestions(suggestions, categories);
       return validated.length > 0
         ? validated
@@ -191,6 +178,88 @@ export class CategorySuggestionService {
         `Failed to parse category suggestion AI output: ${error.message}`,
       );
       return [];
+    }
+  }
+
+  private async callAi(
+    headers: Record<string, string>,
+    systemPrompt: string,
+    userPrompt: string,
+  ): Promise<ChatCompletionsApiResult> {
+    try {
+      const response = await axios.post<ChatCompletionsApiResult>(
+        this.resolveOpenAiCompatibleEndpoint(),
+        {
+          model: this.aiModel,
+          temperature: this.aiTemperature,
+          top_p: this.aiTopP,
+          response_format: { type: 'json_object' },
+          messages: [
+            {
+              role: 'system',
+              content: systemPrompt,
+            },
+            {
+              role: 'user',
+              content: userPrompt,
+            },
+          ],
+        },
+        {
+          headers,
+          timeout: 30000,
+        },
+      );
+
+      return response.data;
+    } catch (error: any) {
+      if (!this.shouldRetryWithOllamaNative(error)) {
+        throw error;
+      }
+
+      this.logger.warn(
+        `OpenAI-compatible AI endpoint returned 404. Retrying with Ollama native chat API at ${this.resolveOllamaNativeEndpoint()}.`,
+      );
+
+      const response = await axios.post<OllamaChatApiResult>(
+        this.resolveOllamaNativeEndpoint(),
+        {
+          model: this.aiModel,
+          stream: false,
+          format: 'json',
+          options: {
+            temperature: this.aiTemperature,
+            top_p: this.aiTopP,
+          },
+          messages: [
+            {
+              role: 'system',
+              content: systemPrompt,
+            },
+            {
+              role: 'user',
+              content: userPrompt,
+            },
+          ],
+        },
+        {
+          headers,
+          timeout: 30000,
+        },
+      );
+
+      return {
+        choices: [
+          {
+            message: {
+              content:
+                typeof response.data?.message?.content === 'string'
+                  ? response.data.message.content
+                  : '',
+            },
+          },
+        ],
+      };
     }
   }
 
@@ -335,6 +404,35 @@ export class CategorySuggestionService {
     }
 
     return outputText.slice(start, end + 1).trim();
+  }
+
+  private shouldRetryWithOllamaNative(error: unknown): boolean {
+    return (
+      axios.isAxiosError(error) &&
+      error.response?.status === 404 &&
+      !this.isExplicitEndpoint(this.aiBaseUrl)
+    );
+  }
+
+  private resolveOpenAiCompatibleEndpoint(): string {
+    const baseUrl = this.aiBaseUrl.replace(/\/+$/, '');
+    if (this.isExplicitEndpoint(baseUrl)) {
+      return baseUrl;
+    }
+
+    return baseUrl.endsWith('/v1')
+      ? `${baseUrl}/chat/completions`
+      : `${baseUrl}/v1/chat/completions`;
+  }
+
+  private resolveOllamaNativeEndpoint(): string {
+    const baseUrl = this.aiBaseUrl.replace(/\/+$/, '');
+    const withoutV1 = baseUrl.replace(/\/v1$/i, '');
+    return `${withoutV1}/api/chat`;
+  }
+
+  private isExplicitEndpoint(url: string): boolean {
+    return /\/(?:chat\/completions|api\/chat)$/i.test(url);
   }
 
   private normalizeConfidence(value: unknown): number {

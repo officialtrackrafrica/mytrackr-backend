@@ -12,9 +12,11 @@ import {
   UploadedFile,
   ParseUUIDPipe,
   Req,
+  Res,
   Logger,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -45,6 +47,7 @@ import { MonoTransaction } from '../mono/entities/transaction.entity';
 import { CategorizationService } from './services/categorization.service';
 import { CsvUploadService } from './services/csv-upload.service';
 import { PdfUploadService } from './services/pdf-upload.service';
+import { PdfAiQueueService } from './services/pdf-ai-queue.service';
 import { BankAccountService } from './services/bank-account.service';
 import { CategorySuggestionService } from './services/category-suggestion.service';
 import { SWAGGER_TAGS } from '../common/docs';
@@ -62,6 +65,8 @@ import {
   TransactionResponseDto,
   ArchiveMessageResponseDto,
   CsvUploadResponseDto,
+  PdfUploadQueuedResponseDto,
+  PdfUploadJobStatusResponseDto,
   TransactionQueryDto,
   PaginatedTransactionResponseDto,
   TransactionSummaryResponseDto,
@@ -152,6 +157,7 @@ export class FinanceController {
     private readonly businessService: BusinessService,
     private readonly csvUploadService: CsvUploadService,
     private readonly pdfUploadService: PdfUploadService,
+    private readonly pdfAiQueueService: PdfAiQueueService,
     @InjectRepository(Asset)
     private readonly assetRepository: Repository<Asset>,
     @InjectRepository(Liability)
@@ -1119,8 +1125,13 @@ export class FinanceController {
   })
   @ApiResponse({
     status: 201,
-    description: 'PDF processed — shows imported, skipped, and errors',
+    description: 'PDF processed immediately — shows imported, skipped, and errors',
     type: CsvUploadResponseDto,
+  })
+  @ApiResponse({
+    status: 202,
+    description: 'PDF accepted and queued for background AI extraction',
+    type: PdfUploadQueuedResponseDto,
   })
   @ApiResponse({
     status: 400,
@@ -1137,6 +1148,7 @@ export class FinanceController {
   })
   async uploadPdf(
     @Req() req: any,
+    @Res({ passthrough: true }) res: Response,
     @UploadedFile() file: Express.Multer.File,
     @Query('autoCategorize') autoCategorize?: string,
   ) {
@@ -1162,12 +1174,46 @@ export class FinanceController {
       req.user.id,
     );
 
-    return this.pdfUploadService.processPdf(
+    const result = await this.pdfUploadService.submitPdf(
       file.buffer,
       businessId,
       req.user.id,
       autoCategorize === 'true',
     );
+
+    if ('queued' in result && result.queued) {
+      res.status(202);
+    }
+
+    return result;
+  }
+
+  @Get('transactions/upload-pdf/jobs/:jobId')
+  @ApiOperation({ summary: 'Get the status of a queued PDF extraction job' })
+  @ApiParam({ name: 'jobId', description: 'Queued PDF job UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Queued PDF job status',
+    type: PdfUploadJobStatusResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Queued PDF job not found',
+    type: ErrorResponseDto,
+  })
+  async getQueuedPdfJobStatus(
+    @Req() req: any,
+    @Param('jobId', ParseUUIDPipe) jobId: string,
+  ) {
+    const status = await this.pdfAiQueueService.getJobStatus(jobId, req.user.id);
+    if (!status) {
+      throw AppException.notFound(
+        'Queued PDF job not found',
+        'PDF_QUEUE_JOB_NOT_FOUND',
+      );
+    }
+
+    return status;
   }
 
   @Get('bank-accounts')

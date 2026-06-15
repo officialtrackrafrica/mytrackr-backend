@@ -645,6 +645,56 @@ export class CsvUploadResponseDto {
   errors: string[];
 }
 
+export class PdfUploadQueuedResponseDto {
+  @ApiProperty({ example: true })
+  queued: true;
+
+  @ApiProperty({ example: '0f5f73ce-51e1-4e2e-8f40-2be99b8a0c8f' })
+  jobId: string;
+
+  @ApiProperty({ example: 'queued', enum: ['queued', 'processing'] })
+  status: 'queued' | 'processing';
+
+  @ApiProperty({
+    example:
+      'PDF accepted and queued for AI extraction because inline AI capacity is currently busy.',
+  })
+  message: string;
+}
+
+export class PdfUploadJobStatusResponseDto {
+  @ApiProperty({ example: '0f5f73ce-51e1-4e2e-8f40-2be99b8a0c8f' })
+  jobId: string;
+
+  @ApiProperty({
+    example: 'processing',
+    enum: ['queued', 'processing', 'completed', 'failed'],
+  })
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+
+  @ApiProperty({ example: true })
+  queued: boolean;
+
+  @ApiProperty({ example: 'PDF is currently being processed.' })
+  message: string;
+
+  @ApiPropertyOptional({
+    example: {
+      imported: 42,
+      skipped: 3,
+      errors: [],
+    },
+  })
+  result?: {
+    imported: number;
+    skipped: number;
+    errors: string[];
+  };
+
+  @ApiPropertyOptional({ example: 'AI extraction completed but no transactions could be detected.' })
+  error?: string;
+}
+
 export class AccountSubCategoryResponseDto {
   @ApiProperty({ example: '71cc0462-9eef-471f-b8dd-61df76f281a2' })
   id: string;

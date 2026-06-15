@@ -41,6 +41,16 @@ interface OllamaChatApiResult {
   };
 }
 
+interface GoogleGenerateContentResult {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{
+        text?: string;
+      }>;
+    };
+  }>;
+}
+
 @Injectable()
 export class CategorySuggestionService {
   private readonly logger = new Logger(CategorySuggestionService.name);
@@ -49,6 +59,7 @@ export class CategorySuggestionService {
   private readonly aiModel: string;
   private readonly aiTemperature: number;
   private readonly aiTopP: number;
+  private readonly aiTimeoutMs: number;
 
   constructor(
     private readonly configService: ConfigService,
@@ -74,6 +85,10 @@ export class CategorySuggestionService {
       0.1,
     );
     this.aiTopP = this.getNumberConfig('CATEGORY_SUGGESTION_AI_TOP_P', 0.2);
+    this.aiTimeoutMs = this.getPositiveIntConfig(
+      'CATEGORY_SUGGESTION_AI_TIMEOUT_MS',
+      30000,
+    );
   }
 
   async suggestForTransaction(
@@ -186,6 +201,10 @@ export class CategorySuggestionService {
     systemPrompt: string,
     userPrompt: string,
   ): Promise<ChatCompletionsApiResult> {
+    if (this.isGoogleAiStudioBaseUrl()) {
+      return this.callGoogleAi(systemPrompt, userPrompt);
+    }
+
     try {
       const response = await axios.post<ChatCompletionsApiResult>(
         this.resolveOpenAiCompatibleEndpoint(),
@@ -207,7 +226,7 @@ export class CategorySuggestionService {
         },
         {
           headers,
-          timeout: 30000,
+          timeout: this.aiTimeoutMs,
         },
       );
 
@@ -244,7 +263,7 @@ export class CategorySuggestionService {
         },
         {
           headers,
-          timeout: 30000,
+          timeout: this.aiTimeoutMs,
         },
       );
 
@@ -261,6 +280,53 @@ export class CategorySuggestionService {
         ],
       };
     }
+  }
+
+  private async callGoogleAi(
+    systemPrompt: string,
+    userPrompt: string,
+  ): Promise<ChatCompletionsApiResult> {
+    const response = await axios.post<GoogleGenerateContentResult>(
+      `${this.resolveGoogleGenerateContentEndpoint()}?key=${encodeURIComponent(this.aiApiKey || '')}`,
+      {
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: [systemPrompt, '', userPrompt].join('\n'),
+              },
+            ],
+          },
+        ],
+        generationConfig: {
+          temperature: this.aiTemperature,
+          topP: this.aiTopP,
+          responseMimeType: 'application/json',
+          responseSchema: this.getGoogleCategorySuggestionSchema(),
+        },
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        timeout: this.aiTimeoutMs,
+      },
+    );
+
+    return {
+      choices: [
+        {
+          message: {
+            content:
+              response.data?.candidates?.[0]?.content?.parts
+                ?.map((part) => part.text || '')
+                .join('')
+                .trim() || '',
+          },
+        },
+      ],
+    };
   }
 
   private validateSuggestions(
@@ -425,6 +491,15 @@ export class CategorySuggestionService {
       : `${baseUrl}/v1/chat/completions`;
   }
 
+  private resolveGoogleGenerateContentEndpoint(): string {
+    const baseUrl = this.aiBaseUrl.replace(/\/+$/, '');
+    if (/\/models\/[^/]+:generateContent$/i.test(baseUrl)) {
+      return baseUrl;
+    }
+
+    return `${baseUrl}/models/${this.aiModel}:generateContent`;
+  }
+
   private resolveOllamaNativeEndpoint(): string {
     const baseUrl = this.aiBaseUrl.replace(/\/+$/, '');
     const withoutV1 = baseUrl.replace(/\/v1$/i, '');
@@ -433,6 +508,33 @@ export class CategorySuggestionService {
 
   private isExplicitEndpoint(url: string): boolean {
     return /\/(?:chat\/completions|api\/chat)$/i.test(url);
+  }
+
+  private isGoogleAiStudioBaseUrl(): boolean {
+    return /generativelanguage\.googleapis\.com/i.test(this.aiBaseUrl);
+  }
+
+  private getGoogleCategorySuggestionSchema() {
+    return {
+      type: 'OBJECT',
+      properties: {
+        suggestions: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              categoryName: { type: 'STRING' },
+              categoryType: { type: 'STRING' },
+              subCategoryName: { type: 'STRING' },
+              confidence: { type: 'NUMBER' },
+              reason: { type: 'STRING' },
+            },
+            required: ['categoryName', 'categoryType', 'confidence', 'reason'],
+          },
+        },
+      },
+      required: ['suggestions'],
+    };
   }
 
   private normalizeConfidence(value: unknown): number {
@@ -450,5 +552,11 @@ export class CategorySuggestionService {
 
     const parsed = Number.parseFloat(value);
     return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  private getPositiveIntConfig(key: string, fallback: number): number {
+    const value = this.configService.get<string>(key);
+    const parsed = Number.parseInt(value || '', 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
   }
 }

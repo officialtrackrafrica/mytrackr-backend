@@ -23,6 +23,16 @@ interface OllamaChatApiResult {
   };
 }
 
+interface GoogleGenerateContentResult {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{
+        text?: string;
+      }>;
+    };
+  }>;
+}
+
 @Injectable()
 export class StatementAiParserService {
   private readonly logger = new Logger(StatementAiParserService.name);
@@ -31,6 +41,7 @@ export class StatementAiParserService {
   private readonly statementAiModel: string;
   private readonly statementAiTemperature: number;
   private readonly statementAiTopP: number;
+  private readonly statementAiTimeoutMs: number;
 
   constructor(private readonly configService: ConfigService) {
     this.statementAiApiKey =
@@ -50,6 +61,10 @@ export class StatementAiParserService {
       0,
     );
     this.statementAiTopP = this.getNumberConfig('STATEMENT_AI_TOP_P', 0.1);
+    this.statementAiTimeoutMs = this.getPositiveIntConfig(
+      'STATEMENT_AI_TIMEOUT_MS',
+      120000,
+    );
   }
 
   isEnabled(): boolean {
@@ -124,6 +139,10 @@ export class StatementAiParserService {
     systemPrompt: string,
     text: string,
   ): Promise<string> {
+    if (this.isGoogleAiStudioBaseUrl()) {
+      return this.callGoogleAiStudio(systemPrompt, text);
+    }
+
     try {
       const response = await axios.post<ChatCompletionsApiResult>(
         this.resolveOpenAiCompatibleEndpoint(),
@@ -145,7 +164,7 @@ export class StatementAiParserService {
         },
         {
           headers,
-          timeout: 120000,
+          timeout: this.statementAiTimeoutMs,
         },
       );
 
@@ -182,7 +201,7 @@ export class StatementAiParserService {
         },
         {
           headers,
-          timeout: 120000,
+          timeout: this.statementAiTimeoutMs,
         },
       );
 
@@ -190,6 +209,51 @@ export class StatementAiParserService {
         ? response.data.message.content.trim()
         : '';
     }
+  }
+
+  private async callGoogleAiStudio(
+    systemPrompt: string,
+    text: string,
+  ): Promise<string> {
+    const response = await axios.post<GoogleGenerateContentResult>(
+      `${this.resolveGoogleGenerateContentEndpoint()}?key=${encodeURIComponent(this.statementAiApiKey || '')}`,
+      {
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: [
+                  systemPrompt,
+                  '',
+                  'Statement text:',
+                  text,
+                ].join('\n'),
+              },
+            ],
+          },
+        ],
+        generationConfig: {
+          temperature: this.statementAiTemperature,
+          topP: this.statementAiTopP,
+          responseMimeType: 'application/json',
+          responseSchema: this.getGoogleTransactionSchema(),
+        },
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        timeout: this.statementAiTimeoutMs,
+      },
+    );
+
+    return (
+      response.data?.candidates?.[0]?.content?.parts
+        ?.map((part) => part.text || '')
+        .join('')
+        .trim() || ''
+    );
   }
 
   private parseAiOutput(outputText: string): ParsedRow[] {
@@ -284,6 +348,15 @@ export class StatementAiParserService {
       : `${baseUrl}/v1/chat/completions`;
   }
 
+  private resolveGoogleGenerateContentEndpoint(): string {
+    const baseUrl = this.statementAiBaseUrl.replace(/\/+$/, '');
+    if (/\/models\/[^/]+:generateContent$/i.test(baseUrl)) {
+      return baseUrl;
+    }
+
+    return `${baseUrl}/models/${this.statementAiModel}:generateContent`;
+  }
+
   private resolveOllamaNativeEndpoint(): string {
     const baseUrl = this.statementAiBaseUrl.replace(/\/+$/, '');
     const withoutV1 = baseUrl.replace(/\/v1$/i, '');
@@ -292,6 +365,39 @@ export class StatementAiParserService {
 
   private isExplicitEndpoint(url: string): boolean {
     return /\/(?:chat\/completions|api\/chat)$/i.test(url);
+  }
+
+  private isGoogleAiStudioBaseUrl(): boolean {
+    return /generativelanguage\.googleapis\.com/i.test(
+      this.statementAiBaseUrl,
+    );
+  }
+
+  private getGoogleTransactionSchema() {
+    return {
+      type: 'OBJECT',
+      properties: {
+        transactions: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              date: { type: 'STRING' },
+              description: { type: 'STRING' },
+              amount: { type: 'NUMBER' },
+              direction: {
+                type: 'STRING',
+                enum: ['CREDIT', 'DEBIT'],
+              },
+              name: { type: 'STRING' },
+              reference: { type: 'STRING' },
+            },
+            required: ['date', 'description', 'amount', 'direction'],
+          },
+        },
+      },
+      required: ['transactions'],
+    };
   }
 
   private normalizeRow(item: Record<string, unknown>): ParsedRow | null {
@@ -358,6 +464,12 @@ export class StatementAiParserService {
 
     const parsed = Number.parseFloat(value);
     return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  private getPositiveIntConfig(key: string, fallback: number): number {
+    const value = this.configService.get<string>(key);
+    const parsed = Number.parseInt(value || '', 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
   }
 
   private normalizeDirection(

@@ -1,8 +1,13 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { createHash } from 'crypto';
 import pdf from 'pdf-parse';
 import { TransactionDirection } from '../entities/transaction.entity';
 import { CategorizationService } from './categorization.service';
 import { OcrService } from './ocr.service';
+import {
+  PdfAiQueueService,
+  PdfUploadQueuedResult,
+} from './pdf-ai-queue.service';
 import { StatementAiParserService } from './statement-ai-parser.service';
 import { ParsedRow } from './statement-parser.types';
 
@@ -15,6 +20,7 @@ export class PdfUploadService {
   constructor(
     private readonly categorizationService: CategorizationService,
     private readonly ocrService: OcrService,
+    private readonly pdfAiQueueService: PdfAiQueueService,
     private readonly statementAiParserService: StatementAiParserService,
   ) {}
 
@@ -136,6 +142,160 @@ export class PdfUploadService {
       skipped: parsedRows.length - imported,
       errors: [],
     };
+  }
+
+  async submitPdf(
+    fileBuffer: Buffer,
+    businessId: string,
+    userId: string,
+    autoCategorize = false,
+  ): Promise<
+    { imported: number; skipped: number; errors: string[] } | PdfUploadQueuedResult
+  > {
+    const fingerprint = this.getPdfFingerprint(fileBuffer);
+    const existing =
+      await this.pdfAiQueueService.getExistingFingerprintStatus(
+        businessId,
+        fingerprint,
+        userId,
+      );
+    if (existing) {
+      if (existing.status === 'completed') {
+        const priorTotal =
+          (existing.result?.imported || 0) + (existing.result?.skipped || 0);
+        return {
+          imported: 0,
+          skipped: priorTotal,
+          errors: ['This PDF has already been processed for this business.'],
+        };
+      }
+
+      return {
+        jobId: existing.jobId,
+        queued: true,
+        status:
+          existing.status === 'processing' ? 'processing' : 'queued',
+        message: 'This PDF is already queued for processing.',
+      };
+    }
+
+    this.logger.log(
+      `Starting PDF parse â€” buffer size: ${fileBuffer.length} bytes`,
+    );
+
+    let text: string | null = null;
+    let usedOcr = false;
+
+    try {
+      const data = await this.extractPdfText(fileBuffer);
+      text = data.text;
+    } catch (err: any) {
+      this.logger.warn(`Standard PDF extraction failed: ${err.message}`);
+    }
+
+    if (!text || text.trim().length === 0) {
+      this.logger.log(
+        'Fallback: Attempting OCR extraction via OCRmyPDF service...',
+      );
+      text = await this.ocrService.extractTextFromPdf(fileBuffer);
+
+      if (!text || text.trim().length === 0) {
+        this.logger.error(
+          'No text retrieved from either pdf-parse or OCRmyPDF.',
+        );
+        throw new BadRequestException(
+          'PDF file appears to be empty or contains no extractable text. Please ensure it is a valid bank statement.',
+        );
+      }
+      usedOcr = true;
+    }
+
+    this.logger.log(
+      `Success: PDF text retrieved (${usedOcr ? 'via OCR Service' : 'via pdf-parse'}) â€” ${text.length} characters found.`,
+    );
+
+    this.logger.log(
+      `Extracted PDF text preview (${usedOcr ? 'ocr' : 'pdf-parse'}, first ${EXTRACTED_TEXT_LOG_LIMIT} chars): ${text.slice(0, EXTRACTED_TEXT_LOG_LIMIT)}`,
+    );
+
+    const lines = text
+      .split('\n')
+      .map((l: string) => l.trim())
+      .filter((l: string) => l.length > 0);
+    let parsedRows: ParsedRow[] = this.extractTransactions(lines);
+
+    if (parsedRows.length === 0 && this.statementAiParserService.isEnabled()) {
+      this.logger.warn(
+        'Deterministic PDF parser found 0 rows. Considering AI fallback capacity.',
+      );
+
+      const canRunInline =
+        await this.pdfAiQueueService.tryAcquireInlineCapacity();
+      if (!canRunInline) {
+        this.logger.warn(
+          'AI inline capacity is exhausted. Deferring PDF statement extraction to the queue.',
+        );
+        return this.pdfAiQueueService.enqueueAiTextJob({
+          text,
+          businessId,
+          userId,
+          fingerprint,
+          autoCategorize,
+        });
+      }
+
+      try {
+        parsedRows =
+          await this.statementAiParserService.extractTransactionsFromText(text);
+      } finally {
+        await this.pdfAiQueueService.releaseInlineCapacity();
+      }
+    }
+
+    this.logger.log(`Detected ${parsedRows.length} transaction rows`);
+
+    if (parsedRows.length === 0) {
+      throw new BadRequestException(
+        'No transactions could be detected in the PDF. Please ensure this is a supported bank statement format.',
+      );
+    }
+
+    const imported = await this.categorizationService.ingestTransactions(
+      businessId,
+      userId,
+      parsedRows.map((row) => ({
+        businessId,
+        userId,
+        externalId:
+          row.reference ||
+          `pdf:${businessId}:${row.date}:${row.amount}:${row.direction}:${row.description}`,
+        date: new Date(row.date),
+        name: row.name,
+        amount: row.amount,
+        direction: row.direction,
+        description: row.description,
+      })),
+      { autoCategorize },
+    );
+
+    const result = {
+      imported,
+      skipped: parsedRows.length - imported,
+      errors: [],
+    };
+
+    await this.pdfAiQueueService.recordImmediateCompletion({
+      businessId,
+      userId,
+      fingerprint,
+      result,
+    });
+
+    return result;
+  }
+
+  private getPdfFingerprint(fileBuffer: Buffer): string {
+    return createHash('sha256').update(fileBuffer).digest('hex');
   }
 
   private pushAccessRow(

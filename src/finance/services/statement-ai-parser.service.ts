@@ -92,7 +92,16 @@ export class StatementAiParserService {
       'Do not include markdown fences.',
     ].join('\n');
 
-    const outputText = await this.callAiParser(headers, systemPrompt, text);
+    let outputText = '';
+
+    try {
+      outputText = await this.callAiParser(headers, systemPrompt, text);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `AI fallback parser request failed: ${this.describeRequestError(error)}`,
+      );
+      return [];
+    }
 
     if (!outputText) {
       this.logger.warn('AI fallback parser returned an empty response.');
@@ -240,6 +249,28 @@ export class StatementAiParserService {
       error.response?.status === 404 &&
       !this.isExplicitEndpoint(this.statementAiBaseUrl)
     );
+  }
+
+  private describeRequestError(error: unknown): string {
+    if (axios.isAxiosError(error)) {
+      const status = error.response?.status;
+      const data =
+        error.response?.data === undefined
+          ? ''
+          : ` - ${JSON.stringify(error.response.data)}`;
+
+      if (status) {
+        return `status ${status}${data}`;
+      }
+
+      return error.message;
+    }
+
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    return String(error);
   }
 
   private resolveOpenAiCompatibleEndpoint(): string {

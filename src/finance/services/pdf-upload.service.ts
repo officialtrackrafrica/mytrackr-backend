@@ -94,8 +94,15 @@ export class PdfUploadService {
       this.logger.warn(
         'Deterministic PDF parser found 0 rows. Falling back to the local AI parser.',
       );
-      parsedRows =
-        await this.statementAiParserService.extractTransactionsFromText(text);
+      try {
+        parsedRows =
+          await this.statementAiParserService.extractTransactionsFromText(text);
+      } catch (error: any) {
+        this.logger.warn(
+          `AI fallback parser failed and will be skipped: ${error?.message || String(error)}`,
+        );
+        parsedRows = [];
+      }
     }
 
     this.logger.log(`Detected ${parsedRows.length} transaction rows`);

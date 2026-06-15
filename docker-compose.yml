@@ -73,6 +73,8 @@ services:
       context: .
       dockerfile: ./ocr-service/Dockerfile
     container_name: mytrackr-ocr
+    environment:
+      - OCR_MAX_WORKERS=${OCR_MAX_WORKERS:-1}
     ports:
       - '127.0.0.1:8000:8000'
     deploy:

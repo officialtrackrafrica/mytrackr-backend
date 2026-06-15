@@ -18,6 +18,21 @@ MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
 OCR_TIMEOUT_SECONDS = 120
 OCR_SKIP_FLAG = "--skip-text"
 EXTRACTED_TEXT_LOG_LIMIT = 4000
+OCR_MAX_WORKERS = max(1, int(os.getenv("OCR_MAX_WORKERS", "1")))
+
+
+def format_process_output(result: subprocess.CompletedProcess[str]) -> str:
+    """Merge stderr/stdout so the real OCR failure is not hidden by a single log line."""
+    parts: list[str] = []
+    stderr = (result.stderr or "").strip()
+    stdout = (result.stdout or "").strip()
+
+    if stderr:
+        parts.append(stderr)
+    if stdout and stdout != stderr:
+        parts.append(stdout)
+
+    return "\n".join(parts).strip()
 
 
 def extract_text_from_pdf(pdf_path: Path) -> str:
@@ -67,6 +82,8 @@ def run_ocrmypdf(input_path: Path, output_path: Path) -> subprocess.CompletedPro
     command = [
         "ocrmypdf",
         OCR_SKIP_FLAG,
+        "--jobs",
+        str(OCR_MAX_WORKERS),
         "--output-type",
         "pdf",
         str(input_path),
@@ -132,6 +149,7 @@ async def health_check():
         "ocrmypdf_version": ocrmypdf_version,
         "pdftotext_version": pdftotext_version,
         "ocr_args": [OCR_SKIP_FLAG],
+        "ocr_max_workers": OCR_MAX_WORKERS,
         "version": "3.0.0",
     }
 
@@ -157,7 +175,7 @@ async def ocr_pdf(file: UploadFile = File(...)):
             result = run_ocrmypdf(input_path, output_path)
 
             if result.returncode != 0:
-                error_output = (result.stderr or result.stdout).strip()
+                error_output = format_process_output(result)
                 logger.error("OCRmyPDF failed (%s): %s", result.returncode, error_output)
                 raise HTTPException(
                     status_code=500,

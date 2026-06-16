@@ -8,7 +8,7 @@ import {
   IsUUID,
   IsIn,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   TransactionCategory,
@@ -19,6 +19,18 @@ import { AssetCategory } from '../entities/asset.entity';
 import { LiabilityType, LiabilityStatus } from '../entities/liability.entity';
 import { MatchType } from '../entities/categorization-rule.entity';
 import { AccountCategoryType } from '../entities/account-category.entity';
+
+function transformBooleanQueryValue(value: unknown): unknown {
+  if (value === 'true' || value === true) {
+    return true;
+  }
+
+  if (value === 'false' || value === false) {
+    return false;
+  }
+
+  return value;
+}
 
 export class CreateAssetDto {
   @ApiProperty({ example: 'MacBook Pro' })
@@ -318,7 +330,7 @@ export class TransactionQueryDto {
   @ApiPropertyOptional({ example: true })
   @IsOptional()
   @IsBoolean()
-  @Type(() => Boolean)
+  @Transform(({ value }) => transformBooleanQueryValue(value))
   isCategorised?: boolean;
 
   @ApiPropertyOptional({
@@ -411,7 +423,7 @@ export class AssetQueryDto {
   @ApiPropertyOptional({ example: true })
   @IsOptional()
   @IsBoolean()
-  @Type(() => Boolean)
+  @Transform(({ value }) => transformBooleanQueryValue(value))
   includeArchived?: boolean;
 }
 

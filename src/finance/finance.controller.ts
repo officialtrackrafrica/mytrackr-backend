@@ -83,6 +83,16 @@ import {
 @ApiCookieAuth('accessToken')
 export class FinanceController {
   private readonly logger = new Logger(FinanceController.name);
+  private readonly transactionSortColumns: Record<string, string> = {
+    date: 'tx.date',
+    amount: 'tx.amount',
+    description: 'tx.description',
+    name: 'tx.name',
+    category: 'tx.category',
+    subCategory: 'tx.subCategory',
+    createdAt: 'tx.createdAt',
+    updatedAt: 'tx.updatedAt',
+  };
   private readonly assetCategoryOptions: AssetCategoryOptionDto[] = [
     {
       id: '0d8a9f1d-5c6d-4c22-9e5b-9b6b5d5f1001',
@@ -799,7 +809,7 @@ export class FinanceController {
     const summary = await this.getTransactionSummary(query);
 
     const [data, total] = await query
-      .orderBy(`tx.${sortBy}`, sortOrder)
+      .orderBy(this.transactionSortColumns[sortBy] || 'tx.date', sortOrder)
       .skip(skip)
       .take(limit)
       .getManyAndCount();
@@ -928,7 +938,16 @@ export class FinanceController {
     businessId: string,
     queryDto: TransactionQueryDto,
   ): SelectQueryBuilder<Transaction> {
-    const { search, isCategorised, startDate, endDate } = queryDto;
+    const {
+      search,
+      isCategorised,
+      categoryId,
+      subCategoryId,
+      category,
+      subCategory,
+      startDate,
+      endDate,
+    } = queryDto;
 
     const query = this.transactionRepository
       .createQueryBuilder('tx')
@@ -944,6 +963,26 @@ export class FinanceController {
     if (isCategorised !== undefined) {
       query.andWhere('tx."isCategorised" = :isCategorised', {
         isCategorised,
+      });
+    }
+
+    if (categoryId) {
+      query.andWhere('tx."categoryId" = :categoryId', { categoryId });
+    }
+
+    if (subCategoryId) {
+      query.andWhere('tx."subCategoryId" = :subCategoryId', { subCategoryId });
+    }
+
+    if (category) {
+      query.andWhere('tx.category ILIKE :category', {
+        category: `%${category}%`,
+      });
+    }
+
+    if (subCategory) {
+      query.andWhere('tx."subCategory" ILIKE :subCategory', {
+        subCategory: `%${subCategory}%`,
       });
     }
 

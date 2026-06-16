@@ -6,6 +6,7 @@ import {
   IsDateString,
   IsBoolean,
   IsUUID,
+  IsIn,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -320,6 +321,38 @@ export class TransactionQueryDto {
   @Type(() => Boolean)
   isCategorised?: boolean;
 
+  @ApiPropertyOptional({
+    description: 'Filter by category UUID from GET /finance/categories',
+    example: '71cc0462-9eef-471f-b8dd-61df76f281a2',
+  })
+  @IsOptional()
+  @IsUUID()
+  categoryId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter by sub-category UUID from GET /finance/categories',
+    example: 'a2b3c4d5-e6f7-8901-abcd-ef0123456789',
+  })
+  @IsOptional()
+  @IsUUID()
+  subCategoryId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter by category label/type',
+    example: 'EXPENSE',
+  })
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter by sub-category name',
+    example: 'Transportation',
+  })
+  @IsOptional()
+  @IsString()
+  subCategory?: string;
+
   @ApiPropertyOptional({ example: '2025-01-01' })
   @IsOptional()
   @IsDateString()
@@ -330,9 +363,30 @@ export class TransactionQueryDto {
   @IsDateString()
   endDate?: string;
 
-  @ApiPropertyOptional({ example: 'date' })
+  @ApiPropertyOptional({
+    example: 'date',
+    enum: [
+      'date',
+      'amount',
+      'description',
+      'name',
+      'category',
+      'subCategory',
+      'createdAt',
+      'updatedAt',
+    ],
+  })
   @IsOptional()
-  @IsString()
+  @IsIn([
+    'date',
+    'amount',
+    'description',
+    'name',
+    'category',
+    'subCategory',
+    'createdAt',
+    'updatedAt',
+  ])
   sortBy?: string = 'date';
 
   @ApiPropertyOptional({ example: 'DESC' })

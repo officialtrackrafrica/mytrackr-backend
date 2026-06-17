@@ -21,6 +21,26 @@ EXTRACTED_TEXT_LOG_LIMIT = 4000
 OCR_MAX_WORKERS = max(1, int(os.getenv("OCR_MAX_WORKERS", "1")))
 
 
+def get_ocrmypdf_args() -> list[str]:
+    """Return a safe OCRmyPDF argument set for the configured text-handling mode."""
+    args = [
+        OCR_TEXT_HANDLING_FLAG,
+        "--rotate-pages",
+    ]
+
+    # OCRmyPDF rejects redo mode when paired with cleanup flags like --deskew
+    # and --clean-final. Keep those for skip/force modes only.
+    if OCR_TEXT_HANDLING_FLAG not in {"--redo-ocr", "--mode", "redo"}:
+        args.extend(
+            [
+                "--deskew",
+                "--clean-final",
+            ]
+        )
+
+    return args
+
+
 def format_process_output(result: subprocess.CompletedProcess[str]) -> str:
     """Merge stderr/stdout so the real OCR failure is not hidden by a single log line."""
     parts: list[str] = []
@@ -81,10 +101,7 @@ def run_ocrmypdf(input_path: Path, output_path: Path) -> subprocess.CompletedPro
     """Run OCRmyPDF with production-safe defaults."""
     command = [
         "ocrmypdf",
-        OCR_TEXT_HANDLING_FLAG,
-        "--rotate-pages",
-        "--deskew",
-        "--clean-final",
+        *get_ocrmypdf_args(),
         "--jobs",
         str(OCR_MAX_WORKERS),
         "--output-type",
@@ -151,12 +168,7 @@ async def health_check():
         "engine_ready": engine_ready,
         "ocrmypdf_version": ocrmypdf_version,
         "pdftotext_version": pdftotext_version,
-        "ocr_args": [
-            OCR_TEXT_HANDLING_FLAG,
-            "--rotate-pages",
-            "--deskew",
-            "--clean-final",
-        ],
+        "ocr_args": get_ocrmypdf_args(),
         "ocr_max_workers": OCR_MAX_WORKERS,
         "version": "3.0.0",
     }

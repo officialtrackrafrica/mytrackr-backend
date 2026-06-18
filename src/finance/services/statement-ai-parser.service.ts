@@ -71,6 +71,10 @@ export class StatementAiParserService {
     return !!this.statementAiBaseUrl && !!this.statementAiModel;
   }
 
+  supportsDirectPdfInput(): boolean {
+    return this.isGoogleAiStudioBaseUrl();
+  }
+
   async extractTransactionsFromText(text: string): Promise<ParsedRow[]> {
     if (!this.isEnabled()) {
       this.logger.warn(
@@ -90,22 +94,7 @@ export class StatementAiParserService {
       headers.Authorization = `Bearer ${this.statementAiApiKey}`;
     }
 
-    const systemPrompt = [
-      'Extract bank transactions from statement text.',
-      'Return JSON only with this exact shape:',
-      '{"transactions":[{"date":"YYYY-MM-DD","description":"string","amount":123.45,"direction":"CREDIT|DEBIT","name":"optional string","reference":"optional string"}]}',
-      'Return only actual transaction rows.',
-      'Exclude headers, summaries, balances, page numbers, and totals.',
-      'amount must always be positive.',
-      'direction must be CREDIT or DEBIT.',
-      'date must be normalized to YYYY-MM-DD.',
-      'Do not infer, repair, or invent missing transactions.',
-      'If the text is ambiguous or incomplete, omit that row.',
-      'If no clearly supported transactions exist, return {"transactions":[]}.',
-      'Every returned row must be directly grounded in the provided text.',
-      'If a field is unknown, omit it.',
-      'Do not include markdown fences.',
-    ].join('\n');
+    const systemPrompt = this.buildExtractionPrompt('statement text');
 
     let outputText = '';
 
@@ -130,6 +119,45 @@ export class StatementAiParserService {
     const parsed = this.parseAiOutput(outputText);
     this.logger.log(
       `AI fallback parser returned ${parsed.length} normalized transaction rows`,
+    );
+    return parsed;
+  }
+
+  async extractTransactionsFromPdf(pdfBuffer: Buffer): Promise<ParsedRow[]> {
+    if (!this.isEnabled() || !this.supportsDirectPdfInput()) {
+      return [];
+    }
+
+    this.logger.log(
+      `Calling AI PDF parser with model ${this.statementAiModel}`,
+    );
+
+    let outputText = '';
+
+    try {
+      outputText = await this.callGoogleAiStudioWithPdf(
+        this.buildExtractionPrompt('bank statement PDF'),
+        pdfBuffer,
+      );
+    } catch (error: unknown) {
+      this.logger.warn(
+        `AI PDF parser request failed: ${this.describeRequestError(error)}`,
+      );
+      return [];
+    }
+
+    if (!outputText) {
+      this.logger.warn('AI PDF parser returned an empty response.');
+      return [];
+    }
+
+    this.logger.log(
+      `AI PDF raw output preview (first 4000 chars): ${outputText.slice(0, 4000)}`,
+    );
+
+    const parsed = this.parseAiOutput(outputText);
+    this.logger.log(
+      `AI PDF parser returned ${parsed.length} normalized transaction rows`,
     );
     return parsed;
   }
@@ -254,6 +282,75 @@ export class StatementAiParserService {
         .join('')
         .trim() || ''
     );
+  }
+
+  private async callGoogleAiStudioWithPdf(
+    systemPrompt: string,
+    pdfBuffer: Buffer,
+  ): Promise<string> {
+    const response = await axios.post<GoogleGenerateContentResult>(
+      `${this.resolveGoogleGenerateContentEndpoint()}?key=${encodeURIComponent(this.statementAiApiKey || '')}`,
+      {
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: [
+                  systemPrompt,
+                  '',
+                  'The attached file is a bank statement PDF. Extract only real transaction rows.',
+                ].join('\n'),
+              },
+              {
+                inline_data: {
+                  mime_type: 'application/pdf',
+                  data: pdfBuffer.toString('base64'),
+                },
+              },
+            ],
+          },
+        ],
+        generationConfig: {
+          temperature: this.statementAiTemperature,
+          topP: this.statementAiTopP,
+          responseMimeType: 'application/json',
+          responseSchema: this.getGoogleTransactionSchema(),
+        },
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        timeout: this.statementAiTimeoutMs,
+      },
+    );
+
+    return (
+      response.data?.candidates?.[0]?.content?.parts
+        ?.map((part) => part.text || '')
+        .join('')
+        .trim() || ''
+    );
+  }
+
+  private buildExtractionPrompt(sourceLabel: string): string {
+    return [
+      `Extract bank transactions from the provided ${sourceLabel}.`,
+      'Return JSON only with this exact shape:',
+      '{"transactions":[{"date":"YYYY-MM-DD","description":"string","amount":123.45,"direction":"CREDIT|DEBIT","name":"optional string","reference":"optional string"}]}',
+      'Return only actual transaction rows.',
+      'Exclude headers, summaries, balances, page numbers, and totals.',
+      'amount must always be positive.',
+      'direction must be CREDIT or DEBIT.',
+      'date must be normalized to YYYY-MM-DD.',
+      'Do not infer, repair, or invent missing transactions.',
+      'If the source is ambiguous or incomplete, omit that row.',
+      'If no clearly supported transactions exist, return {"transactions":[]}.',
+      'Every returned row must be directly grounded in the provided source.',
+      'If a field is unknown, omit it.',
+      'Do not include markdown fences.',
+    ].join('\n');
   }
 
   private parseAiOutput(outputText: string): ParsedRow[] {

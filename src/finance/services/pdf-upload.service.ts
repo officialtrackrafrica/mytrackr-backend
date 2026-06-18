@@ -40,6 +40,31 @@ export class PdfUploadService {
     ]);
   }
 
+  private async tryDirectPdfAiFallback(
+    fileBuffer: Buffer,
+    reason: string,
+  ): Promise<ParsedRow[]> {
+    if (
+      !this.statementAiParserService.isEnabled() ||
+      !this.statementAiParserService.supportsDirectPdfInput()
+    ) {
+      return [];
+    }
+
+    this.logger.warn(`Attempting direct PDF AI fallback because ${reason}.`);
+
+    try {
+      return await this.statementAiParserService.extractTransactionsFromPdf(
+        fileBuffer,
+      );
+    } catch (error: any) {
+      this.logger.warn(
+        `Direct PDF AI fallback failed and will be skipped: ${error?.message || String(error)}`,
+      );
+      return [];
+    }
+  }
+
   /**
    * Parse a PDF buffer and create Transaction entities.
    * Falls back to OCR if standard text extraction fails.
@@ -56,6 +81,7 @@ export class PdfUploadService {
 
     let text: string | null = null;
     let usedOcr = false;
+    let parsedRows: ParsedRow[] = [];
 
     // Try standard text extraction first
     try {
@@ -75,12 +101,20 @@ export class PdfUploadService {
         this.logger.error(
           'No text retrieved from either pdf-parse or OCRmyPDF.',
         );
-        throw new BadRequestException(
-          'PDF file appears to be empty or contains no extractable text. Please ensure it is a valid bank statement.',
+        parsedRows = await this.tryDirectPdfAiFallback(
+          fileBuffer,
+          'OCR could not extract usable text',
         );
+        if (parsedRows.length === 0) {
+          throw new BadRequestException(
+            'PDF file appears to be empty or contains no extractable text. Please ensure it is a valid bank statement.',
+          );
+        }
       }
       usedOcr = true;
     }
+
+    if (text && text.trim().length > 0) {
 
     this.logger.log(
       `Success: PDF text retrieved (${usedOcr ? 'via OCR Service' : 'via pdf-parse'}) — ${text.length} characters found.`,
@@ -90,24 +124,32 @@ export class PdfUploadService {
       `Extracted PDF text preview (${usedOcr ? 'ocr' : 'pdf-parse'}, first ${EXTRACTED_TEXT_LOG_LIMIT} chars): ${text.slice(0, EXTRACTED_TEXT_LOG_LIMIT)}`,
     );
 
-    const lines = text
+      const lines = text
       .split('\n')
       .map((l: string) => l.trim())
       .filter((l: string) => l.length > 0);
-    let parsedRows: ParsedRow[] = this.extractTransactions(lines);
+      parsedRows = this.extractTransactions(lines);
 
-    if (parsedRows.length === 0 && this.statementAiParserService.isEnabled()) {
-      this.logger.warn(
-        'Deterministic PDF parser found 0 rows. Falling back to the local AI parser.',
-      );
-      try {
-        parsedRows =
-          await this.statementAiParserService.extractTransactionsFromText(text);
-      } catch (error: any) {
+      if (parsedRows.length === 0 && this.statementAiParserService.isEnabled()) {
         this.logger.warn(
-          `AI fallback parser failed and will be skipped: ${error?.message || String(error)}`,
+          'Deterministic PDF parser found 0 rows. Falling back to the local AI parser.',
         );
-        parsedRows = [];
+        try {
+          parsedRows =
+            await this.statementAiParserService.extractTransactionsFromText(text);
+        } catch (error: any) {
+          this.logger.warn(
+            `AI fallback parser failed and will be skipped: ${error?.message || String(error)}`,
+          );
+          parsedRows = [];
+        }
+      }
+
+      if (parsedRows.length === 0) {
+        parsedRows = await this.tryDirectPdfAiFallback(
+          fileBuffer,
+          'OCR/plain-text AI extraction found 0 transaction rows',
+        );
       }
     }
 
@@ -185,6 +227,7 @@ export class PdfUploadService {
 
     let text: string | null = null;
     let usedOcr = false;
+    let parsedRows: ParsedRow[] = [];
 
     try {
       const data = await this.extractPdfText(fileBuffer);
@@ -203,26 +246,47 @@ export class PdfUploadService {
         this.logger.error(
           'No text retrieved from either pdf-parse or OCRmyPDF.',
         );
-        throw new BadRequestException(
-          'PDF file appears to be empty or contains no extractable text. Please ensure it is a valid bank statement.',
-        );
+        const canRunInline =
+          await this.pdfAiQueueService.tryAcquireInlineCapacity();
+        if (!canRunInline) {
+          throw new BadRequestException(
+            'PDF text extraction failed and AI fallback capacity is currently busy. Please retry the upload shortly.',
+          );
+        }
+
+        try {
+          parsedRows = await this.tryDirectPdfAiFallback(
+            fileBuffer,
+            'OCR could not extract usable text',
+          );
+        } finally {
+          await this.pdfAiQueueService.releaseInlineCapacity();
+        }
+
+        if (parsedRows.length === 0) {
+          throw new BadRequestException(
+            'PDF file appears to be empty or contains no extractable text. Please ensure it is a valid bank statement.',
+          );
+        }
       }
       usedOcr = true;
     }
 
     this.logger.log(
-      `Success: PDF text retrieved (${usedOcr ? 'via OCR Service' : 'via pdf-parse'}) â€” ${text.length} characters found.`,
+      `Success: PDF text retrieved (${usedOcr ? 'via OCR Service' : 'via pdf-parse'}) â€” ${text?.length || 0} characters found.`,
     );
 
     this.logger.log(
-      `Extracted PDF text preview (${usedOcr ? 'ocr' : 'pdf-parse'}, first ${EXTRACTED_TEXT_LOG_LIMIT} chars): ${text.slice(0, EXTRACTED_TEXT_LOG_LIMIT)}`,
+      `Extracted PDF text preview (${usedOcr ? 'ocr' : 'pdf-parse'}, first ${EXTRACTED_TEXT_LOG_LIMIT} chars): ${text?.slice(0, EXTRACTED_TEXT_LOG_LIMIT) || ''}`,
     );
 
-    const lines = text
+    const lines = (text || '')
       .split('\n')
       .map((l: string) => l.trim())
       .filter((l: string) => l.length > 0);
-    let parsedRows: ParsedRow[] = this.extractTransactions(lines);
+    if (parsedRows.length === 0) {
+      parsedRows = this.extractTransactions(lines);
+    }
 
     if (parsedRows.length === 0 && this.statementAiParserService.isEnabled()) {
       this.logger.warn(
@@ -235,18 +299,27 @@ export class PdfUploadService {
         this.logger.warn(
           'AI inline capacity is exhausted. Deferring PDF statement extraction to the queue.',
         );
-        return this.pdfAiQueueService.enqueueAiTextJob({
-          text,
-          businessId,
-          userId,
-          fingerprint,
-          autoCategorize,
-        });
+          return this.pdfAiQueueService.enqueueAiTextJob({
+            text: text || '',
+            pdfBase64: fileBuffer.toString('base64'),
+            businessId,
+            userId,
+            fingerprint,
+            autoCategorize,
+          });
       }
 
       try {
         parsedRows =
-          await this.statementAiParserService.extractTransactionsFromText(text);
+          await this.statementAiParserService.extractTransactionsFromText(
+            text || '',
+          );
+        if (parsedRows.length === 0) {
+          parsedRows = await this.tryDirectPdfAiFallback(
+            fileBuffer,
+            'OCR/plain-text AI extraction found 0 transaction rows',
+          );
+        }
       } finally {
         await this.pdfAiQueueService.releaseInlineCapacity();
       }

@@ -57,6 +57,8 @@ const JOB_QUEUE_KEY = 'mytrackr:finance:pdf-ai-jobs:queue';
 const AI_INFLIGHT_KEY = 'mytrackr:finance:pdf-ai:inflight';
 const FINGERPRINT_KEY_PREFIX = 'mytrackr:finance:pdf-ai:fingerprint:';
 const JOB_TTL_SECONDS = 60 * 60 * 24 * 30;
+const PDF_PAYLOAD_KEY_PREFIX = 'mytrackr:finance:pdf-ai-payload:';
+const PDF_PAYLOAD_TTL_SECONDS = 60 * 60 * 24;
 
 @Injectable()
 export class PdfAiQueueService implements OnModuleInit, OnModuleDestroy {
@@ -147,6 +149,7 @@ export class PdfAiQueueService implements OnModuleInit, OnModuleDestroy {
 
   async enqueueAiTextJob(payload: {
     text: string;
+    pdfBase64?: string;
     businessId: string;
     userId: string;
     fingerprint: string;
@@ -165,7 +168,7 @@ export class PdfAiQueueService implements OnModuleInit, OnModuleDestroy {
       updatedAt: now,
     };
 
-    await this.redis
+    const pipeline = this.redis
       .multi()
       .set(this.getJobKey(job.id), JSON.stringify(job), 'EX', JOB_TTL_SECONDS)
       .set(
@@ -174,8 +177,18 @@ export class PdfAiQueueService implements OnModuleInit, OnModuleDestroy {
         'EX',
         JOB_TTL_SECONDS,
       )
-      .rpush(JOB_QUEUE_KEY, job.id)
-      .exec();
+      .rpush(JOB_QUEUE_KEY, job.id);
+
+    if (payload.pdfBase64) {
+      pipeline.set(
+        this.getPdfPayloadKey(job.id),
+        payload.pdfBase64,
+        'EX',
+        PDF_PAYLOAD_TTL_SECONDS,
+      );
+    }
+
+    await pipeline.exec();
 
     return {
       jobId: job.id,
@@ -318,10 +331,22 @@ export class PdfAiQueueService implements OnModuleInit, OnModuleDestroy {
       await this.writeJob(record);
 
       try {
-        const parsedRows =
+        const pdfBase64 = await this.redis.get(this.getPdfPayloadKey(record.id));
+        let parsedRows =
           await this.statementAiParserService.extractTransactionsFromText(
             record.text,
           );
+
+        if (
+          parsedRows.length === 0 &&
+          pdfBase64 &&
+          this.statementAiParserService.supportsDirectPdfInput()
+        ) {
+          parsedRows =
+            await this.statementAiParserService.extractTransactionsFromPdf(
+              Buffer.from(pdfBase64, 'base64'),
+            );
+        }
 
         if (parsedRows.length === 0) {
           record.status = 'failed';
@@ -329,6 +354,7 @@ export class PdfAiQueueService implements OnModuleInit, OnModuleDestroy {
             'AI extraction completed but no transactions could be detected.';
           record.updatedAt = new Date().toISOString();
           await this.writeJob(record);
+          await this.redis.del(this.getPdfPayloadKey(record.id));
           return;
         }
 
@@ -358,11 +384,13 @@ export class PdfAiQueueService implements OnModuleInit, OnModuleDestroy {
         };
         record.updatedAt = new Date().toISOString();
         await this.writeJob(record);
+        await this.redis.del(this.getPdfPayloadKey(record.id));
       } catch (error: any) {
         record.status = 'failed';
         record.error = error?.message || String(error);
         record.updatedAt = new Date().toISOString();
         await this.writeJob(record);
+        await this.redis.del(this.getPdfPayloadKey(record.id));
         this.logger.warn(
           `Queued PDF AI extraction failed for job ${record.id}: ${record.error}`,
         );
@@ -392,6 +420,10 @@ export class PdfAiQueueService implements OnModuleInit, OnModuleDestroy {
 
   private getFingerprintKey(businessId: string, fingerprint: string): string {
     return `${FINGERPRINT_KEY_PREFIX}${businessId}:${fingerprint}`;
+  }
+
+  private getPdfPayloadKey(jobId: string): string {
+    return `${PDF_PAYLOAD_KEY_PREFIX}${jobId}`;
   }
 
   private async readJob(jobId: string): Promise<PdfAiJobRecord | null> {

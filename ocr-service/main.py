@@ -16,7 +16,7 @@ app = FastAPI(title="MyTrackr OCR Service", version="3.0.0")
 
 MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
 OCR_TIMEOUT_SECONDS = 120
-OCR_TEXT_HANDLING_FLAG = os.getenv("OCR_TEXT_HANDLING_FLAG", "--redo-ocr")
+OCR_TEXT_HANDLING_FLAG = os.getenv("OCR_TEXT_HANDLING_FLAG", "--force-ocr")
 EXTRACTED_TEXT_LOG_LIMIT = 4000
 OCR_MAX_WORKERS = max(1, int(os.getenv("OCR_MAX_WORKERS", "1")))
 
@@ -29,7 +29,7 @@ def get_ocrmypdf_args() -> list[str]:
     ]
 
     # OCRmyPDF rejects redo mode when paired with cleanup flags like --deskew
-    # and --clean-final. Keep those for skip/force modes only.
+    # and --clean-final. Keep those for force/skip modes only.
     if OCR_TEXT_HANDLING_FLAG not in {"--redo-ocr", "--mode", "redo"}:
         args.extend(
             [

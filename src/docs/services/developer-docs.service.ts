@@ -50,7 +50,7 @@ export class DeveloperDocsService {
       swaggerJsonUrl: `${baseUrl}/swagger-json`,
       steps: this.getSteps(),
       prerequisites: [
-        'The business owner must have an active Web or Unlimited subscription.',
+        'The business owner must have an active Web, Solo, Duo, or Unlimited subscription.',
         'Create the integration while authenticated with the normal app session cookie.',
         'Store the returned apiKey immediately. It is shown once.',
         'Use x-mytrackr-api-key for server-to-server requests after creation.',
@@ -94,7 +94,7 @@ export class DeveloperDocsService {
     return [
       {
         title: '1. Subscribe to the right plan',
-        body: 'Website integrations only work for accounts on the Web or Unlimited plan.',
+        body: 'Website integrations work for accounts on the Web, Solo, Duo, or Unlimited plan.',
       },
       {
         title: '2. Create the integration',
@@ -123,7 +123,7 @@ export class DeveloperDocsService {
         auth: 'Session cookie',
         summary: 'Create a website integration and receive an API key.',
         notes: [
-          'Requires an active Web or Unlimited subscription.',
+          'Requires an active Web, Solo, Duo, or Unlimited subscription.',
           'The apiKey is shown once and should be stored securely.',
         ],
         requestExample: this.json({

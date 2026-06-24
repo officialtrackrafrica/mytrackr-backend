@@ -47,7 +47,12 @@ import {
   IntegrationBillingStatus,
 } from '../entities/integration.entity';
 
-const WEBSITE_INTEGRATION_ALLOWED_PLAN_SLUGS = new Set(['web', 'unlimited']);
+const WEBSITE_INTEGRATION_ALLOWED_PLAN_SLUGS = new Set([
+  'web',
+  'solo',
+  'duo',
+  'unlimited',
+]);
 
 @Injectable()
 export class IntegrationsService {
@@ -1110,7 +1115,7 @@ export class IntegrationsService {
 
     if (!subscription?.plan) {
       throw new ForbiddenException(
-        'Website integrations require an active Web or Unlimited subscription plan.',
+        'Website integrations require an active Web, Solo, Duo, or Unlimited subscription plan.',
       );
     }
 
@@ -1119,7 +1124,7 @@ export class IntegrationsService {
       subscription.currentPeriodEnd < new Date()
     ) {
       throw new ForbiddenException(
-        'Your subscription has expired. Renew a Web or Unlimited plan to use website integrations.',
+        'Your subscription has expired. Renew an eligible plan to use website integrations.',
       );
     }
 
@@ -1129,7 +1134,7 @@ export class IntegrationsService {
       !WEBSITE_INTEGRATION_ALLOWED_PLAN_SLUGS.has(normalizedPlanSlug)
     ) {
       throw new ForbiddenException(
-        'Website integrations require a Web or Unlimited subscription plan.',
+        'Website integrations require a Web, Solo, Duo, or Unlimited subscription plan.',
       );
     }
 

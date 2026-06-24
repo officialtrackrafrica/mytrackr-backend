@@ -24,6 +24,12 @@ export class CreateIntegrationDto {
   @IsEnum(IntegrationPlatform)
   platform: IntegrationPlatform;
 
+  // Accepted for backward compatibility with older clients. It is not part of
+  // the public API contract and is intentionally omitted from Swagger.
+  @IsOptional()
+  @IsString()
+  planSlug?: string;
+
   @ApiPropertyOptional({
     type: [String],
     example: ['https://example.com', 'https://app.example.com'],

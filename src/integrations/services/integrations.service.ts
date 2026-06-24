@@ -92,8 +92,9 @@ export class IntegrationsService {
     const business = await this.businessService.getBusinessForUser(userId);
     const appSubscription = await this.getWebsiteIntegrationSubscription(userId);
     const apiKey = this.generateSecretKey();
+    const { planSlug: _deprecatedPlanSlug, ...integrationDto } = dto;
     const integration = this.integrationRepository.create({
-      ...dto,
+      ...integrationDto,
       user: { id: userId } as any,
       business,
       plan: null,

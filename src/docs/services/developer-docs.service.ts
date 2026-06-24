@@ -124,7 +124,6 @@ export class DeveloperDocsService {
         summary: 'Create a website integration and receive an API key.',
         notes: [
           'Requires an active Web or Unlimited subscription.',
-          'planSlug is deprecated and should be omitted.',
           'The apiKey is shown once and should be stored securely.',
         ],
         requestExample: this.json({

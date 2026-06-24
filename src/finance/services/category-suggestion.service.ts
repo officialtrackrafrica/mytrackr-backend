@@ -35,12 +35,6 @@ interface ChatCompletionsApiResult {
   }>;
 }
 
-interface OllamaChatApiResult {
-  message?: {
-    content?: string;
-  };
-}
-
 interface GoogleGenerateContentResult {
   candidates?: Array<{
     content?: {
@@ -68,18 +62,17 @@ export class CategorySuggestionService {
     this.aiApiKey =
       this.configService.get<string>('CATEGORY_SUGGESTION_AI_API_KEY') ||
       this.configService.get<string>('STATEMENT_AI_API_KEY') ||
-      this.configService.get<string>('GROQ_API_KEY') ||
-      'ollama';
+      this.configService.get<string>('GROQ_API_KEY');
     this.aiBaseUrl =
       this.configService.get<string>('CATEGORY_SUGGESTION_AI_BASE_URL') ||
       this.configService.get<string>('STATEMENT_AI_BASE_URL') ||
       this.configService.get<string>('GROQ_BASE_URL') ||
-      'http://ollama:11434/v1';
+      '';
     this.aiModel =
       this.configService.get<string>('CATEGORY_SUGGESTION_AI_MODEL') ||
       this.configService.get<string>('STATEMENT_AI_MODEL') ||
       this.configService.get<string>('GROQ_MODEL') ||
-      'phi3:mini';
+      '';
     this.aiTemperature = this.getNumberConfig(
       'CATEGORY_SUGGESTION_AI_TEMPERATURE',
       0.1,
@@ -205,81 +198,31 @@ export class CategorySuggestionService {
       return this.callGoogleAi(systemPrompt, userPrompt);
     }
 
-    try {
-      const response = await axios.post<ChatCompletionsApiResult>(
-        this.resolveOpenAiCompatibleEndpoint(),
-        {
-          model: this.aiModel,
-          temperature: this.aiTemperature,
-          top_p: this.aiTopP,
-          response_format: { type: 'json_object' },
-          messages: [
-            {
-              role: 'system',
-              content: systemPrompt,
-            },
-            {
-              role: 'user',
-              content: userPrompt,
-            },
-          ],
-        },
-        {
-          headers,
-          timeout: this.aiTimeoutMs,
-        },
-      );
-
-      return response.data;
-    } catch (error: any) {
-      if (!this.shouldRetryWithOllamaNative(error)) {
-        throw error;
-      }
-
-      this.logger.warn(
-        `OpenAI-compatible AI endpoint returned 404. Retrying with Ollama native chat API at ${this.resolveOllamaNativeEndpoint()}.`,
-      );
-
-      const response = await axios.post<OllamaChatApiResult>(
-        this.resolveOllamaNativeEndpoint(),
-        {
-          model: this.aiModel,
-          stream: false,
-          format: 'json',
-          options: {
-            temperature: this.aiTemperature,
-            top_p: this.aiTopP,
-          },
-          messages: [
-            {
-              role: 'system',
-              content: systemPrompt,
-            },
-            {
-              role: 'user',
-              content: userPrompt,
-            },
-          ],
-        },
-        {
-          headers,
-          timeout: this.aiTimeoutMs,
-        },
-      );
-
-      return {
-        choices: [
+    const response = await axios.post<ChatCompletionsApiResult>(
+      this.resolveOpenAiCompatibleEndpoint(),
+      {
+        model: this.aiModel,
+        temperature: this.aiTemperature,
+        top_p: this.aiTopP,
+        response_format: { type: 'json_object' },
+        messages: [
           {
-            message: {
-              content:
-                typeof response.data?.message?.content === 'string'
-                  ? response.data.message.content
-                  : '',
-            },
+            role: 'system',
+            content: systemPrompt,
+          },
+          {
+            role: 'user',
+            content: userPrompt,
           },
         ],
-      };
-    }
+      },
+      {
+        headers,
+        timeout: this.aiTimeoutMs,
+      },
+    );
+
+    return response.data;
   }
 
   private async callGoogleAi(
@@ -472,14 +415,6 @@ export class CategorySuggestionService {
     return outputText.slice(start, end + 1).trim();
   }
 
-  private shouldRetryWithOllamaNative(error: unknown): boolean {
-    return (
-      axios.isAxiosError(error) &&
-      error.response?.status === 404 &&
-      !this.isExplicitEndpoint(this.aiBaseUrl)
-    );
-  }
-
   private resolveOpenAiCompatibleEndpoint(): string {
     const baseUrl = this.aiBaseUrl.replace(/\/+$/, '');
     if (this.isExplicitEndpoint(baseUrl)) {
@@ -500,14 +435,8 @@ export class CategorySuggestionService {
     return `${baseUrl}/models/${this.aiModel}:generateContent`;
   }
 
-  private resolveOllamaNativeEndpoint(): string {
-    const baseUrl = this.aiBaseUrl.replace(/\/+$/, '');
-    const withoutV1 = baseUrl.replace(/\/v1$/i, '');
-    return `${withoutV1}/api/chat`;
-  }
-
   private isExplicitEndpoint(url: string): boolean {
-    return /\/(?:chat\/completions|api\/chat)$/i.test(url);
+    return /\/chat\/completions$/i.test(url);
   }
 
   private isGoogleAiStudioBaseUrl(): boolean {

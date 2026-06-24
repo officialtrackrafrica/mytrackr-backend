@@ -17,12 +17,6 @@ interface ChatCompletionsApiResult {
   }>;
 }
 
-interface OllamaChatApiResult {
-  message?: {
-    content?: string;
-  };
-}
-
 interface GoogleGenerateContentResult {
   candidates?: Array<{
     content?: {
@@ -46,16 +40,15 @@ export class StatementAiParserService {
   constructor(private readonly configService: ConfigService) {
     this.statementAiApiKey =
       this.configService.get<string>('STATEMENT_AI_API_KEY') ||
-      this.configService.get<string>('GROQ_API_KEY') ||
-      'ollama';
+      this.configService.get<string>('GROQ_API_KEY');
     this.statementAiBaseUrl =
       this.configService.get<string>('STATEMENT_AI_BASE_URL') ||
       this.configService.get<string>('GROQ_BASE_URL') ||
-      'http://ollama:11434/v1';
+      '';
     this.statementAiModel =
       this.configService.get<string>('STATEMENT_AI_MODEL') ||
       this.configService.get<string>('GROQ_MODEL') ||
-      'phi3:mini';
+      '';
     this.statementAiTemperature = this.getNumberConfig(
       'STATEMENT_AI_TEMPERATURE',
       0,
@@ -171,72 +164,31 @@ export class StatementAiParserService {
       return this.callGoogleAiStudio(systemPrompt, text);
     }
 
-    try {
-      const response = await axios.post<ChatCompletionsApiResult>(
-        this.resolveOpenAiCompatibleEndpoint(),
-        {
-          model: this.statementAiModel,
-          temperature: this.statementAiTemperature,
-          top_p: this.statementAiTopP,
-          response_format: { type: 'json_object' },
-          messages: [
-            {
-              role: 'system',
-              content: systemPrompt,
-            },
-            {
-              role: 'user',
-              content: text,
-            },
-          ],
-        },
-        {
-          headers,
-          timeout: this.statementAiTimeoutMs,
-        },
-      );
-
-      return this.extractOpenAiContent(response.data);
-    } catch (error: any) {
-      if (!this.shouldRetryWithOllamaNative(error)) {
-        throw error;
-      }
-
-      this.logger.warn(
-        `OpenAI-compatible AI endpoint returned 404. Retrying with Ollama native chat API at ${this.resolveOllamaNativeEndpoint()}.`,
-      );
-
-      const response = await axios.post<OllamaChatApiResult>(
-        this.resolveOllamaNativeEndpoint(),
-        {
-          model: this.statementAiModel,
-          stream: false,
-          format: 'json',
-          options: {
-            temperature: this.statementAiTemperature,
-            top_p: this.statementAiTopP,
+    const response = await axios.post<ChatCompletionsApiResult>(
+      this.resolveOpenAiCompatibleEndpoint(),
+      {
+        model: this.statementAiModel,
+        temperature: this.statementAiTemperature,
+        top_p: this.statementAiTopP,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: systemPrompt,
           },
-          messages: [
-            {
-              role: 'system',
-              content: systemPrompt,
-            },
-            {
-              role: 'user',
-              content: text,
-            },
-          ],
-        },
-        {
-          headers,
-          timeout: this.statementAiTimeoutMs,
-        },
-      );
+          {
+            role: 'user',
+            content: text,
+          },
+        ],
+      },
+      {
+        headers,
+        timeout: this.statementAiTimeoutMs,
+      },
+    );
 
-      return typeof response.data?.message?.content === 'string'
-        ? response.data.message.content.trim()
-        : '';
-    }
+    return this.extractOpenAiContent(response.data);
   }
 
   private async callGoogleAiStudio(
@@ -404,14 +356,6 @@ export class StatementAiParserService {
         : '';
   }
 
-  private shouldRetryWithOllamaNative(error: unknown): boolean {
-    return (
-      axios.isAxiosError(error) &&
-      error.response?.status === 404 &&
-      !this.isExplicitEndpoint(this.statementAiBaseUrl)
-    );
-  }
-
   private describeRequestError(error: unknown): string {
     if (axios.isAxiosError(error)) {
       const status = error.response?.status;
@@ -454,14 +398,8 @@ export class StatementAiParserService {
     return `${baseUrl}/models/${this.statementAiModel}:generateContent`;
   }
 
-  private resolveOllamaNativeEndpoint(): string {
-    const baseUrl = this.statementAiBaseUrl.replace(/\/+$/, '');
-    const withoutV1 = baseUrl.replace(/\/v1$/i, '');
-    return `${withoutV1}/api/chat`;
-  }
-
   private isExplicitEndpoint(url: string): boolean {
-    return /\/(?:chat\/completions|api\/chat)$/i.test(url);
+    return /\/chat\/completions$/i.test(url);
   }
 
   private isGoogleAiStudioBaseUrl(): boolean {

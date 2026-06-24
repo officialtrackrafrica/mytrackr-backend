@@ -24,16 +24,6 @@ export class CreateIntegrationDto {
   @IsEnum(IntegrationPlatform)
   platform: IntegrationPlatform;
 
-  @ApiProperty({
-    description:
-      'Deprecated. Website integrations now use the customer app subscription plan.',
-    example: 'web',
-    required: false,
-  })
-  @IsOptional()
-  @IsString()
-  planSlug?: string;
-
   @ApiPropertyOptional({
     type: [String],
     example: ['https://example.com', 'https://app.example.com'],

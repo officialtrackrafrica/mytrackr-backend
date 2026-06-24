@@ -21,12 +21,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards';
-import { Action } from '../../casl/action.enum';
-import { AppAbility } from '../../casl/casl-ability.factory';
-import { CheckPolicies } from '../../casl/decorators/check-policies.decorator';
-import { PoliciesGuard } from '../../casl/guards/policies.guard';
 import { SWAGGER_TAGS } from '../../common/docs';
-import { UpdatePlanPriceDto } from '../../payments/dto/subscription.dto';
 import {
   CreateIntegrationEventDto,
   IntegrationEventIngestResponseDto,
@@ -44,7 +39,6 @@ import {
   CreatedIntegrationResponseDto,
   IntegrationCheckoutResponseDto,
   IntegrationMessageResponseDto,
-  IntegrationPlanResponseDto,
   IntegrationResponseDto,
   PublicIntegrationConfigDto,
   UpdateIntegrationDto,
@@ -56,28 +50,6 @@ import { IntegrationsService } from '../services/integrations.service';
 @Controller('integrations')
 export class IntegrationsController {
   constructor(private readonly integrationsService: IntegrationsService) {}
-
-  @Get('plans')
-  @ApiOperation({ summary: 'List API-key pricing plans for integrations' })
-  @ApiResponse({ status: 200, type: [IntegrationPlanResponseDto] })
-  async getPlans() {
-    return this.integrationsService.getPlans();
-  }
-
-  @UseGuards(JwtAuthGuard, PoliciesGuard)
-  @Patch('plans/:id/price')
-  @ApiCookieAuth('accessToken')
-  @ApiParam({ name: 'id', description: 'Integration pricing plan ID' })
-  @ApiOperation({ summary: 'Update an integration API-key plan price' })
-  @ApiBody({ type: UpdatePlanPriceDto })
-  @ApiResponse({ status: 200, type: IntegrationPlanResponseDto })
-  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
-  async updatePlanPrice(
-    @Param('id') id: string,
-    @Body() dto: UpdatePlanPriceDto,
-  ) {
-    return this.integrationsService.updatePlanPrice(id, dto.price);
-  }
 
   @UseGuards(JwtAuthGuard)
   @ApiCookieAuth('accessToken')

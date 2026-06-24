@@ -13,7 +13,7 @@ import { Throttle } from '@nestjs/throttler';
 
 interface ExpressResponse {
   cookie(name: string, value: string, options: Record<string, unknown>): this;
-  clearCookie(name: string): this;
+  clearCookie(name: string, options?: Record<string, unknown>): this;
   redirect(url: string): void;
 }
 import {
@@ -41,17 +41,21 @@ import { AuthError } from '../../common/errors';
 import { SWAGGER_TAGS } from '../../common/docs';
 import { GoogleAuthGuard, JwtAuthGuard } from '../guards';
 
-const COOKIE_OPTS_ACCESS = {
+// The frontend may be hosted on a different site from the API. Cross-site
+// credentialed browser requests require SameSite=None and Secure cookies.
+const COOKIE_BASE_OPTIONS = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax' as const,
+  secure: true,
+  sameSite: 'none' as const,
+};
+
+const COOKIE_OPTS_ACCESS = {
+  ...COOKIE_BASE_OPTIONS,
   maxAge: 15 * 60 * 1000,
 };
 
 const COOKIE_OPTS_REFRESH = {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax' as const,
+  ...COOKIE_BASE_OPTIONS,
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
 
@@ -72,8 +76,8 @@ function setCookies(
 }
 
 function clearCookies(res: ExpressResponse) {
-  res.clearCookie('accessToken');
-  res.clearCookie('refreshToken');
+  res.clearCookie('accessToken', COOKIE_BASE_OPTIONS);
+  res.clearCookie('refreshToken', COOKIE_BASE_OPTIONS);
 }
 
 @ApiTags(SWAGGER_TAGS[1].name)

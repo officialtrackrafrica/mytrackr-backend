@@ -20,7 +20,8 @@ export class Subscription {
   @ManyToOne(() => Plan)
   plan: Plan;
 
-  @Column({ default: 'active' })
+  // A subscription only becomes active after a successful payment webhook.
+  @Column({ default: 'pending' })
   status: string;
   @Column({ type: 'varchar', nullable: true })
   gatewaySubscriptionId: string;

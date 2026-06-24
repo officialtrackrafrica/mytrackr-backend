@@ -90,10 +90,9 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     const sub = await this.activateScheduledSubscriptionIfDue(userId);
 
     if (!sub) {
-      const freePlan = await this.getFallbackBasicPlan();
       return {
         hasActiveSubscription: false,
-        activePlan: freePlan || null,
+        activePlan: null,
         expiresAt: null,
       };
     }
@@ -103,10 +102,9 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       sub.status = 'past_due';
       await this.subRepository.save(sub);
 
-      const freePlan = await this.getFallbackBasicPlan();
       return {
         hasActiveSubscription: false,
-        activePlan: freePlan || null,
+        activePlan: null,
         expiresAt: null,
       };
     }
@@ -842,16 +840,8 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
 
   private async getIncludedBankAccountLimit(userId: string): Promise<number> {
     const { activePlan } = await this.getUserSubscriptionStatus(userId);
-    const planSlug = normalizePlanSlug(activePlan) || 'starter';
+    const planSlug = normalizePlanSlug(activePlan) || 'basic';
     return BANK_ACCOUNT_LIMIT_BY_PLAN[planSlug];
-  }
-
-  private async getFallbackBasicPlan(): Promise<Plan | null> {
-    return (
-      (await this.planRepository.findOne({ where: { slug: 'starter' } })) ||
-      (await this.planRepository.findOne({ where: { slug: 'basic' } })) ||
-      (await this.planRepository.findOne({ where: { slug: 'free' } }))
-    );
   }
 
   private resolveCheckoutPlanSlug(

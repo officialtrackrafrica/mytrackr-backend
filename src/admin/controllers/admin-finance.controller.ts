@@ -1,9 +1,19 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import {
-  ApiTags,
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiBody,
+  ApiCookieAuth,
   ApiOperation,
   ApiResponse,
-  ApiCookieAuth,
+  ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards';
 import { PoliciesGuard } from '../../casl/guards/policies.guard';
@@ -13,6 +23,11 @@ import { Action } from '../../casl/action.enum';
 import { AdminFinanceService } from '../services/admin-finance.service';
 import { AdminAuditService } from '../services/admin-audit.service';
 import { TransactionQueryDto, DashboardQueryDto } from '../dto';
+import {
+  PlanResponseDto,
+  UpdatePlanPriceDto,
+} from '../../payments/dto/subscription.dto';
+import { SubscriptionService } from '../../payments/services/subscription.service';
 
 @ApiTags('Admin - Finance & Subscriptions')
 @ApiCookieAuth('accessToken')
@@ -22,6 +37,7 @@ export class AdminFinanceController {
   constructor(
     private readonly financeService: AdminFinanceService,
     private readonly auditService: AdminAuditService,
+    private readonly subscriptionService: SubscriptionService,
   ) {}
 
   @Get('transactions')
@@ -49,5 +65,17 @@ export class AdminFinanceController {
   })
   async getFinancialSummary(@Query() query: DashboardQueryDto) {
     return this.financeService.getFinancialSummary(query.period);
+  }
+
+  @Patch('subscription-plans/:id/price')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({ summary: 'Update a subscription plan price' })
+  @ApiBody({ type: UpdatePlanPriceDto })
+  @ApiResponse({ status: 200, type: PlanResponseDto })
+  async updateSubscriptionPlanPrice(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdatePlanPriceDto,
+  ) {
+    return this.subscriptionService.updatePlanPrice(id, dto.price);
   }
 }

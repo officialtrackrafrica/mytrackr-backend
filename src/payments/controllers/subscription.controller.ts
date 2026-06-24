@@ -5,9 +5,6 @@ import {
   Body,
   Req,
   UseGuards,
-  Patch,
-  Param,
-  ParseUUIDPipe,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -20,7 +17,6 @@ import { JwtAuthGuard } from '../../auth/guards';
 import { SubscriptionService } from '../services/subscription.service';
 import {
   InitializeSubscriptionDto,
-  UpdatePlanPriceDto,
   PlanResponseDto,
   SubscriptionStatusResponseDto,
   SubscriptionInitResponseDto,
@@ -29,10 +25,6 @@ import {
   StoreBillingCardDto,
   BillingCardMetadataDto,
 } from '../dto/subscription.dto';
-import { PoliciesGuard } from '../../casl/guards/policies.guard';
-import { CheckPolicies } from '../../casl/decorators/check-policies.decorator';
-import { AppAbility } from '../../casl/casl-ability.factory';
-import { Action } from '../../casl/action.enum';
 import { SWAGGER_TAGS } from '../../common/docs';
 import { ErrorResponseDto } from '../../common/errors';
 
@@ -215,32 +207,4 @@ export class SubscriptionController {
     return this.subscriptionService.cancelSubscription(req.user.id);
   }
 
-  @UseGuards(JwtAuthGuard, PoliciesGuard)
-  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
-  @Patch('plans/:id/price')
-  @ApiOperation({
-    summary: 'Update the price of a subscription plan (Admin only)',
-  })
-  @ApiBody({ type: UpdatePlanPriceDto })
-  @ApiResponse({
-    status: 200,
-    description: 'The updated plan',
-    type: PlanResponseDto,
-  })
-  @ApiResponse({
-    status: 403,
-    description: 'Admin privileges required',
-    type: ErrorResponseDto,
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Plan not found',
-    type: ErrorResponseDto,
-  })
-  async updatePlanPrice(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdatePlanPriceDto,
-  ) {
-    return this.subscriptionService.updatePlanPrice(id, dto.price);
-  }
 }

@@ -22,6 +22,7 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards';
 import { SWAGGER_TAGS } from '../../common/docs';
+import { PlanResponseDto } from '../../payments/dto/subscription.dto';
 import {
   CreateIntegrationEventDto,
   IntegrationEventIngestResponseDto,
@@ -50,6 +51,15 @@ import { IntegrationsService } from '../services/integrations.service';
 @Controller('integrations')
 export class IntegrationsController {
   constructor(private readonly integrationsService: IntegrationsService) {}
+
+  @Get('plans')
+  @ApiOperation({
+    summary: 'List subscription plans that support website integrations',
+  })
+  @ApiResponse({ status: 200, type: [PlanResponseDto] })
+  async getWebsiteIntegrationPlans() {
+    return this.integrationsService.getWebsiteIntegrationPlans();
+  }
 
   @UseGuards(JwtAuthGuard)
   @ApiCookieAuth('accessToken')
@@ -93,7 +103,7 @@ export class IntegrationsController {
   @ApiParam({ name: 'id', description: 'Integration ID' })
   @ApiOperation({
     summary:
-      'Deprecated checkout endpoint for integration API keys. Website integrations now use app subscriptions.',
+      'Confirm website-integration subscription access or start Web plan checkout',
   })
   @ApiResponse({ status: 201, type: IntegrationCheckoutResponseDto })
   async initializeCheckout(@Req() req: any, @Param('id') id: string) {

@@ -112,11 +112,45 @@ export class IntegrationResponseDto {
 }
 
 export class IntegrationCheckoutResponseDto {
-  @ApiProperty({ example: 'https://checkout.paystack.com/xxx' })
-  authorizationUrl: string;
+  @ApiProperty({ example: false })
+  hasActiveSubscription: boolean;
 
-  @ApiProperty({ example: 'int_ab12cd34' })
-  reference: string;
+  @ApiProperty({
+    example:
+      'A Web subscription is required for website integrations. Complete payment to activate access.',
+  })
+  message: string;
+
+  @ApiPropertyOptional({ example: 'web' })
+  targetPlanSlug?: string;
+
+  @ApiPropertyOptional({
+    example: {
+      id: 'plan-uuid',
+      name: 'Unlimited',
+      slug: 'unlimited',
+      price: 5500,
+      currency: 'NGN',
+      interval: 'monthly',
+    },
+  })
+  plan?: {
+    id: string;
+    name: string;
+    slug: string;
+    price: number;
+    currency: string;
+    interval: string;
+  };
+
+  @ApiProperty({
+    example: 'https://checkout.paystack.com/xxx',
+    nullable: true,
+  })
+  authorizationUrl: string | null;
+
+  @ApiProperty({ example: 'sub_ab12cd34', nullable: true })
+  reference: string | null;
 }
 
 export class IntegrationPlanResponseDto {

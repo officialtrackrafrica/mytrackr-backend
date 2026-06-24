@@ -7,7 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { User } from '../../auth/entities/user.entity';
 import { BusinessService } from '../../business/services/business.service';
 import { EncryptionService } from '../../security/encryption.service';
@@ -20,6 +20,7 @@ import { PaymentTransaction } from '../../payments/entities/payment-transaction.
 import { Plan } from '../../payments/entities/plan.entity';
 import { Subscription } from '../../payments/entities/subscription.entity';
 import { PaymentFactoryService } from '../../payments/services/payment-factory.service';
+import { SubscriptionService } from '../../payments/services/subscription.service';
 import { normalizePlanSlug } from '../../common/access-control/plan-entitlements';
 import { IntegrationWebhookService } from './integration-webhook.service';
 import {
@@ -71,28 +72,20 @@ export class IntegrationsService {
     private readonly paystackConnectionRepository: Repository<PaystackConnection>,
     private readonly businessService: BusinessService,
     private readonly paymentFactory: PaymentFactoryService,
+    private readonly subscriptionService: SubscriptionService,
     private readonly configService: ConfigService,
     private readonly encryptionService: EncryptionService,
     private readonly integrationWebhookService: IntegrationWebhookService,
   ) {}
 
-  async getPlans() {
-    return this.integrationPlanRepository.find({
-      where: { isActive: true },
+  async getWebsiteIntegrationPlans() {
+    return this.planRepository.find({
+      where: {
+        isActive: true,
+        slug: In([...WEBSITE_INTEGRATION_ALLOWED_PLAN_SLUGS]),
+      },
       order: { price: 'ASC' },
     });
-  }
-
-  async updatePlanPrice(planId: string, price: number) {
-    const plan = await this.integrationPlanRepository.findOne({
-      where: { id: planId },
-    });
-    if (!plan) {
-      throw new NotFoundException('Integration API-key pricing plan not found');
-    }
-
-    plan.price = price;
-    return this.integrationPlanRepository.save(plan);
   }
 
   async create(userId: string, dto: CreateIntegrationDto) {
@@ -217,10 +210,44 @@ export class IntegrationsService {
   }
 
   async initializeCheckout(userId: string, id: string) {
-    await this.findOwnedIntegration(userId, id);
-    throw new BadRequestException(
-      'Website integrations no longer generate a separate payment link. Use an active Web or Unlimited subscription plan.',
+    const integration = await this.findOwnedIntegration(userId, id);
+
+    const subscription = await this.subscriptionRepository.findOne({
+      where: { user: { id: userId }, status: 'active' },
+      relations: ['plan'],
+      order: { createdAt: 'DESC' },
+    });
+    const normalizedPlanSlug = normalizePlanSlug(subscription?.plan);
+    const hasEligibleSubscription = Boolean(
+      subscription?.plan &&
+        (!subscription.currentPeriodEnd ||
+          subscription.currentPeriodEnd >= new Date()) &&
+        normalizedPlanSlug &&
+        WEBSITE_INTEGRATION_ALLOWED_PLAN_SLUGS.has(normalizedPlanSlug),
     );
+
+    if (hasEligibleSubscription) {
+      return {
+        hasActiveSubscription: true,
+        message: `You already have an active ${subscription!.plan.name} subscription with website integration access.`,
+        plan: subscription!.plan,
+        authorizationUrl: null,
+        reference: null,
+      };
+    }
+
+    const checkout = await this.subscriptionService.initializeSubscription(
+      integration.user,
+      { planSlug: 'web', interval: 'monthly' },
+    );
+
+    return {
+      hasActiveSubscription: false,
+      message:
+        'A Web subscription is required for website integrations. Complete payment to activate access.',
+      targetPlanSlug: 'web',
+      ...checkout,
+    };
   }
 
   async authenticateApiKey(apiKey: string) {
@@ -698,7 +725,7 @@ export class IntegrationsService {
   private async findOwnedIntegration(userId: string, id: string) {
     const integration = await this.integrationRepository.findOne({
       where: { id, user: { id: userId } },
-      relations: ['business', 'plan'],
+      relations: ['business', 'plan', 'user'],
     });
 
     if (!integration) {

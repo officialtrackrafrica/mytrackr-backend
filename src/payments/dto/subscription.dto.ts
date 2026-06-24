@@ -1,4 +1,13 @@
-import { IsIn, IsNotEmpty, IsNumber, IsOptional } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsBoolean,
+  IsIn,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class InitializeSubscriptionDto {
@@ -117,50 +126,81 @@ export class BillingHistoryItemDto {
 
 export class PaystackAuthorizationDto {
   @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
   authorization_code: string;
 
   @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   bin?: string;
 
   @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   last4?: string;
 
   @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   exp_month?: string;
 
   @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   exp_year?: string;
 
   @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   channel?: string;
 
   @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   card_type?: string;
 
   @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   bank?: string;
 
   @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   brand?: string;
 
   @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
   reusable?: boolean;
 
   @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   country_code?: string;
 
   @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   signature?: string;
 
   @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   account_name?: string;
 }
 
 export class StoreBillingCardDto {
   @ApiProperty({ type: PaystackAuthorizationDto })
+  @IsNotEmpty()
+  @ValidateNested()
+  @Type(() => PaystackAuthorizationDto)
   authorization: PaystackAuthorizationDto;
 
   @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   customerCode?: string;
 }
 

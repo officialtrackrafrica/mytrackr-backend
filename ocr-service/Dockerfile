@@ -1,5 +1,7 @@
 FROM jbarlow83/ocrmypdf:latest
 
+USER root
+
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y \

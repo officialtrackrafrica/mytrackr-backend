@@ -267,6 +267,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       amount: gatewayAmount,
       email: user.email,
       reference,
+      plan: plan.gatewayPlanId,
       metadata: {
         userId: user.id,
         planId: plan.id,

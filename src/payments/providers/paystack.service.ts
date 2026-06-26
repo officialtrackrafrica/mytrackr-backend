@@ -13,6 +13,8 @@ export class PaystackService implements IPaymentGateway {
   private readonly logger = new Logger(PaystackService.name);
   private readonly secretKey: string;
   private readonly baseUrl = 'https://api.paystack.co';
+  private readonly defaultCallbackUrl =
+    'https://mytrackr-frontend.vercel.app/dashboard';
 
   constructor(private configService: ConfigService) {
     const key = this.configService.get<string>('PAYSTACK_SECRET_KEY');
@@ -45,7 +47,9 @@ export class PaystackService implements IPaymentGateway {
           reference: payload.reference,
           plan: payload.plan,
           metadata: payload.metadata,
-          callback_url: this.configService.get<string>('PAYSTACK_CALLBACK_URL'),
+          callback_url:
+            this.configService.get<string>('PAYSTACK_CALLBACK_URL') ||
+            this.defaultCallbackUrl,
         }),
       });
 

@@ -10,6 +10,7 @@ import { JwtAuthGuard } from '../auth/guards';
 import { PlanGuard } from '../common/access-control/guards/plan.guard';
 import { RequirePlan } from '../common/access-control/decorators/require-plan.decorator';
 import { TaxService } from './services/tax.service';
+import { UserTaxDeductions } from './services/tax.service';
 import { TaxEstimateResponseDto } from './dto/tax.dto';
 import { SWAGGER_TAGS } from '../common/docs';
 import { AppException, ErrorResponseDto } from '../common/errors';
@@ -26,7 +27,7 @@ export class TaxController {
   @ApiOperation({
     summary: 'Calculate tax estimate',
     description:
-      "Calculates both PIT (sole proprietor) and CIT (LLC) for the current calendar month within the selected year, and also returns the accumulated calculation from January 1 to the end of the previous month in that same year when available.",
+      'Calculates both PIT (sole proprietor) and CIT (LLC) for the current calendar month within the selected year, and also returns the accumulated calculation from January 1 to the end of the previous month in that same year when available.',
   })
   @ApiQuery({
     name: 'year',
@@ -57,6 +58,7 @@ export class TaxController {
   })
   async getTaxEstimate(
     @Req() req: any,
+    @Query() query: Record<string, any>,
     @Query('year') year?: string,
     @Query('deductions') deductions?: string,
   ) {
@@ -71,7 +73,53 @@ export class TaxController {
     return this.taxService.calculateTaxEstimate(
       req.user.id,
       yearNumber,
-      deductions ? parseFloat(deductions) : 0,
+      this.parseDeductionsQuery(query, deductions),
     );
+  }
+
+  private parseDeductionsQuery(
+    query: Record<string, any>,
+    deductions?: string,
+  ): number | UserTaxDeductions {
+    if (deductions && typeof deductions !== 'object') {
+      const parsed = parseFloat(deductions);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    const expandedDeductions =
+      deductions && typeof deductions === 'object'
+        ? (deductions as Record<string, unknown>)
+        : {};
+
+    const structuredDeductions: UserTaxDeductions = {
+      healthInsurance: this.parseMoney(
+        expandedDeductions.healthInsurance ??
+          query['deductions[healthInsurance]'],
+      ),
+      lifeInsurance: this.parseMoney(
+        expandedDeductions.lifeInsurance ?? query['deductions[lifeInsurance]'],
+      ),
+      pension: this.parseMoney(
+        expandedDeductions.pension ?? query['deductions[pension]'],
+      ),
+      housingFund: this.parseMoney(
+        expandedDeductions.housingFund ?? query['deductions[housingFund]'],
+      ),
+      rent: this.parseMoney(
+        expandedDeductions.rent ?? query['deductions[rent]'],
+      ),
+      extra: this.parseMoney(
+        expandedDeductions.extra ?? query['deductions[extra]'],
+      ),
+    };
+
+    return Object.values(structuredDeductions).some((value) => value > 0)
+      ? structuredDeductions
+      : 0;
+  }
+
+  private parseMoney(value: unknown): number {
+    const parsed = parseFloat(String(value ?? '0'));
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
   }
 }

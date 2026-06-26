@@ -25,7 +25,8 @@ export class TaxBandBreakdownDto {
 
 export class PitCalculationDto {
   @ApiProperty({
-    description: 'Profit remaining after deductions and consolidated relief allowance',
+    description:
+      'Profit remaining after deductions and consolidated relief allowance',
     example: 2600000,
   })
   chargeableIncome: number;
@@ -42,6 +43,11 @@ export class PitCalculationDto {
   })
   estimatedAnnualTax: number;
 
+  @ApiProperty({
+    description: 'Estimated monthly amount to set aside for PIT',
+    example: 50250,
+  })
+  estimatedMonthlySetAside: number;
 
   @ApiProperty({
     description: 'Minimum tax floor used in the estimate',
@@ -99,7 +105,6 @@ export class CitCalculationDto {
   })
   estimatedAnnualTax: number;
 
-
   @ApiProperty({
     description: 'Whether the company is exempt from CIT based on the rule set',
     example: false,
@@ -152,7 +157,10 @@ export class DeductionsDto {
   })
   lifeInsurance: number;
 
-  @ApiProperty({ description: 'Total pension deductions found', example: 300000 })
+  @ApiProperty({
+    description: 'Total pension deductions found',
+    example: 300000,
+  })
   pension: number;
 
   @ApiProperty({
@@ -162,8 +170,7 @@ export class DeductionsDto {
   housingFund: number;
 
   @ApiProperty({
-    description:
-      'Rent expense found in the selected year. This is already included in total expenses and net profit, so it is tracked but not deducted again.',
+    description: 'Rent or housing allowance deduction applied to the estimate.',
     example: 900000,
   })
   rent: number;
@@ -189,7 +196,8 @@ export class TaxMonthSnapshotDto {
   period: TaxPeriodDto;
 
   @ApiProperty({
-    description: 'Actual net profit found in transactions for the covered period',
+    description:
+      'Actual net profit found in transactions for the covered period',
     example: 3000000,
   })
   netProfit: number;
@@ -201,7 +209,8 @@ export class TaxMonthSnapshotDto {
   totalRevenue: number;
 
   @ApiProperty({
-    description: 'Total cost of goods or services already reflected in net profit',
+    description:
+      'Total cost of goods or services already reflected in net profit',
     example: 2500000,
   })
   totalCogs: number;
@@ -213,7 +222,8 @@ export class TaxMonthSnapshotDto {
   totalExpenses: number;
 
   @ApiProperty({
-    description: 'Deduction totals applied to PIT and CIT for the covered period',
+    description:
+      'Deduction totals applied to PIT and CIT for the covered period',
     type: DeductionsDto,
   })
   deductions: DeductionsDto;
@@ -248,7 +258,8 @@ export class TaxEstimateResponseDto {
   period: TaxPeriodDto;
 
   @ApiProperty({
-    description: 'Actual net profit found in transactions for the selected year',
+    description:
+      'Actual net profit found in transactions for the selected year',
     example: 3000000,
   })
   netProfit: number;
@@ -260,7 +271,8 @@ export class TaxEstimateResponseDto {
   totalRevenue: number;
 
   @ApiProperty({
-    description: 'Total cost of goods or services already reflected in net profit',
+    description:
+      'Total cost of goods or services already reflected in net profit',
     example: 2500000,
   })
   totalCogs: number;

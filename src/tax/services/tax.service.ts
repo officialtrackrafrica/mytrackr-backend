@@ -9,6 +9,15 @@ import {
 import { Asset } from '../../finance/entities/asset.entity';
 import { PnlService } from '../../reports/services/pnl.service';
 
+export interface UserTaxDeductions {
+  healthInsurance?: number;
+  lifeInsurance?: number;
+  pension?: number;
+  housingFund?: number;
+  rent?: number;
+  extra?: number;
+}
+
 @Injectable()
 export class TaxService {
   private readonly logger = new Logger(TaxService.name);
@@ -25,7 +34,7 @@ export class TaxService {
   async calculateTaxEstimate(
     userId: string,
     year: number,
-    userDeductions: number = 0,
+    userDeductions: number | UserTaxDeductions = 0,
   ) {
     const businessId = await this.businessService.getBusinessIdForUser(userId);
 
@@ -81,7 +90,7 @@ export class TaxService {
       startDate: Date;
       endDate: Date;
     },
-    userDeductions: number,
+    userDeductions: number | UserTaxDeductions,
     totalAssets: number,
   ) {
     const pnlSummary = await this.pnlService.getCategorisedSummary(
@@ -146,7 +155,7 @@ export class TaxService {
     businessId: string,
     startDate: Date,
     endDate: Date,
-    userDeductions: number,
+    userDeductions: number | UserTaxDeductions,
   ) {
     const deductionsResults = await this.transactionRepository
       .createQueryBuilder('tx')
@@ -185,7 +194,7 @@ export class TaxService {
       .andWhere('tx.category = :expense', {
         expense: TransactionCategory.EXPENSE,
       })
-      .andWhere('LOWER(COALESCE(tx.subCategory, \'\')) LIKE :rentPattern', {
+      .andWhere("LOWER(COALESCE(tx.subCategory, '')) LIKE :rentPattern", {
         rentPattern: '%rent%',
       })
       .select('COALESCE(SUM(tx.amount), 0)', 'total')
@@ -210,7 +219,7 @@ export class TaxService {
       totalDeductions += amount;
     });
 
-    return {
+    const transactionDeductions = {
       healthInsurance:
         deductionsMap.hmo +
         deductionsMap.nhis +
@@ -220,8 +229,47 @@ export class TaxService {
       pension: deductionsMap.pension,
       housingFund: deductionsMap.nhf + deductionsMap['national housing fund'],
       rent: parseFloat(rentExpenseResult?.total || '0'),
-      extra: userDeductions,
-      total: totalDeductions + userDeductions,
+    };
+
+    const explicitDeductions =
+      typeof userDeductions === 'number'
+        ? {
+            healthInsurance: 0,
+            lifeInsurance: 0,
+            pension: 0,
+            housingFund: 0,
+            rent: 0,
+            extra: userDeductions,
+          }
+        : {
+            healthInsurance: Number(userDeductions.healthInsurance || 0),
+            lifeInsurance: Number(userDeductions.lifeInsurance || 0),
+            pension: Number(userDeductions.pension || 0),
+            housingFund: Number(userDeductions.housingFund || 0),
+            rent: Number(userDeductions.rent || 0),
+            extra: Number(userDeductions.extra || 0),
+          };
+
+    const healthInsurance =
+      explicitDeductions.healthInsurance ||
+      transactionDeductions.healthInsurance;
+    const lifeInsurance =
+      explicitDeductions.lifeInsurance || transactionDeductions.lifeInsurance;
+    const pension = explicitDeductions.pension || transactionDeductions.pension;
+    const housingFund =
+      explicitDeductions.housingFund || transactionDeductions.housingFund;
+    const rent = explicitDeductions.rent || transactionDeductions.rent;
+    const extra = explicitDeductions.extra;
+
+    return {
+      healthInsurance,
+      lifeInsurance,
+      pension,
+      housingFund,
+      rent,
+      extra,
+      total:
+        healthInsurance + lifeInsurance + pension + housingFund + rent + extra,
     };
   }
 
@@ -279,8 +327,10 @@ export class TaxService {
       chargeableIncome,
       consolidatedReliefAllowance,
       estimatedAnnualTax,
+      estimatedMonthlySetAside: estimatedAnnualTax / 12,
       minimumTaxFloor: minimumTax,
-      minimumTaxApplied: estimatedAnnualTax === minimumTax && minimumTax > totalTax,
+      minimumTaxApplied:
+        estimatedAnnualTax === minimumTax && minimumTax > totalTax,
       breakdown,
     };
   }

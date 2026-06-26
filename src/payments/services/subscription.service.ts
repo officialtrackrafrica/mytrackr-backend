@@ -441,6 +441,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
             planId,
             verification.customerCode,
             verification.rawResponse?.data?.authorization,
+            verification.rawResponse?.data,
           );
         } else if (
           tx.metadata?.type === INTEGRATION_API_KEY_PAYMENT_TYPE &&
@@ -466,6 +467,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     planId: string,
     customerCode: string = '',
     authorization?: Record<string, any>,
+    gatewayPaymentData?: Record<string, any>,
   ) {
     const plan = await this.planRepository.findOne({ where: { id: planId } });
     const user = await this.subRepository.manager.findOne(User, {
@@ -500,18 +502,37 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
 
     let gatewaySubscriptionId = '';
     let gatewayEmailToken = '';
+    const paymentSubscription =
+      this.extractPaystackSubscriptionDetails(gatewayPaymentData);
+
+    if (paymentSubscription.subscriptionCode) {
+      gatewaySubscriptionId = paymentSubscription.subscriptionCode;
+      gatewayEmailToken = paymentSubscription.emailToken;
+    }
+
     if (
+      !gatewaySubscriptionId &&
       plan.gatewayPlanId &&
       customerCode &&
       authorization?.authorization_code
     ) {
-      const created = await this.paystackService.createSubscription({
-        customer: customerCode,
-        plan: plan.gatewayPlanId,
-        authorization: authorization.authorization_code,
-      });
-      gatewaySubscriptionId = created.subscriptionCode;
-      gatewayEmailToken = created.emailToken;
+      try {
+        const created = await this.paystackService.createSubscription({
+          customer: customerCode,
+          plan: plan.gatewayPlanId,
+          authorization: authorization.authorization_code,
+        });
+        gatewaySubscriptionId = created.subscriptionCode;
+        gatewayEmailToken = created.emailToken;
+      } catch (error) {
+        const message = this.getErrorMessage(error);
+        if (!message.toLowerCase().includes('already in place')) {
+          throw error;
+        }
+        this.logger.warn(
+          `Paystack subscription already exists for user ${user.id} and plan ${plan.name}; provisioning local subscription only.`,
+        );
+      }
     }
 
     if (hasRemainingActiveTime && existingActiveSubscription && isSamePlanRenewal) {
@@ -601,6 +622,38 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
 
     await this.subRepository.save(sub);
     this.logger.log(`Provisioned plan ${plan.name} for user ${user.id}`);
+  }
+
+  private extractPaystackSubscriptionDetails(data?: Record<string, any>): {
+    subscriptionCode: string;
+    emailToken: string;
+  } {
+    const subscription = data?.subscription;
+
+    if (!subscription) {
+      return { subscriptionCode: '', emailToken: '' };
+    }
+
+    if (typeof subscription === 'string') {
+      return { subscriptionCode: subscription, emailToken: '' };
+    }
+
+    return {
+      subscriptionCode:
+        subscription.subscription_code || subscription.subscriptionCode || '',
+      emailToken: subscription.email_token || subscription.emailToken || '',
+    };
+  }
+
+  private getErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+      const response = (error as any).getResponse?.();
+      if (response?.cause) return String(response.cause);
+      if (response?.message) return String(response.message);
+      return error.message;
+    }
+
+    return String(error);
   }
 
   private calculatePeriodEnd(startDate: Date, interval: string): Date {

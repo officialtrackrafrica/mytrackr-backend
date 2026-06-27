@@ -120,26 +120,28 @@ export class CitCalculationDto {
 
 export class TaxPeriodDto {
   @ApiProperty({
-    description: 'Year used for the monthly tax calculation',
+    description: 'Year used for the tax calculation',
     example: 2026,
   })
   year: number;
 
   @ApiProperty({
-    description: 'Month number used for the monthly tax calculation',
+    description:
+      'Current month number for year-to-date calculations; null when the full selected year is complete',
+    nullable: true,
     example: 6,
   })
-  month: number;
+  month: number | null;
 
   @ApiProperty({
     description: 'Start of the calculation period in ISO format',
-    example: '2026-06-01T00:00:00.000Z',
+    example: '2026-01-01T00:00:00.000Z',
   })
   startDate: string;
 
   @ApiProperty({
     description: 'End of the calculation period in ISO format',
-    example: '2026-06-30T23:59:59.999Z',
+    example: '2026-06-26T23:59:59.999Z',
   })
   endDate: string;
 }
@@ -190,7 +192,7 @@ export class DeductionsDto {
 
 export class TaxMonthSnapshotDto {
   @ApiProperty({
-    description: 'Month and date range covered by this tax snapshot',
+    description: 'Date range covered by this tax snapshot',
     type: TaxPeriodDto,
   })
   period: TaxPeriodDto;
@@ -235,13 +237,13 @@ export class TaxMonthSnapshotDto {
   taxableProfit: number;
 
   @ApiProperty({
-    description: 'Monthly PIT calculation details',
+    description: 'PIT calculation details',
     type: PitCalculationDto,
   })
   pitCalculation: PitCalculationDto;
 
   @ApiProperty({
-    description: 'Monthly CIT calculation details',
+    description: 'CIT calculation details',
     type: CitCalculationDto,
   })
   citCalculation: CitCalculationDto;
@@ -252,7 +254,7 @@ export class TaxEstimateResponseDto {
   year: number;
 
   @ApiProperty({
-    description: 'Month represented by the main tax calculation',
+    description: 'Year-to-date period represented by the main tax calculation',
     type: TaxPeriodDto,
   })
   period: TaxPeriodDto;

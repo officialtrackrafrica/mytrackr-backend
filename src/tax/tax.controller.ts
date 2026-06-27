@@ -27,7 +27,7 @@ export class TaxController {
   @ApiOperation({
     summary: 'Calculate tax estimate',
     description:
-      'Calculates both PIT (sole proprietor) and CIT (LLC) for the current calendar month within the selected year, and also returns the accumulated calculation from January 1 to the end of the previous month in that same year when available.',
+      'Calculates both PIT (sole proprietor) and CIT (LLC) for the selected tax year so far, with a previous-month year-to-date comparison when available.',
   })
   @ApiQuery({
     name: 'year',

@@ -297,7 +297,10 @@ export class AdminSystemService {
     return this.mapSupportTicket(saved);
   }
 
-  async getUserSupportTickets(userId: string, query: UserSupportTicketQueryDto) {
+  async getUserSupportTickets(
+    userId: string,
+    query: UserSupportTicketQueryDto,
+  ) {
     const { status, page = 1, limit = 20 } = query;
     const skip = (page - 1) * limit;
 
@@ -323,6 +326,16 @@ export class AdminSystemService {
         totalPages: Math.ceil(total / limit),
       },
     };
+  }
+
+  async getUserSupportTicket(userId: string, id: string) {
+    const ticket = await this.ticketsRepository.findOne({
+      where: { id, userId },
+    });
+
+    if (!ticket) throw new NotFoundException('Ticket not found');
+
+    return this.mapSupportTicket(ticket);
   }
 
   async updateTicket(id: string, dto: UpdateTicketDto) {

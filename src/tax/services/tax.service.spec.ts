@@ -78,4 +78,71 @@ describe('TaxService', () => {
       '30%',
     );
   });
+
+  it('calculates current year-to-date and previous-month year-to-date estimates', async () => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 5, 26, 12));
+
+    const businessService = {
+      getBusinessIdForUser: jest.fn().mockResolvedValue('business-id'),
+    };
+    const assetRepository = {
+      find: jest.fn().mockResolvedValue([]),
+    };
+    const queryBuilder = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      getRawMany: jest.fn().mockResolvedValue([]),
+      getRawOne: jest.fn().mockResolvedValue({ total: '0' }),
+    };
+    const transactionRepository = {
+      createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+    };
+    const pnlService = {
+      getCategorisedSummary: jest.fn().mockResolvedValue({
+        netProfit: 100_000,
+        totalRevenue: 200_000,
+        totalExpenses: 50_000,
+        totalCogs: 50_000,
+      }),
+    };
+
+    service = new TaxService(
+      businessService as any,
+      transactionRepository as any,
+      assetRepository as any,
+      pnlService as any,
+    );
+
+    const result = await service.calculateTaxEstimate('user-id', 2026, 0);
+
+    expect(pnlService.getCategorisedSummary).toHaveBeenNthCalledWith(
+      1,
+      'business-id',
+      new Date(2026, 0, 1),
+      new Date(2026, 5, 26, 23, 59, 59, 999),
+    );
+    expect(pnlService.getCategorisedSummary).toHaveBeenNthCalledWith(
+      2,
+      'business-id',
+      new Date(2026, 0, 1),
+      new Date(2026, 5, 0, 23, 59, 59, 999),
+    );
+    expect(result.period).toEqual({
+      year: 2026,
+      month: 6,
+      startDate: new Date(2026, 0, 1).toISOString(),
+      endDate: new Date(2026, 5, 26, 23, 59, 59, 999).toISOString(),
+    });
+    expect(result.previousMonth?.period).toEqual({
+      year: 2026,
+      month: 5,
+      startDate: new Date(2026, 0, 1).toISOString(),
+      endDate: new Date(2026, 5, 0, 23, 59, 59, 999).toISOString(),
+    });
+
+    jest.useRealTimers();
+  });
 });

@@ -5,6 +5,7 @@ import {
   Body,
   Query,
   Req,
+  Param,
   UseGuards,
   UseInterceptors,
   UploadedFile,
@@ -62,7 +63,24 @@ export class SupportController {
     status: 200,
     description: 'Paginated user support tickets',
   })
-  async getMyTickets(@Req() req: any, @Query() query: UserSupportTicketQueryDto) {
+  async getMyTickets(
+    @Req() req: any,
+    @Query() query: UserSupportTicketQueryDto,
+  ) {
     return this.systemService.getUserSupportTickets(req.user.id, query);
+  }
+
+  @Get('tickets/:id')
+  @ApiOperation({
+    summary: 'Get support ticket details for the authenticated user',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Support ticket details',
+    type: SupportTicketResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Ticket not found' })
+  async getMyTicket(@Req() req: any, @Param('id') id: string) {
+    return this.systemService.getUserSupportTicket(req.user.id, id);
   }
 }

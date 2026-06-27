@@ -46,38 +46,36 @@ export class TaxService {
       0,
     );
 
-    const now = new Date();
-    const currentMonthNumber = now.getMonth();
-    const currentMonth = await this.buildTaxPeriodEstimate(
+    const currentPeriod = await this.buildTaxPeriodEstimate(
       businessId,
-      this.getMonthDateRange(year, currentMonthNumber),
+      this.getYearToDateRange(year),
       userDeductions,
       totalAssets,
     );
 
-    const previousMonth =
-      currentMonthNumber > 0
-        ? await this.buildTaxPeriodEstimate(
-            businessId,
-            this.getYearToPreviousMonthDateRange(year, currentMonthNumber - 1),
-            userDeductions,
-            totalAssets,
-          )
-        : null;
+    const previousMonthRange = this.getPreviousMonthYearToDateRange(year);
+    const previousMonth = previousMonthRange
+      ? await this.buildTaxPeriodEstimate(
+          businessId,
+          previousMonthRange,
+          userDeductions,
+          totalAssets,
+        )
+      : null;
 
     return {
       year,
-      period: currentMonth.period,
-      netProfit: currentMonth.netProfit,
-      totalRevenue: currentMonth.totalRevenue,
-      totalExpenses: currentMonth.totalExpenses,
-      totalCogs: currentMonth.totalCogs,
+      period: currentPeriod.period,
+      netProfit: currentPeriod.netProfit,
+      totalRevenue: currentPeriod.totalRevenue,
+      totalExpenses: currentPeriod.totalExpenses,
+      totalCogs: currentPeriod.totalCogs,
       totalAssets,
       projection: null,
-      deductions: currentMonth.deductions,
-      taxableProfit: currentMonth.taxableProfit,
-      pitCalculation: currentMonth.pitCalculation,
-      citCalculation: currentMonth.citCalculation,
+      deductions: currentPeriod.deductions,
+      taxableProfit: currentPeriod.taxableProfit,
+      pitCalculation: currentPeriod.pitCalculation,
+      citCalculation: currentPeriod.citCalculation,
       previousMonth,
     };
   }
@@ -86,7 +84,7 @@ export class TaxService {
     businessId: string,
     period: {
       year: number;
-      month: number;
+      month: number | null;
       startDate: Date;
       endDate: Date;
     },
@@ -133,21 +131,32 @@ export class TaxService {
     };
   }
 
-  private getMonthDateRange(year: number, month: number) {
+  private getYearToDateRange(year: number) {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const isSelectedYear = year === now.getFullYear();
+
     return {
       year,
-      month: month + 1,
-      startDate: new Date(year, month, 1),
-      endDate: new Date(year, month + 1, 0, 23, 59, 59, 999),
+      month: isSelectedYear ? currentMonth + 1 : null,
+      startDate: new Date(year, 0, 1),
+      endDate: isSelectedYear
+        ? new Date(year, currentMonth, now.getDate(), 23, 59, 59, 999)
+        : new Date(year, 11, 31, 23, 59, 59, 999),
     };
   }
 
-  private getYearToPreviousMonthDateRange(year: number, month: number) {
+  private getPreviousMonthYearToDateRange(year: number) {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+
+    if (year !== now.getFullYear() || currentMonth === 0) return null;
+
     return {
       year,
-      month: month + 1,
+      month: currentMonth,
       startDate: new Date(year, 0, 1),
-      endDate: new Date(year, month + 1, 0, 23, 59, 59, 999),
+      endDate: new Date(year, currentMonth, 0, 23, 59, 59, 999),
     };
   }
 

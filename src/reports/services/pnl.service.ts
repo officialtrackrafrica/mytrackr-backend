@@ -78,7 +78,7 @@ export class PnlService {
         total: summary.totalExpenses,
       },
       netProfit: this.roundToTwoDecimalPlaces(summary.netProfit),
-      netProfitMargin: summary.netProfitMargin,
+      netProfitMargin: this.roundToTwoDecimalPlaces(summary.netProfitMargin),
       metadata: {
         uncategorisedCount: parseInt(uncategorisedStats?.count || '0', 10),
         uncategorisedValue: parseFloat(uncategorisedStats?.totalValue || '0'),

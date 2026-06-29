@@ -55,7 +55,8 @@ export class BalanceSheetService {
     const inventoryAssets = assets.filter(
       (asset) => asset.category === AssetCategory.INVENTORY,
     );
-    const latestInventoryUpdate = this.getLatestInventoryUpdate(inventoryAssets);
+    const latestInventoryUpdate =
+      this.getLatestInventoryUpdate(inventoryAssets);
 
     const totalAssets = cashAndBankBalances + businessAssets;
 
@@ -106,7 +107,10 @@ export class BalanceSheetService {
     const retainedProfit = pnlSummary.netProfit;
     const ownerInvestments = totalCapital;
     const ownerWithdrawals = totalDrawings;
-    const ownersEquity = ownerInvestments + retainedProfit - ownerWithdrawals;
+    const recordedOwnersEquity =
+      ownerInvestments + retainedProfit - ownerWithdrawals;
+    const ownersEquity = totalAssets - totalLiabilities;
+    const unrecordedEquityAdjustment = ownersEquity - recordedOwnersEquity;
     const accountingDifference = Math.abs(
       totalAssets - (totalLiabilities + ownersEquity),
     );
@@ -116,6 +120,8 @@ export class BalanceSheetService {
         totalAssets,
         totalLiabilities,
         ownersEquity,
+        recordedOwnersEquity,
+        unrecordedEquityAdjustment,
         cashAvailable: cashAndBankBalances,
         businessPropertiesAndValuables: businessAssets,
         outstandingDebts: totalLiabilities,
@@ -162,6 +168,8 @@ export class BalanceSheetService {
         retainedProfit,
         retainedProfits: retainedProfit,
         ownerWithdrawals,
+        recordedOwnersEquity,
+        unrecordedEquityAdjustment,
         ownersEquity,
         ownersMoney: ownersEquity,
       },

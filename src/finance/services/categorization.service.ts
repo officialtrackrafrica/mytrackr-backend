@@ -419,11 +419,20 @@ export class CategorizationService {
         }),
       );
 
-    return query
+    const categories = await query
       .orderBy('category.type', 'ASC')
       .addOrderBy('category.name', 'ASC')
       .addOrderBy('subCategory.name', 'ASC')
       .getMany();
+
+    return categories.map((category) => ({
+      ...category,
+      name: this.getCategoryDisplayName(category.name),
+    }));
+  }
+
+  private getCategoryDisplayName(name: string): string {
+    return name.replace(/\s*\(Balance Sheet\)$/i, '');
   }
 
   // ── Private helpers ────────────────────────────────────────────────────────

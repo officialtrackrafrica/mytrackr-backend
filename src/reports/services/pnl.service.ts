@@ -77,7 +77,7 @@ export class PnlService {
         },
         total: summary.totalExpenses,
       },
-      netProfit: summary.netProfit,
+      netProfit: this.roundToTwoDecimalPlaces(summary.netProfit),
       netProfitMargin: summary.netProfitMargin,
       metadata: {
         uncategorisedCount: parseInt(uncategorisedStats?.count || '0', 10),
@@ -177,7 +177,8 @@ export class PnlService {
       totalOtherExpenses,
       totalExpenses,
       grossProfit,
-      grossProfitMargin: totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0,
+      grossProfitMargin:
+        totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0,
       netProfit,
       netProfitMargin: totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0,
     };
@@ -238,6 +239,10 @@ export class PnlService {
     rows.push(`Net Profit Margin,${report.netProfitMargin.toFixed(2)}%`);
 
     return rows.join('\n');
+  }
+
+  private roundToTwoDecimalPlaces(value: number): number {
+    return Math.round((value + Number.EPSILON) * 100) / 100;
   }
 
   private emptyPnl() {

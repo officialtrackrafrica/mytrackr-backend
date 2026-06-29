@@ -53,7 +53,7 @@ export class FinancialCategoriesSeed {
         ],
       },
       {
-        name: 'Assets (Balance Sheet)',
+        name: 'Assets',
         type: AccountCategoryType.ASSET,
         subs: [
           'Cash in Bank Account',
@@ -67,7 +67,7 @@ export class FinancialCategoriesSeed {
         ],
       },
       {
-        name: 'Liabilities (Balance Sheet)',
+        name: 'Liabilities',
         type: AccountCategoryType.LIABILITY,
         subs: [
           'Business Loan',
@@ -78,7 +78,7 @@ export class FinancialCategoriesSeed {
         ],
       },
       {
-        name: 'Owner’s Money (Balance Sheet)',
+        name: 'Owner’s Money',
         type: AccountCategoryType.EQUITY,
         subs: ['Capital contributed', 'Owner Withdrawal (for personal use)'],
       },

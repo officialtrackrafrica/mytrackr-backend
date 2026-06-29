@@ -107,10 +107,7 @@ export class BalanceSheetService {
     const retainedProfit = pnlSummary.netProfit;
     const ownerInvestments = totalCapital;
     const ownerWithdrawals = totalDrawings;
-    const recordedOwnersEquity =
-      ownerInvestments + retainedProfit - ownerWithdrawals;
-    const ownersEquity = totalAssets - totalLiabilities;
-    const unrecordedEquityAdjustment = ownersEquity - recordedOwnersEquity;
+    const ownersEquity = ownerInvestments + retainedProfit - ownerWithdrawals;
     const accountingDifference = Math.abs(
       totalAssets - (totalLiabilities + ownersEquity),
     );
@@ -120,8 +117,6 @@ export class BalanceSheetService {
         totalAssets,
         totalLiabilities,
         ownersEquity,
-        recordedOwnersEquity,
-        unrecordedEquityAdjustment,
         cashAvailable: cashAndBankBalances,
         businessPropertiesAndValuables: businessAssets,
         outstandingDebts: totalLiabilities,
@@ -168,8 +163,6 @@ export class BalanceSheetService {
         retainedProfit,
         retainedProfits: retainedProfit,
         ownerWithdrawals,
-        recordedOwnersEquity,
-        unrecordedEquityAdjustment,
         ownersEquity,
         ownersMoney: ownersEquity,
       },

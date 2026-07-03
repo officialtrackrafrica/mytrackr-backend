@@ -4,9 +4,11 @@ import {
   IsIn,
   IsNotEmpty,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   ValidateNested,
+  IsArray,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -37,6 +39,37 @@ export class UpdatePlanPriceDto {
   price: number;
 }
 
+export class UpdatePlanCapabilitiesDto {
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Enabled feature keys or labels for this plan',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  features?: string[];
+
+  @ApiPropertyOptional({
+    description:
+      'Structured capability map, for example { "sync_1_bank_account": true, "bankAccountLimit": 1 }',
+  })
+  @IsOptional()
+  @IsObject()
+  capabilities?: Record<string, any>;
+
+  @ApiPropertyOptional({
+    description: 'Convenience field for enforcing linked bank account limits',
+  })
+  @IsOptional()
+  @IsNumber()
+  bankAccountLimit?: number;
+
+  @ApiPropertyOptional({ description: 'Whether the plan is active' })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
 export class PlanResponseDto {
   @ApiProperty() id: string;
   @ApiProperty() name: string;
@@ -44,6 +77,7 @@ export class PlanResponseDto {
   @ApiPropertyOptional() currency?: string;
   @ApiProperty() interval: string;
   @ApiPropertyOptional() features?: string[];
+  @ApiPropertyOptional() capabilities?: Record<string, any>;
   @ApiProperty() isActive: boolean;
 }
 

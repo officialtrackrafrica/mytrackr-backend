@@ -29,6 +29,9 @@ export class Plan {
   @Column({ type: 'jsonb', default: [] })
   features: string[];
 
+  @Column({ type: 'jsonb', default: {} })
+  capabilities: Record<string, any>;
+
   @Column({ default: true })
   isActive: boolean;
 

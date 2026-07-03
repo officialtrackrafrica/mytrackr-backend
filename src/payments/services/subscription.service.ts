@@ -15,14 +15,17 @@ import { Subscription } from '../entities/subscription.entity';
 import { PaymentTransaction } from '../entities/payment-transaction.entity';
 import { User } from '../../auth/entities/user.entity';
 import { PaymentFactoryService } from './payment-factory.service';
-import { InitializeSubscriptionDto } from '../dto/subscription.dto';
+import {
+  InitializeSubscriptionDto,
+  StoreBillingCardDto,
+  UpdatePlanCapabilitiesDto,
+} from '../dto/subscription.dto';
 import * as crypto from 'crypto';
 import { SystemSetting } from '../../admin/entities/system-setting.entity';
 import { MonoAccount } from '../../mono/entities/mono-account.entity';
 import { PaystackService } from '../providers/paystack.service';
-import { StoreBillingCardDto } from '../dto/subscription.dto';
 import {
-  BANK_ACCOUNT_LIMIT_BY_PLAN,
+  getPlanBankAccountLimit,
   normalizePlanSlug,
   PLAN_SLUGS,
   PlanSlug,
@@ -84,6 +87,55 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       where: { isActive: true },
       order: { price: 'ASC' },
     });
+  }
+
+  async getPlanCapabilityMatrix() {
+    const plans = await this.planRepository.find({
+      order: { price: 'ASC', name: 'ASC' },
+    });
+
+    const featureKeys = Array.from(
+      new Set(
+        plans.flatMap((plan) => [
+          ...(plan.features || []),
+          ...Object.keys(plan.capabilities || {}).filter(
+            (key) => key !== 'bankAccountLimit',
+          ),
+        ]),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
+
+    return {
+      features: featureKeys.map((key) => ({
+        key,
+        label: this.formatCapabilityLabel(key),
+      })),
+      plans: plans.map((plan) => ({
+        id: plan.id,
+        name: plan.name,
+        slug: plan.slug,
+        price: Number(plan.price),
+        currency: plan.currency,
+        interval: plan.interval,
+        isActive: plan.isActive,
+        features: plan.features || [],
+        capabilities: plan.capabilities || {},
+        bankAccountLimit: getPlanBankAccountLimit(plan),
+      })),
+      matrix: featureKeys.map((featureKey) => ({
+        key: featureKey,
+        label: this.formatCapabilityLabel(featureKey),
+        plans: Object.fromEntries(
+          plans.map((plan) => [
+            plan.slug,
+            Boolean(
+              (plan.capabilities || {})[featureKey] ||
+                (plan.features || []).includes(featureKey),
+            ),
+          ]),
+        ),
+      })),
+    };
   }
 
   async getUserSubscriptionStatus(userId: string) {
@@ -872,6 +924,42 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     return plan;
   }
 
+  async updatePlanCapabilities(planId: string, dto: UpdatePlanCapabilitiesDto) {
+    const plan = await this.planRepository.findOne({ where: { id: planId } });
+    if (!plan) throw new NotFoundException('Subscription plan not found');
+
+    if (dto.features) {
+      plan.features = Array.from(new Set(dto.features.map((f) => f.trim())))
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b));
+    }
+
+    if (dto.capabilities) {
+      plan.capabilities = {
+        ...(plan.capabilities || {}),
+        ...dto.capabilities,
+      };
+    }
+
+    if (dto.bankAccountLimit !== undefined) {
+      plan.capabilities = {
+        ...(plan.capabilities || {}),
+        bankAccountLimit: dto.bankAccountLimit,
+      };
+    }
+
+    if (dto.isActive !== undefined) {
+      plan.isActive = dto.isActive;
+    }
+
+    const saved = await this.planRepository.save(plan);
+    return {
+      ...saved,
+      price: Number(saved.price),
+      bankAccountLimit: getPlanBankAccountLimit(saved),
+    };
+  }
+
   private async getAdditionalBankAccountFee(): Promise<number> {
     const setting = await this.settingsRepository.findOne({
       where: { key: ADDITIONAL_BANK_ACCOUNT_FEE_KEY },
@@ -894,8 +982,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
 
   private async getIncludedBankAccountLimit(userId: string): Promise<number> {
     const { activePlan } = await this.getUserSubscriptionStatus(userId);
-    const planSlug = normalizePlanSlug(activePlan) || 'basic';
-    return BANK_ACCOUNT_LIMIT_BY_PLAN[planSlug];
+    return getPlanBankAccountLimit(activePlan);
   }
 
   private resolveCheckoutPlanSlug(
@@ -951,6 +1038,14 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     }
 
     return 'Payment';
+  }
+
+  private formatCapabilityLabel(key: string) {
+    return key
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/\b\w/g, (char) => char.toUpperCase());
   }
 
   private async getLatestSubscription(

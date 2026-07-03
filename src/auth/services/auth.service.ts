@@ -615,6 +615,14 @@ export class AuthService {
   async registerWithEmail(
     dto: RegisterWithEmailDto,
   ): Promise<RegisterResponseDto> {
+    if (!dto.acceptTermsAndConditions) {
+      throw new AuthError(
+        'TERMS_NOT_ACCEPTED',
+        'You must accept the terms and conditions to create an account',
+        400,
+      );
+    }
+
     const {
       email,
       password,

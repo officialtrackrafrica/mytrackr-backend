@@ -4,6 +4,8 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsBoolean,
+  Equals,
   MinLength,
   Matches,
   MaxLength,
@@ -68,4 +70,14 @@ export class RegisterWithEmailDto {
   @IsEnum(BusinessType)
   @IsOptional()
   businessType?: BusinessType;
+
+  @ApiProperty({
+    description: 'Must be true to confirm the user accepts the terms and conditions',
+    example: true,
+  })
+  @IsBoolean({ message: 'acceptTermsAndConditions must be a boolean' })
+  @Equals(true, {
+    message: 'You must accept the terms and conditions to create an account',
+  })
+  acceptTermsAndConditions: boolean;
 }

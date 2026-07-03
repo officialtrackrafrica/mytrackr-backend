@@ -67,6 +67,7 @@ export class User {
     lastPasswordChange?: Date;
     failedLoginAttempts?: number;
     lockoutUntil?: Date;
+    deletedAt?: Date;
   };
 
   @Column({ type: 'jsonb', nullable: true })

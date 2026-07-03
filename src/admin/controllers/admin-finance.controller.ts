@@ -6,6 +6,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -25,6 +26,7 @@ import { AdminAuditService } from '../services/admin-audit.service';
 import { TransactionQueryDto, DashboardQueryDto } from '../dto';
 import {
   PlanResponseDto,
+  UpdatePlanCapabilitiesDto,
   UpdatePlanPriceDto,
 } from '../../payments/dto/subscription.dto';
 import { SubscriptionService } from '../../payments/services/subscription.service';
@@ -77,5 +79,45 @@ export class AdminFinanceController {
     @Body() dto: UpdatePlanPriceDto,
   ) {
     return this.subscriptionService.updatePlanPrice(id, dto.price);
+  }
+
+  @Get('subscription-plans/capabilities')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({
+    summary: 'Get subscription plan feature/capability matrix',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Plan capability matrix for admin plan management',
+  })
+  async getSubscriptionPlanCapabilities() {
+    return this.subscriptionService.getPlanCapabilityMatrix();
+  }
+
+  @Patch('subscription-plans/:id/capabilities')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({
+    summary: 'Update what a subscription plan can do',
+  })
+  @ApiBody({ type: UpdatePlanCapabilitiesDto })
+  @ApiResponse({ status: 200, type: PlanResponseDto })
+  async updateSubscriptionPlanCapabilities(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdatePlanCapabilitiesDto,
+    @Req() req: any,
+  ) {
+    const result = await this.subscriptionService.updatePlanCapabilities(
+      id,
+      dto,
+    );
+    await this.auditService.log(
+      'SUBSCRIPTION_PLAN_CAPABILITIES_UPDATED',
+      'Plan',
+      id,
+      req.user.id,
+      dto,
+      req.ip,
+    );
+    return result;
   }
 }

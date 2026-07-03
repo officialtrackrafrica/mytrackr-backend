@@ -80,3 +80,18 @@ export function planHasAccess(
 
   return PLAN_RANK[activeSlug] >= PLAN_RANK[requiredSlug];
 }
+
+export function getPlanBankAccountLimit(
+  activePlan:
+    | (Pick<Plan, 'slug' | 'name'> & { capabilities?: Record<string, any> | null })
+    | null
+    | undefined,
+) {
+  const configuredLimit = Number(activePlan?.capabilities?.bankAccountLimit);
+  if (Number.isFinite(configuredLimit) && configuredLimit >= 0) {
+    return configuredLimit;
+  }
+
+  const planSlug = normalizePlanSlug(activePlan) || 'basic';
+  return BANK_ACCOUNT_LIMIT_BY_PLAN[planSlug];
+}

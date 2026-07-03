@@ -4,3 +4,6 @@ export { AdminFinanceController } from './admin-finance.controller';
 export { AdminSupportController } from './admin-support.controller';
 export { AdminOpsController } from './admin-ops.controller';
 export { SupportController } from './support.controller';
+export { AdminMessagingController } from './admin-messaging.controller';
+export { AdminFaqController } from './admin-faq.controller';
+export { AdminCategorizationRulesController } from './admin-categorization-rules.controller';

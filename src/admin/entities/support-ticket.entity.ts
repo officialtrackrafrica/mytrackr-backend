@@ -10,6 +10,7 @@ import {
 @Entity('support_tickets')
 @Index('IDX_support_ticket_user', ['userId'])
 @Index('IDX_support_ticket_status', ['status'])
+@Index('IDX_support_ticket_category', ['category'])
 export class SupportTicket {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -22,6 +23,9 @@ export class SupportTicket {
 
   @Column({ type: 'text' })
   description: string;
+
+  @Column({ default: 'request' })
+  category: string;
 
   @Column({ nullable: true })
   attachmentUrl: string;

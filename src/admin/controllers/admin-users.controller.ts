@@ -23,7 +23,14 @@ import { AppAbility } from '../../casl/casl-ability.factory';
 import { Action } from '../../casl/action.enum';
 import { AdminUsersService } from '../services/admin-users.service';
 import { AdminAuditService } from '../services/admin-audit.service';
-import { UpdateUserStatusDto, AdminQueryDto, AuditLogQueryDto } from '../dto';
+import {
+  UpdateUserStatusDto,
+  AdminQueryDto,
+  AuditLogQueryDto,
+  AdminUpdateUserDto,
+  AdminResetUserPasswordDto,
+  AdminUserSubscriptionHistoryQueryDto,
+} from '../dto';
 
 @ApiTags('Admin - User Management')
 @Controller('admin/users')
@@ -43,6 +50,39 @@ export class AdminUsersController {
   @ApiResponse({ status: 200, description: 'Paginated list of users' })
   async listUsers(@Query() query: AdminQueryDto) {
     return this.adminUsersService.findAllUsers(query);
+  }
+
+  @Get('search')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({ summary: 'Search users with the admin user list filters' })
+  @ApiResponse({ status: 200, description: 'Paginated matching users' })
+  async searchUsers(@Query() query: AdminQueryDto) {
+    return this.adminUsersService.findAllUsers(query);
+  }
+
+  @Patch(':id')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({
+    summary:
+      'Update user profile, email, business name, and business type as admin',
+  })
+  @ApiResponse({ status: 200, description: 'User updated' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async updateUser(
+    @Param('id') userId: string,
+    @Body() dto: AdminUpdateUserDto,
+    @Req() req: any,
+  ) {
+    const result = await this.adminUsersService.updateUser(userId, dto);
+    await this.auditService.log(
+      'USER_UPDATED_BY_ADMIN',
+      'User',
+      userId,
+      req.user.id,
+      dto,
+      req.ip,
+    );
+    return result;
   }
 
   @Patch(':id/status')
@@ -88,6 +128,53 @@ export class AdminUsersController {
     return result;
   }
 
+  @Patch(':id/password')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({ summary: 'Reset a user password as admin' })
+  @ApiResponse({ status: 200, description: 'User password reset' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async resetUserPassword(
+    @Param('id') userId: string,
+    @Body() dto: AdminResetUserPasswordDto,
+    @Req() req: any,
+  ) {
+    const result = await this.adminUsersService.resetUserPassword(userId, dto);
+    await this.auditService.log(
+      'PASSWORD_RESET_BY_ADMIN',
+      'User',
+      userId,
+      req.user.id,
+      {},
+      req.ip,
+    );
+    return result;
+  }
+
+  @Delete(':id/bank-accounts/:accountId')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({ summary: 'Disconnect a user bank account as admin' })
+  @ApiResponse({ status: 200, description: 'Bank account disconnected' })
+  @ApiResponse({ status: 404, description: 'User or bank account not found' })
+  async disconnectBankAccount(
+    @Param('id') userId: string,
+    @Param('accountId') accountId: string,
+    @Req() req: any,
+  ) {
+    const result = await this.adminUsersService.disconnectUserBankAccount(
+      userId,
+      accountId,
+    );
+    await this.auditService.log(
+      'USER_BANK_ACCOUNT_DISCONNECTED',
+      'User',
+      userId,
+      req.user.id,
+      { accountId },
+      req.ip,
+    );
+    return result;
+  }
+
   @Delete(':id')
   @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
   @ApiOperation({ summary: 'Soft-delete (deactivate) a user' })
@@ -122,6 +209,18 @@ export class AdminUsersController {
       req.ip,
     );
     return result;
+  }
+
+  @Get(':id/subscription-history')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({ summary: 'Get a user subscription and billing history' })
+  @ApiResponse({ status: 200, description: 'User subscription history' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async getSubscriptionHistory(
+    @Param('id') userId: string,
+    @Query() query: AdminUserSubscriptionHistoryQueryDto,
+  ) {
+    return this.adminUsersService.getUserSubscriptionHistory(userId, query);
   }
 
   @Get(':id/activity-log')

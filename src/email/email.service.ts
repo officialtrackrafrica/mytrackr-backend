@@ -7,6 +7,21 @@ export class EmailService {
 
   constructor(private readonly mailerService: MailerService) {}
 
+  async sendCustomEmail(email: string, subject: string, body: string) {
+    try {
+      await this.mailerService.sendMail({
+        to: email,
+        subject,
+        text: body,
+        html: this.toBasicHtml(body),
+      });
+      this.logger.debug(`Custom email sent to ${email}`);
+    } catch (error: any) {
+      this.logger.error(`Failed to send custom email to ${email}`, error.stack);
+      throw error;
+    }
+  }
+
   async sendWelcomeEmail(email: string, name?: string) {
     try {
       await this.mailerService.sendMail({
@@ -94,5 +109,21 @@ export class EmailService {
       );
       throw error;
     }
+  }
+
+  private toBasicHtml(body: string) {
+    return body
+      .split(/\r?\n/)
+      .map((line) => `<p>${this.escapeHtml(line) || '&nbsp;'}</p>`)
+      .join('');
+  }
+
+  private escapeHtml(value: string) {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 }

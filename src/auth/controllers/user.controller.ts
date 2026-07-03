@@ -42,7 +42,13 @@ import { AuthError } from '../../common/errors';
 import { Action } from '../../casl/action.enum';
 import { AppAbility } from '../../casl/casl-ability.factory';
 import { AdminAuditService } from '../../admin/services/admin-audit.service';
-import { AuditLogQueryDto } from '../../admin/dto';
+import {
+  AuditLogQueryDto,
+  CreateSupportTicketDto,
+  CreateSupportTicketUploadDto,
+  SupportTicketResponseDto,
+} from '../../admin/dto';
+import { AdminSystemService } from '../../admin/services/admin-system.service';
 import { BusinessType } from '../../business/entities/business.entity';
 
 interface AuthenticatedRequest {
@@ -64,6 +70,7 @@ export class UserController {
     private usersRepository: Repository<User>,
     private authService: AuthService,
     private auditService: AdminAuditService,
+    private systemService: AdminSystemService,
   ) {}
 
   @Get('me')
@@ -253,6 +260,29 @@ export class UserController {
     // Auth service handling the file upload
     const user = await this.authService.uploadProfilePicture(req.user.id, file);
     return this.sanitizeUser(user);
+  }
+
+  @Post('me/support-tickets')
+  @ApiOperation({ summary: 'Create a support ticket for the current user' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ type: CreateSupportTicketUploadDto })
+  @ApiResponse({
+    status: 201,
+    description: 'Support ticket created',
+    type: SupportTicketResponseDto,
+  })
+  @UseInterceptors(FileInterceptor('attachment'))
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Read, 'User'))
+  async createMySupportTicket(
+    @Request() req: AuthenticatedRequest,
+    @Body() dto: CreateSupportTicketDto,
+    @UploadedFile() attachment?: any,
+  ): Promise<SupportTicketResponseDto> {
+    return this.systemService.createUserSupportTicket(
+      req.user.id,
+      dto,
+      attachment,
+    );
   }
 
   @Get('me/activity-logs')

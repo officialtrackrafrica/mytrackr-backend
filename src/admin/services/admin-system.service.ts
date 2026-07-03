@@ -9,8 +9,10 @@ import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { SystemSetting } from '../entities/system-setting.entity';
 import { SupportTicket } from '../entities/support-ticket.entity';
+import { SupportTicketReply } from '../entities/support-ticket-reply.entity';
 import { Dispute } from '../entities/dispute.entity';
 import { WebhookLog } from '../entities/webhook-log.entity';
+import { User } from '../../auth/entities/user.entity';
 import { DataSource } from 'typeorm';
 import Redis from 'ioredis';
 import { StorageService } from '../../storage/storage.service';
@@ -21,6 +23,7 @@ import {
   DisputeQueryDto,
   WebhookQueryDto,
   UpdateTicketDto,
+  ReplySupportTicketDto,
   ResolveDisputeDto,
   CreateSupportTicketDto,
   UserSupportTicketQueryDto,
@@ -36,10 +39,14 @@ export class AdminSystemService {
     private readonly settingsRepository: Repository<SystemSetting>,
     @InjectRepository(SupportTicket)
     private readonly ticketsRepository: Repository<SupportTicket>,
+    @InjectRepository(SupportTicketReply)
+    private readonly ticketRepliesRepository: Repository<SupportTicketReply>,
     @InjectRepository(Dispute)
     private readonly disputesRepository: Repository<Dispute>,
     @InjectRepository(WebhookLog)
     private readonly webhookLogRepository: Repository<WebhookLog>,
+    @InjectRepository(User)
+    private readonly usersRepository: Repository<User>,
     private readonly configService: ConfigService,
     private readonly dataSource: DataSource,
     private readonly storageService: StorageService,
@@ -139,11 +146,24 @@ export class AdminSystemService {
   }
 
   async getTickets(query: TicketQueryDto) {
-    const { status, priority, page = 1, limit = 20 } = query;
+    const {
+      status,
+      priority,
+      category,
+      search,
+      dateFrom,
+      dateTo,
+      page = 1,
+      limit = 20,
+    } = query;
     const skip = (page - 1) * limit;
 
     const qb = this.ticketsRepository
       .createQueryBuilder('ticket')
+      .leftJoin(User, 'user', 'user.id = ticket.userId')
+      .addSelect('user.email', 'userEmail')
+      .addSelect('user.firstName', 'userFirstName')
+      .addSelect('user.lastName', 'userLastName')
       .orderBy('ticket.createdAt', 'DESC')
       .skip(skip)
       .take(limit);
@@ -154,11 +174,46 @@ export class AdminSystemService {
     if (priority) {
       qb.andWhere('ticket.priority = :priority', { priority });
     }
+    if (category) {
+      qb.andWhere('ticket.category = :category', { category });
+    }
+    if (search) {
+      qb.andWhere(
+        '(ticket.subject ILIKE :search OR ticket.description ILIKE :search OR ticket.category ILIKE :search OR user.email ILIKE :search OR user.firstName ILIKE :search OR user.lastName ILIKE :search)',
+        { search: `%${search}%` },
+      );
+    }
+    if (dateFrom) {
+      qb.andWhere('ticket.createdAt >= :dateFrom', {
+        dateFrom: new Date(dateFrom),
+      });
+    }
+    if (dateTo) {
+      qb.andWhere('ticket.createdAt <= :dateTo', {
+        dateTo: new Date(dateTo),
+      });
+    }
 
-    const [tickets, total] = await qb.getManyAndCount();
+    const { entities: tickets, raw } = await qb.getRawAndEntities();
+    const total = await qb.getCount();
+    const rawByTicketId = new Map(raw.map((row) => [row.ticket_id, row]));
 
     return {
-      tickets,
+      tickets: tickets.map((ticket) => {
+        const row = rawByTicketId.get(ticket.id) || {};
+        return {
+          ...this.mapSupportTicket(ticket),
+          user: {
+            id: ticket.userId,
+            email: row.userEmail || null,
+            firstName: row.userFirstName || null,
+            lastName: row.userLastName || null,
+            name: [row.userFirstName, row.userLastName]
+              .filter(Boolean)
+              .join(' '),
+          },
+        };
+      }),
       pagination: {
         total,
         page,
@@ -166,6 +221,70 @@ export class AdminSystemService {
         totalPages: Math.ceil(total / limit),
       },
     };
+  }
+
+  async getTicketStats() {
+    const rows = await this.ticketsRepository
+      .createQueryBuilder('ticket')
+      .select('ticket.status', 'status')
+      .addSelect('COUNT(ticket.id)', 'count')
+      .groupBy('ticket.status')
+      .getRawMany();
+
+    const byStatus = rows.reduce<Record<string, number>>((acc, row) => {
+      acc[row.status] = parseInt(row.count, 10);
+      return acc;
+    }, {});
+
+    const total = Object.values(byStatus).reduce((sum, count) => sum + count, 0);
+
+    return {
+      total,
+      pending: byStatus.open || 0,
+      inProgress: byStatus.in_progress || 0,
+      closed: (byStatus.closed || 0) + (byStatus.resolved || 0),
+      byStatus,
+    };
+  }
+
+  async getAdminSupportTicket(id: string) {
+    const ticket = await this.ticketsRepository.findOne({ where: { id } });
+    if (!ticket) throw new NotFoundException('Ticket not found');
+
+    return this.mapSupportTicketDetail(ticket);
+  }
+
+  async replyToSupportTicket(
+    id: string,
+    adminId: string,
+    dto: ReplySupportTicketDto,
+    attachment?: any,
+  ) {
+    const ticket = await this.ticketsRepository.findOne({ where: { id } });
+    if (!ticket) throw new NotFoundException('Ticket not found');
+
+    let attachmentUrl: string | undefined;
+    if (attachment) {
+      attachmentUrl = await this.storageService.uploadFile(
+        attachment,
+        'support-ticket-replies',
+      );
+    }
+
+    const reply = this.ticketRepliesRepository.create({
+      ticketId: id,
+      senderId: adminId,
+      senderType: 'admin',
+      message: dto.message,
+      attachmentUrl: attachmentUrl || null,
+    });
+    await this.ticketRepliesRepository.save(reply);
+
+    ticket.status = dto.status || 'in_progress';
+    ticket.assignedTo = ticket.assignedTo || adminId;
+    await this.ticketsRepository.save(ticket);
+
+    return this.mapSupportTicketDetail(ticket);
   }
 
   async sendUncategorizedTransactionReminders(dryRun = false) {
@@ -288,6 +407,7 @@ export class AdminSystemService {
       userId,
       subject: dto.title,
       description: dto.description,
+      category: dto.category || dto.type || 'request',
       attachmentUrl,
       status: 'open',
       priority: 'medium',
@@ -301,7 +421,7 @@ export class AdminSystemService {
     userId: string,
     query: UserSupportTicketQueryDto,
   ) {
-    const { status, page = 1, limit = 20 } = query;
+    const { status, category, page = 1, limit = 20 } = query;
     const skip = (page - 1) * limit;
 
     const qb = this.ticketsRepository
@@ -313,6 +433,9 @@ export class AdminSystemService {
 
     if (status) {
       qb.andWhere('ticket.status = :status', { status });
+    }
+    if (category) {
+      qb.andWhere('ticket.category = :category', { category });
     }
 
     const [tickets, total] = await qb.getManyAndCount();
@@ -564,12 +687,79 @@ export class AdminSystemService {
       id: ticket.id,
       title: ticket.subject,
       description: ticket.description,
+      category: ticket.category || 'request',
       attachmentUrl: ticket.attachmentUrl || undefined,
       status: ticket.status,
       priority: ticket.priority,
       resolution: ticket.resolution || undefined,
       createdAt: ticket.createdAt,
       updatedAt: ticket.updatedAt,
+    };
+  }
+
+  private async mapSupportTicketDetail(ticket: SupportTicket) {
+    const [user, replies] = await Promise.all([
+      this.usersRepository.findOne({ where: { id: ticket.userId } }),
+      this.ticketRepliesRepository.find({
+        where: { ticketId: ticket.id },
+        order: { createdAt: 'ASC' },
+      }),
+    ]);
+
+    const participantIds = Array.from(
+      new Set(replies.map((reply) => reply.senderId).filter(Boolean)),
+    );
+    const participants =
+      participantIds.length > 0
+        ? await this.usersRepository
+            .createQueryBuilder('user')
+            .where('user.id IN (:...participantIds)', { participantIds })
+            .getMany()
+        : [];
+    const participantsById = new Map(
+      participants.map((participant) => [participant.id, participant]),
+    );
+
+    return {
+      ...this.mapSupportTicket(ticket),
+      user: user
+        ? {
+            id: user.id,
+            email: user.email,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            name: [user.firstName, user.lastName].filter(Boolean).join(' '),
+          }
+        : { id: ticket.userId },
+      messages: [
+        {
+          id: ticket.id,
+          senderType: 'user',
+          senderId: ticket.userId,
+          senderName: user
+            ? [user.firstName, user.lastName].filter(Boolean).join(' ')
+            : '',
+          message: ticket.description,
+          attachmentUrl: ticket.attachmentUrl || undefined,
+          createdAt: ticket.createdAt,
+        },
+        ...replies.map((reply) => {
+          const sender = participantsById.get(reply.senderId);
+          return {
+            id: reply.id,
+            senderType: reply.senderType,
+            senderId: reply.senderId,
+            senderName: sender
+              ? [sender.firstName, sender.lastName].filter(Boolean).join(' ')
+              : reply.senderType === 'admin'
+                ? 'MyTrackr'
+                : '',
+            message: reply.message,
+            attachmentUrl: reply.attachmentUrl || undefined,
+            createdAt: reply.createdAt,
+          };
+        }),
+      ],
     };
   }
 }

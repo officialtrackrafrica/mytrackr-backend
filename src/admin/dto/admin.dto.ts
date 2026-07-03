@@ -8,9 +8,13 @@ import {
   Min,
   Max,
   IsObject,
+  IsEmail,
+  MinLength,
+  IsIn,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { BusinessType } from '../../business/entities/business.entity';
 
 export class UpdateUserStatusDto {
   @ApiProperty({
@@ -40,6 +44,45 @@ export class AdminQueryDto {
   @IsString()
   role?: string;
 
+  @ApiPropertyOptional({ description: 'Filter by business type' })
+  @IsOptional()
+  @IsString()
+  businessType?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by active subscription plan slug/name' })
+  @IsOptional()
+  @IsString()
+  planType?: string;
+
+  @ApiPropertyOptional({
+    enum: ['connected', 'disconnected', 'not_connected'],
+    description: 'Filter by bank connection status',
+  })
+  @IsOptional()
+  @IsString()
+  bankConnectionStatus?: string;
+
+  @ApiPropertyOptional({
+    enum: ['active', 'inactive', 'suspended', 'deleted'],
+    description: 'Filter by account status',
+  })
+  @IsOptional()
+  @IsString()
+  accountStatus?: string;
+
+  @ApiPropertyOptional({
+    enum: ['name', 'createdAt', 'plan', 'banksLinked', 'lastActive', 'businessType', 'accountStatus'],
+    default: 'createdAt',
+  })
+  @IsOptional()
+  @IsString()
+  sortBy?: string = 'createdAt';
+
+  @ApiPropertyOptional({ enum: ['ASC', 'DESC', 'asc', 'desc'], default: 'DESC' })
+  @IsOptional()
+  @IsString()
+  sortOrder?: string = 'DESC';
+
   @ApiPropertyOptional({ default: 1, description: 'Page number' })
   @IsOptional()
   @Type(() => Number)
@@ -48,6 +91,41 @@ export class AdminQueryDto {
   page?: number = 1;
 
   @ApiPropertyOptional({ default: 20, description: 'Items per page' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(100)
+  limit?: number = 20;
+}
+
+export class AdminUserSubscriptionHistoryQueryDto {
+  @ApiPropertyOptional({
+    enum: ['pending', 'active', 'scheduled', 'past_due', 'canceled', 'cancelled', 'failed'],
+    description: 'Filter subscription records by status',
+  })
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @ApiPropertyOptional({ description: 'Start date (YYYY-MM-DD or ISO)' })
+  @IsOptional()
+  @IsString()
+  dateFrom?: string;
+
+  @ApiPropertyOptional({ description: 'End date (YYYY-MM-DD or ISO)' })
+  @IsOptional()
+  @IsString()
+  dateTo?: string;
+
+  @ApiPropertyOptional({ default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ default: 20 })
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
@@ -65,6 +143,35 @@ export class DashboardQueryDto {
   @IsOptional()
   @IsEnum(['day', 'week', 'month'])
   period?: 'day' | 'week' | 'month' = 'month';
+}
+
+export class AdminStatsQueryDto {
+  @ApiPropertyOptional({
+    description: 'Single date filter (YYYY-MM-DD). Applies to created/status dates where relevant.',
+  })
+  @IsOptional()
+  @IsString()
+  date?: string;
+
+  @ApiPropertyOptional({ description: 'Start date for range filter (YYYY-MM-DD or ISO)' })
+  @IsOptional()
+  @IsString()
+  dateFrom?: string;
+
+  @ApiPropertyOptional({ description: 'End date for range filter (YYYY-MM-DD or ISO)' })
+  @IsOptional()
+  @IsString()
+  dateTo?: string;
+
+  @ApiPropertyOptional({ description: 'Alias for dateFrom' })
+  @IsOptional()
+  @IsString()
+  startDate?: string;
+
+  @ApiPropertyOptional({ description: 'Alias for dateTo' })
+  @IsOptional()
+  @IsString()
+  endDate?: string;
 }
 
 export class TransactionQueryDto {
@@ -201,6 +308,314 @@ export class BroadcastNotificationDto {
   filters?: Record<string, any>;
 }
 
+export class AdminMessageQueryDto {
+  @ApiPropertyOptional({ enum: ['email', 'push'] })
+  @IsOptional()
+  @IsIn(['email', 'push'])
+  channel?: 'email' | 'push';
+
+  @ApiPropertyOptional({ enum: ['sent', 'draft', 'trash', 'failed'] })
+  @IsOptional()
+  @IsIn(['sent', 'draft', 'trash', 'failed'])
+  status?: 'sent' | 'draft' | 'trash' | 'failed';
+
+  @ApiPropertyOptional({ description: 'Search by subject, body, or recipient' })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({ default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ default: 20 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(100)
+  limit?: number = 20;
+}
+
+export class ComposeAdminMessageDto {
+  @ApiPropertyOptional({ enum: ['email', 'push'], default: 'email' })
+  @IsOptional()
+  @IsIn(['email', 'push'])
+  channel?: 'email' | 'push' = 'email';
+
+  @ApiPropertyOptional({
+    enum: ['all_users', 'active_users', 'inactive_users', 'subscribers', 'custom'],
+    default: 'all_users',
+  })
+  @IsOptional()
+  @IsString()
+  recipientGroup?: string = 'all_users';
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Explicit recipient emails/user IDs. Used with custom group or as an override.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  recipients?: string[];
+
+  @ApiProperty({ description: 'Email subject or push title' })
+  @IsString()
+  subject: string;
+
+  @ApiProperty({ description: 'Email body or push message body' })
+  @IsString()
+  body: string;
+
+  @ApiPropertyOptional({ description: 'Reusable template ID to prefill/send from' })
+  @IsOptional()
+  @IsString()
+  templateId?: string;
+
+  @ApiPropertyOptional({
+    default: true,
+    description: 'Automatically save composed message as a reusable template',
+  })
+  @IsOptional()
+  @IsBoolean()
+  saveAsTemplate?: boolean = true;
+
+  @ApiPropertyOptional({ description: 'Template name when auto-saving' })
+  @IsOptional()
+  @IsString()
+  templateName?: string;
+
+  @ApiPropertyOptional({ description: 'Additional metadata for UI/push providers' })
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
+}
+
+export class SaveAdminMessageDraftDto extends ComposeAdminMessageDto {}
+
+export class AdminMessageTemplateQueryDto {
+  @ApiPropertyOptional({ enum: ['email', 'push'] })
+  @IsOptional()
+  @IsIn(['email', 'push'])
+  channel?: 'email' | 'push';
+
+  @ApiPropertyOptional({ description: 'Search by template name, subject, or body' })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({ default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ default: 20 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(100)
+  limit?: number = 20;
+}
+
+export class CreateAdminMessageTemplateDto {
+  @ApiPropertyOptional({ enum: ['email', 'push'], default: 'email' })
+  @IsOptional()
+  @IsIn(['email', 'push'])
+  channel?: 'email' | 'push' = 'email';
+
+  @ApiProperty()
+  @IsString()
+  name: string;
+
+  @ApiProperty()
+  @IsString()
+  subject: string;
+
+  @ApiProperty()
+  @IsString()
+  body: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
+}
+
+export class UpdateAdminMessageTemplateDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  subject?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  body?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+export class FaqQueryDto {
+  @ApiPropertyOptional({ description: 'Search FAQ question or answer' })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({ default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ default: 20 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(100)
+  limit?: number = 20;
+}
+
+export class CreateFaqDto {
+  @ApiProperty()
+  @IsString()
+  question: string;
+
+  @ApiProperty()
+  @IsString()
+  answer: string;
+}
+
+export class UpdateFaqDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  question?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  answer?: string;
+}
+
+export class CategorizationRuleQueryDto {
+  @ApiPropertyOptional({ description: 'Search by category, sub-category, or keyword' })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by category' })
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  @ApiPropertyOptional({ description: 'Filter active/inactive rules' })
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  isActive?: boolean;
+
+  @ApiPropertyOptional({ default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ default: 20 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(100)
+  limit?: number = 20;
+}
+
+export class CreateAdminCategorizationRuleDto {
+  @ApiProperty({ description: 'Rule category label/type' })
+  @IsString()
+  category: string;
+
+  @ApiPropertyOptional({
+    description: 'Optional sub-category label. Defaults to category when omitted.',
+  })
+  @IsOptional()
+  @IsString()
+  subCategory?: string;
+
+  @ApiProperty({
+    type: [String],
+    description: 'Keywords that should map to this category',
+  })
+  @IsArray()
+  @IsString({ each: true })
+  keywords: string[];
+
+  @ApiPropertyOptional({ default: 100 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  priority?: number = 100;
+
+  @ApiPropertyOptional({ default: true })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean = true;
+}
+
+export class UpdateAdminCategorizationRuleDto {
+  @ApiPropertyOptional({ description: 'Rule category label/type' })
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  @ApiPropertyOptional({ description: 'Optional sub-category label' })
+  @IsOptional()
+  @IsString()
+  subCategory?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Replacement keyword list',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  keywords?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  priority?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
 export class SendUncategorizedTransactionReminderDto {
   @ApiPropertyOptional({
     description: 'When true, only returns the target users without sending emails',
@@ -237,6 +652,30 @@ export class UpdateTicketDto {
   priority?: string;
 }
 
+export class ReplySupportTicketDto {
+  @ApiProperty({ description: 'Reply message body' })
+  @IsString()
+  message: string;
+
+  @ApiPropertyOptional({
+    enum: ['open', 'in_progress', 'resolved', 'closed'],
+    description: 'Optional ticket status update after replying',
+  })
+  @IsOptional()
+  @IsString()
+  status?: string;
+}
+
+export class ReplySupportTicketUploadDto extends ReplySupportTicketDto {
+  @ApiPropertyOptional({
+    type: 'string',
+    format: 'binary',
+    description: 'Optional reply attachment file',
+  })
+  @IsOptional()
+  attachment?: any;
+}
+
 export class CreateSupportTicketDto {
   @ApiProperty({ description: 'Support ticket title' })
   @IsString()
@@ -245,6 +684,22 @@ export class CreateSupportTicketDto {
   @ApiProperty({ description: 'Support ticket description' })
   @IsString()
   description: string;
+
+  @ApiPropertyOptional({
+    default: 'request',
+    description: 'Support ticket category/type',
+  })
+  @IsOptional()
+  @IsString()
+  category?: string = 'request';
+
+  @ApiPropertyOptional({
+    default: 'request',
+    description: 'Alias for category for clients that submit ticket type',
+  })
+  @IsOptional()
+  @IsString()
+  type?: string;
 }
 
 export class CreateSupportTicketUploadDto extends CreateSupportTicketDto {
@@ -265,6 +720,13 @@ export class UserSupportTicketQueryDto {
   @IsString()
   status?: string;
 
+  @ApiPropertyOptional({
+    description: 'Filter by support ticket category/type',
+  })
+  @IsOptional()
+  @IsString()
+  category?: string;
+
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
   @Type(() => Number)
@@ -279,6 +741,45 @@ export class UserSupportTicketQueryDto {
   @Min(1)
   @Max(100)
   limit?: number = 20;
+}
+
+export class AdminUpdateUserDto {
+  @ApiPropertyOptional({ description: 'User first name' })
+  @IsOptional()
+  @IsString()
+  firstName?: string;
+
+  @ApiPropertyOptional({ description: 'User last name' })
+  @IsOptional()
+  @IsString()
+  lastName?: string;
+
+  @ApiPropertyOptional({ description: 'Display username/full name' })
+  @IsOptional()
+  @IsString()
+  username?: string;
+
+  @ApiPropertyOptional({ description: 'User email address' })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @ApiPropertyOptional({ description: 'Business name' })
+  @IsOptional()
+  @IsString()
+  businessName?: string;
+
+  @ApiPropertyOptional({ enum: BusinessType, description: 'Business type' })
+  @IsOptional()
+  @IsEnum(BusinessType)
+  businessType?: BusinessType;
+}
+
+export class AdminResetUserPasswordDto {
+  @ApiProperty({ description: 'New password to set for the user' })
+  @IsString()
+  @MinLength(8)
+  newPassword: string;
 }
 
 export class AuditLogCleanupDto {
@@ -310,6 +811,9 @@ export class SupportTicketResponseDto {
 
   @ApiProperty()
   description: string;
+
+  @ApiProperty()
+  category: string;
 
   @ApiPropertyOptional()
   attachmentUrl?: string;
@@ -357,6 +861,28 @@ export class TicketQueryDto {
   @IsOptional()
   @IsString()
   priority?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter by support ticket category/type',
+  })
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  @ApiPropertyOptional({ description: 'Search by ticket title, description, category, user name, or email' })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({ description: 'Start date (YYYY-MM-DD or ISO)' })
+  @IsOptional()
+  @IsString()
+  dateFrom?: string;
+
+  @ApiPropertyOptional({ description: 'End date (YYYY-MM-DD or ISO)' })
+  @IsOptional()
+  @IsString()
+  dateTo?: string;
 
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()

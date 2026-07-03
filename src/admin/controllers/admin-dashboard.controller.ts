@@ -11,7 +11,7 @@ import { CheckPolicies } from '../../casl/decorators/check-policies.decorator';
 import { AppAbility } from '../../casl/casl-ability.factory';
 import { Action } from '../../casl/action.enum';
 import { AdminDashboardService } from '../services/admin-dashboard.service';
-import { DashboardQueryDto } from '../dto';
+import { AdminStatsQueryDto, DashboardQueryDto } from '../dto';
 
 @ApiTags('Admin - Dashboard')
 @ApiCookieAuth('accessToken')
@@ -24,8 +24,18 @@ export class AdminDashboardController {
   @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
   @ApiOperation({ summary: 'Get platform overview statistics' })
   @ApiResponse({ status: 200, description: 'Platform stats' })
-  async getStats() {
-    return this.dashboardService.getStats();
+  async getStats(@Query() query: AdminStatsQueryDto) {
+    return this.dashboardService.getStats(query);
+  }
+
+  @Get('platform-stats')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({
+    summary: 'Get platform and plan subscription statistics',
+  })
+  @ApiResponse({ status: 200, description: 'Platform stats' })
+  async getPlatformStats(@Query() query: AdminStatsQueryDto) {
+    return this.dashboardService.getStats(query);
   }
 
   @Get('registrations')

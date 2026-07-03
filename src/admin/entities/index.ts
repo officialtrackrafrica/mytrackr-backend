@@ -1,5 +1,9 @@
 export { AuditLog } from './audit-log.entity';
 export { SystemSetting } from './system-setting.entity';
 export { SupportTicket } from './support-ticket.entity';
+export { SupportTicketReply } from './support-ticket-reply.entity';
 export { Dispute } from './dispute.entity';
 export { WebhookLog } from './webhook-log.entity';
+export { AdminMessage } from './admin-message.entity';
+export { AdminMessageTemplate } from './admin-message-template.entity';
+export { Faq } from './faq.entity';

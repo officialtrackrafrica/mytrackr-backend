@@ -26,7 +26,7 @@ export class SupportTicketReply {
   @Column({ type: 'text' })
   message: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   attachmentUrl: string | null;
 
   @CreateDateColumn()

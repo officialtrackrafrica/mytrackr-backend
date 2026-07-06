@@ -23,7 +23,7 @@ export class AdminMessage {
   @Column({ default: 'draft' })
   status: AdminMessageStatus;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   recipientGroup: string | null;
 
   @Column({ type: 'jsonb', default: [] })
@@ -38,7 +38,7 @@ export class AdminMessage {
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, any> | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'uuid', nullable: true })
   templateId: string | null;
 
   @Column()

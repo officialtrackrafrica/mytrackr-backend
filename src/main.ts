@@ -53,14 +53,29 @@ async function bootstrap() {
   }
   const allowedOrigins: string[] = rawOrigins
     ? rawOrigins
-        .split(',')
-        .map((o) => o.trim())
-        .filter(Boolean)
+      .split(',')
+      .map((o) => o.trim())
+      .filter(Boolean)
     : ['http://localhost:3001'];
   logger.log(`CORS allowed origins: ${allowedOrigins.join(', ')}`);
   app.enableCors({
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      const allowed = allowedOrigins;
+
+
+      if (!origin) return callback(null, true);
+
+      const normalizedOrigin = origin.replace(/\/$/, '');
+
+      const match = allowed.some((o) => o === normalizedOrigin);
+
+      if (match) return callback(null, true);
+
+      return callback(null, false);
+    },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
   const config = new DocumentBuilder()

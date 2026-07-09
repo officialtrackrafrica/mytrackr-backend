@@ -11,6 +11,7 @@ import { BankAccount } from '../finance/entities/bank-account.entity';
 import { Transaction } from '../finance/entities/transaction.entity';
 import { PaymentsModule } from '../payments/payments.module';
 import { BusinessModule } from '../business/business.module';
+import { SimplePdfReportService } from '../common/reports/simple-pdf-report.service';
 
 @Module({
   imports: [
@@ -24,7 +25,14 @@ import { BusinessModule } from '../business/business.module';
     CashFlowService,
     BalanceSheetService,
     AnalyticsService,
+    SimplePdfReportService,
   ],
-  exports: [PnlService, CashFlowService, BalanceSheetService, AnalyticsService],
+  exports: [
+    PnlService,
+    CashFlowService,
+    BalanceSheetService,
+    AnalyticsService,
+    SimplePdfReportService,
+  ],
 })
 export class ReportsModule {}

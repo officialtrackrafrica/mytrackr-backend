@@ -4,6 +4,7 @@ services:
       context: .
       target: production
     container_name: mytrackr-app
+    restart: unless-stopped
     ports:
       - '${PORT:-5000}:5000'
     environment:
@@ -64,6 +65,7 @@ services:
       context: .
       dockerfile: ./categorization-engine/Dockerfile
     container_name: mytrackr-categorization-engine
+    restart: unless-stopped
     ports:
       - '127.0.0.1:50051:50051'
     volumes:
@@ -74,6 +76,7 @@ services:
       context: .
       dockerfile: ./ocr-service/Dockerfile
     container_name: mytrackr-ocr
+    restart: unless-stopped
     environment:
       - OCR_MAX_WORKERS=${OCR_MAX_WORKERS:-1}
       - OCR_TEXT_HANDLING_FLAG=${OCR_TEXT_HANDLING_FLAG:---force-ocr}
@@ -88,6 +91,7 @@ services:
   db:
     image: postgres:15-alpine
     container_name: mytrackr-db
+    restart: unless-stopped
     environment:
       - POSTGRES_USER=${DATABASE_USERNAME}
       - POSTGRES_PASSWORD=${DATABASE_PASSWORD}
@@ -106,6 +110,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: mytrackr-redis
+    restart: unless-stopped
     volumes:
       - redis_data:/data
     healthcheck:
@@ -117,6 +122,7 @@ services:
   mailhog:
     image: mailhog/mailhog:latest
     container_name: mytrackr-mailhog
+    restart: unless-stopped
     ports:
       - '127.0.0.1:1025:1025'
       - '127.0.0.1:8025:8025'

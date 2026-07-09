@@ -18,6 +18,7 @@ import { BankAccountService } from './services/bank-account.service';
 import { PdfAiQueueService } from './services/pdf-ai-queue.service';
 import { StatementAiParserService } from './services/statement-ai-parser.service';
 import { CategorySuggestionService } from './services/category-suggestion.service';
+import { TransactionReportPdfService } from './services/transaction-report-pdf.service';
 import { FinanceController } from './finance.controller';
 import { PaymentsModule } from '../payments/payments.module';
 import { CategorizationModule } from '../categorization/categorization.module';
@@ -52,6 +53,7 @@ import { MonoTransaction } from '../mono/entities/transaction.entity';
     PdfAiQueueService,
     StatementAiParserService,
     CategorySuggestionService,
+    TransactionReportPdfService,
   ],
   exports: [
     TypeOrmModule,
@@ -63,6 +65,7 @@ import { MonoTransaction } from '../mono/entities/transaction.entity';
     PdfAiQueueService,
     StatementAiParserService,
     CategorySuggestionService,
+    TransactionReportPdfService,
   ],
 })
 export class FinanceModule {}

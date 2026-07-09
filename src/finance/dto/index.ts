@@ -358,12 +358,44 @@ export class TransactionQueryDto {
   category?: string;
 
   @ApiPropertyOptional({
+    description: 'Filter by multiple category labels/types, comma-separated',
+    example: 'INCOME,EXPENSE',
+  })
+  @IsOptional()
+  @IsString()
+  categories?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter by multiple category UUIDs, comma-separated',
+    example:
+      '71cc0462-9eef-471f-b8dd-61df76f281a2,81cc0462-9eef-471f-b8dd-61df76f281a3',
+  })
+  @IsOptional()
+  @IsString()
+  categoryIds?: string;
+
+  @ApiPropertyOptional({
     description: 'Filter by sub-category name',
     example: 'Transportation',
   })
   @IsOptional()
   @IsString()
   subCategory?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter by multiple sub-category names, comma-separated',
+    example: 'Transportation,Office Supplies',
+  })
+  @IsOptional()
+  @IsString()
+  subCategories?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter by multiple sub-category UUIDs, comma-separated',
+  })
+  @IsOptional()
+  @IsString()
+  subCategoryIds?: string;
 
   @ApiPropertyOptional({ example: '2025-01-01' })
   @IsOptional()

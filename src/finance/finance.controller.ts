@@ -26,6 +26,7 @@ import {
   ApiConsumes,
   ApiBody,
   ApiParam,
+  ApiProduces,
 } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, SelectQueryBuilder } from 'typeorm';
@@ -50,6 +51,7 @@ import { PdfUploadService } from './services/pdf-upload.service';
 import { PdfAiQueueService } from './services/pdf-ai-queue.service';
 import { BankAccountService } from './services/bank-account.service';
 import { CategorySuggestionService } from './services/category-suggestion.service';
+import { TransactionReportPdfService } from './services/transaction-report-pdf.service';
 import { SWAGGER_TAGS } from '../common/docs';
 import { AppException, ErrorResponseDto } from '../common/errors';
 import {
@@ -183,6 +185,7 @@ export class FinanceController {
     private readonly categorizationService: CategorizationService,
     private readonly bankAccountService: BankAccountService,
     private readonly categorySuggestionService: CategorySuggestionService,
+    private readonly transactionReportPdfService: TransactionReportPdfService,
   ) {}
 
   @Get('assets/categories')
@@ -852,6 +855,63 @@ export class FinanceController {
     return this.getTransactionSummary(query);
   }
 
+  @Get('transactions/report.pdf')
+  @ApiOperation({
+    summary: 'Download transaction report as PDF',
+    description:
+      "Downloads a clean PDF report of the user's business transactions. Supports the same filters as GET /finance/transactions.",
+  })
+  @ApiProduces('application/pdf')
+  @ApiResponse({ status: 200, description: 'PDF file download' })
+  async downloadTransactionReportPdf(
+    @Req() req: any,
+    @Res() res: Response,
+    @Query() queryDto: TransactionQueryDto,
+  ) {
+    const business = await this.businessService.getBusinessForUser(req.user.id);
+    const query = this.buildTransactionQuery(business.id, queryDto);
+    const sortBy = queryDto.sortBy || 'date';
+    const sortOrder = queryDto.sortOrder === 'ASC' ? 'ASC' : 'DESC';
+
+    const transactions = await query
+      .orderBy(this.transactionSortColumns[sortBy] || 'tx.date', sortOrder)
+      .getMany();
+
+    const totals = transactions.reduce(
+      (acc, tx) => {
+        const amount = Number(tx.amount || 0);
+        if (tx.direction === 'CREDIT') {
+          acc.totalCredits += amount;
+        } else {
+          acc.totalDebits += amount;
+        }
+        return acc;
+      },
+      { totalCredits: 0, totalDebits: 0 },
+    );
+
+    const pdf = this.transactionReportPdfService.generate({
+      businessName: business.name,
+      currency: business.currency,
+      transactions,
+      totalTransactions: transactions.length,
+      totalCredits: totals.totalCredits,
+      totalDebits: totals.totalDebits,
+      netTotal: totals.totalCredits - totals.totalDebits,
+      startDate: queryDto.startDate,
+      endDate: queryDto.endDate,
+    });
+
+    const filename = `mytrackr-transaction-report-${new Date()
+      .toISOString()
+      .slice(0, 10)}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', pdf.length);
+    return res.send(pdf);
+  }
+
   private async resolveFinanceTransaction(
     userId: string,
     businessId: string,
@@ -942,9 +1002,13 @@ export class FinanceController {
       search,
       isCategorised,
       categoryId,
+      categoryIds,
       subCategoryId,
+      subCategoryIds,
       category,
+      categories,
       subCategory,
+      subCategories,
       startDate,
       endDate,
     } = queryDto;
@@ -970,19 +1034,57 @@ export class FinanceController {
       query.andWhere('tx."categoryId" = :categoryId', { categoryId });
     }
 
+    const categoryIdList = this.parseCommaSeparatedValues(categoryIds);
+    if (categoryIdList.length > 0) {
+      query.andWhere('tx."categoryId" IN (:...categoryIds)', {
+        categoryIds: categoryIdList,
+      });
+    }
+
     if (subCategoryId) {
       query.andWhere('tx."subCategoryId" = :subCategoryId', { subCategoryId });
     }
 
-    if (category) {
-      query.andWhere('tx.category ILIKE :category', {
-        category: `%${category}%`,
+    const subCategoryIdList = this.parseCommaSeparatedValues(subCategoryIds);
+    if (subCategoryIdList.length > 0) {
+      query.andWhere('tx."subCategoryId" IN (:...subCategoryIds)', {
+        subCategoryIds: subCategoryIdList,
       });
     }
 
-    if (subCategory) {
+    const explicitCategoryList = this.parseCommaSeparatedValues(categories);
+    const categoryParamValues = this.parseCommaSeparatedValues(category);
+
+    if (explicitCategoryList.length > 0 || categoryParamValues.length > 1) {
+      query.andWhere('UPPER(tx.category) IN (:...categories)', {
+        categories: [...explicitCategoryList, ...categoryParamValues].map(
+          (value) => value.toUpperCase(),
+        ),
+      });
+    } else if (categoryParamValues[0]) {
+      query.andWhere('tx.category ILIKE :category', {
+        category: `%${categoryParamValues[0]}%`,
+      });
+    }
+
+    const explicitSubCategoryList =
+      this.parseCommaSeparatedValues(subCategories);
+    const subCategoryParamValues =
+      this.parseCommaSeparatedValues(subCategory);
+
+    if (
+      explicitSubCategoryList.length > 0 ||
+      subCategoryParamValues.length > 1
+    ) {
+      query.andWhere('LOWER(tx."subCategory") IN (:...subCategories)', {
+        subCategories: [
+          ...explicitSubCategoryList,
+          ...subCategoryParamValues,
+        ].map((value) => value.toLowerCase()),
+      });
+    } else if (subCategoryParamValues[0]) {
       query.andWhere('tx."subCategory" ILIKE :subCategory', {
-        subCategory: `%${subCategory}%`,
+        subCategory: `%${subCategoryParamValues[0]}%`,
       });
     }
 
@@ -999,6 +1101,16 @@ export class FinanceController {
     }
 
     return query;
+  }
+
+  private parseCommaSeparatedValues(value?: string): string[] {
+    if (!value) {
+      return [];
+    }
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
   }
 
   private async getTransactionSummary(

@@ -237,7 +237,7 @@ export class TaxService {
         deductionsMap['life insurance'] + deductionsMap['life assurance'],
       pension: deductionsMap.pension,
       housingFund: deductionsMap.nhf + deductionsMap['national housing fund'],
-      rent: parseFloat(rentExpenseResult?.total || '0'),
+      rent: this.calculateRentRelief(parseFloat(rentExpenseResult?.total || '0')),
     };
 
     const explicitDeductions =
@@ -267,7 +267,10 @@ export class TaxService {
     const pension = explicitDeductions.pension || transactionDeductions.pension;
     const housingFund =
       explicitDeductions.housingFund || transactionDeductions.housingFund;
-    const rent = explicitDeductions.rent || transactionDeductions.rent;
+    const rent =
+      explicitDeductions.rent > 0
+        ? this.calculateRentRelief(explicitDeductions.rent)
+        : transactionDeductions.rent;
     const extra = explicitDeductions.extra;
 
     return {
@@ -278,29 +281,31 @@ export class TaxService {
       rent,
       extra,
       total:
-        healthInsurance + lifeInsurance + pension + housingFund + rent + extra,
+        healthInsurance +
+        lifeInsurance +
+        pension +
+        housingFund +
+        rent +
+        extra,
     };
   }
 
   /**
-   * Sole Proprietor / Business Name (Nigeria Tax Act 2025)
+   * Sole Proprietor / Business Name (Nigeria Tax Act 2025 / 2026 regime)
    */
   calculatePIT(netProfit: number, grossIncome: number, deductions: number) {
-    const consolidatedReliefAllowance = 200000 + netProfit * 0.2;
-    const chargeableIncome = Math.max(
-      0,
-      netProfit - deductions - consolidatedReliefAllowance,
-    );
+    const consolidatedReliefAllowance = 0;
+    const chargeableIncome = Math.max(0, netProfit - deductions);
     let remaining = chargeableIncome;
     let totalTax = 0;
 
     const bands = [
-      { width: 300000, rate: 0.07, label: 'First 300,000' },
-      { width: 300000, rate: 0.11, label: 'Next 300,000' },
-      { width: 500000, rate: 0.15, label: 'Next 500,000' },
-      { width: 500000, rate: 0.19, label: 'Next 500,000' },
-      { width: 1600000, rate: 0.21, label: 'Next 1,600,000' },
-      { width: Infinity, rate: 0.24, label: 'Above 3,200,000' },
+      { width: 800000, rate: 0, label: 'First 800,000' },
+      { width: 2200000, rate: 0.15, label: 'Next 2,200,000' },
+      { width: 9000000, rate: 0.18, label: 'Next 9,000,000' },
+      { width: 13000000, rate: 0.21, label: 'Next 13,000,000' },
+      { width: 25000000, rate: 0.23, label: 'Next 25,000,000' },
+      { width: Infinity, rate: 0.25, label: 'Above 50,000,000' },
     ];
 
     const breakdown: {
@@ -342,6 +347,10 @@ export class TaxService {
         estimatedAnnualTax === minimumTax && minimumTax > totalTax,
       breakdown,
     };
+  }
+
+  private calculateRentRelief(rentPaid: number) {
+    return Math.min(Math.max(0, rentPaid) * 0.2, 500000);
   }
 
   /**

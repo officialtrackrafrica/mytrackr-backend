@@ -7,51 +7,33 @@ describe('TaxService', () => {
     service = new TaxService({} as any, {} as any, {} as any, {} as any);
   });
 
-  it('calculates PIT using consolidated relief and the official progressive bands', () => {
+  it('calculates PIT using the 2026 progressive bands without consolidated relief', () => {
     const result = service.calculatePIT(5_000_000, 5_000_000, 0);
 
-    expect(result.chargeableIncome).toBe(3_800_000);
-    expect(result.consolidatedReliefAllowance).toBe(1_200_000);
-    expect(result.estimatedAnnualTax).toBe(704_000);
-    expect(result.estimatedMonthlySetAside).toBeCloseTo(58_666.6667, 4);
+    expect(result.chargeableIncome).toBe(5_000_000);
+    expect(result.consolidatedReliefAllowance).toBe(0);
+    expect(result.estimatedAnnualTax).toBe(690_000);
+    expect(result.estimatedMonthlySetAside).toBeCloseTo(57_500, 4);
     expect(result.minimumTaxFloor).toBe(50_000);
     expect(result.minimumTaxApplied).toBe(false);
     expect(result.breakdown).toEqual([
       {
-        bandLimit: 'First 300,000',
-        rate: '7%',
-        taxableAmount: 300_000,
-        taxGenerated: 21_000,
+        bandLimit: 'First 800,000',
+        rate: '0%',
+        taxableAmount: 800_000,
+        taxGenerated: 0,
       },
       {
-        bandLimit: 'Next 300,000',
-        rate: '11%',
-        taxableAmount: 300_000,
-        taxGenerated: 33_000,
-      },
-      {
-        bandLimit: 'Next 500,000',
+        bandLimit: 'Next 2,200,000',
         rate: '15%',
-        taxableAmount: 500_000,
-        taxGenerated: 75_000,
+        taxableAmount: 2_200_000,
+        taxGenerated: 330_000,
       },
       {
-        bandLimit: 'Next 500,000',
-        rate: '19%',
-        taxableAmount: 500_000,
-        taxGenerated: 95_000,
-      },
-      {
-        bandLimit: 'Next 1,600,000',
-        rate: '21%',
-        taxableAmount: 1_600_000,
-        taxGenerated: 336_000,
-      },
-      {
-        bandLimit: 'Above 3,200,000',
-        rate: '24%',
-        taxableAmount: 600_000,
-        taxGenerated: 144_000,
+        bandLimit: 'Next 9,000,000',
+        rate: '18%',
+        taxableAmount: 2_000_000,
+        taxGenerated: 360_000,
       },
     ]);
   });
@@ -65,6 +47,52 @@ describe('TaxService', () => {
     expect(result.minimumTaxFloor).toBe(10_000);
     expect(result.minimumTaxApplied).toBe(true);
     expect(result.breakdown).toEqual([]);
+  });
+
+  it('caps rent relief at 20% of rent paid up to 500,000 while keeping the rent field', async () => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 5, 26, 12));
+
+    const businessService = {
+      getBusinessIdForUser: jest.fn().mockResolvedValue('business-id'),
+    };
+    const assetRepository = {
+      find: jest.fn().mockResolvedValue([]),
+    };
+    const queryBuilder = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      getRawMany: jest.fn().mockResolvedValue([]),
+      getRawOne: jest.fn().mockResolvedValue({ total: '3000000' }),
+    };
+    const transactionRepository = {
+      createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+    };
+    const pnlService = {
+      getCategorisedSummary: jest.fn().mockResolvedValue({
+        netProfit: 5_000_000,
+        totalRevenue: 5_000_000,
+        totalExpenses: 0,
+        totalCogs: 0,
+      }),
+    };
+
+    service = new TaxService(
+      businessService as any,
+      transactionRepository as any,
+      assetRepository as any,
+      pnlService as any,
+    );
+
+    const result = await service.calculateTaxEstimate('user-id', 2026, 0);
+
+    expect(result.deductions.rent).toBe(500_000);
+    expect(result.deductions.total).toBe(500_000);
+    expect(result.pitCalculation.chargeableIncome).toBe(4_500_000);
+
+    jest.useRealTimers();
   });
 
   it('classifies CIT using the official gross-turnover thresholds', () => {

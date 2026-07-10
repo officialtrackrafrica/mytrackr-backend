@@ -26,14 +26,15 @@ export class TaxBandBreakdownDto {
 export class PitCalculationDto {
   @ApiProperty({
     description:
-      'Profit remaining after deductions and consolidated relief allowance',
+      'Profit remaining after deductions before applying PIT bands',
     example: 2600000,
   })
   chargeableIncome: number;
 
   @ApiProperty({
-    description: 'Consolidated relief allowance applied before PIT bands',
-    example: 1100000,
+    description:
+      'Legacy field retained for compatibility; consolidated relief allowance is removed under the current regime',
+    example: 0,
   })
   consolidatedReliefAllowance: number;
 
@@ -172,7 +173,8 @@ export class DeductionsDto {
   housingFund: number;
 
   @ApiProperty({
-    description: 'Rent or housing allowance deduction applied to the estimate.',
+    description:
+      'Rent deduction field. Under the current regime this contains rent relief, calculated as 20% of rent paid and capped at NGN 500,000.',
     example: 900000,
   })
   rent: number;

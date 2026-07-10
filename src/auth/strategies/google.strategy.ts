@@ -63,6 +63,9 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
       if (!user.isActive) {
         updates.isActive = true;
       }
+      if (!user.signedUpWithGoogle && user.googleId && !user.passwordHash) {
+        updates.signedUpWithGoogle = true;
+      }
       if (Object.keys(updates).length > 0) {
         await this.usersRepository.update(user.id, updates);
         Object.assign(user, updates);
@@ -77,6 +80,7 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
         email,
         firstName,
         lastName,
+        signedUpWithGoogle: true,
         isVerified: true,
         isActive: true,
         securitySettings: { mfaEnabled: false },

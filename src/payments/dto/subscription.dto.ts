@@ -92,6 +92,18 @@ export class SubscriptionStatusResponseDto {
 export class SubscriptionInitResponseDto {
   @ApiProperty() authorizationUrl: string;
   @ApiProperty() reference: string;
+  @ApiPropertyOptional({ example: 6500 })
+  amount?: number;
+  @ApiPropertyOptional({ example: 'NGN' })
+  currency?: string;
+  @ApiPropertyOptional({ example: 10000 })
+  fullPlanPrice?: number;
+  @ApiPropertyOptional({ example: 3500 })
+  proratedCredit?: number;
+  @ApiPropertyOptional({ example: 14 })
+  remainingDays?: number;
+  @ApiPropertyOptional({ example: true })
+  isProratedUpgrade?: boolean;
 }
 
 export class AdditionalBankAccountFeeStatusDto {

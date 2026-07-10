@@ -36,6 +36,7 @@ import {
   ResetPasswordDto,
 } from '../dto';
 import { RegisterWithEmailDto } from '../dto/register-email.dto';
+import { RegisterWithGoogleDto } from '../dto/register-google.dto';
 import { RateLimitGuard, RateLimit } from '../../common/guards';
 import { AuthError } from '../../common/errors';
 import { SWAGGER_TAGS } from '../../common/docs';
@@ -106,6 +107,48 @@ export class AuthController {
   ): Promise<RegisterResponseDto> {
     try {
       return await this.authService.registerWithEmail(dto);
+    } catch (error) {
+      if (error instanceof AuthError) {
+        throw new HttpException(
+          { error: error.code, message: error.message },
+          error.status,
+        );
+      }
+      throw new HttpException(
+        {
+          error: 'REGISTRATION_FAILED',
+          message: error instanceof Error ? error.message : 'Unknown error',
+        },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+
+  @Post('register/google')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ windowMs: 60 * 60 * 1000, max: 100 })
+  @Throttle({ default: { ttl: 60 * 60 * 1000, limit: 100 } })
+  @ApiOperation({
+    summary: 'Register with Google token',
+    description:
+      'Creates a Google signup user and a business shell without selecting a business type.',
+  })
+  @ApiBody({ type: RegisterWithGoogleDto })
+  @ApiResponse({
+    status: 201,
+    description: 'Registration successful',
+    type: RegisterResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'User already exists or validation error',
+  })
+  @ApiResponse({ status: 429, description: 'Rate limited' })
+  async registerWithGoogle(
+    @Body() dto: RegisterWithGoogleDto,
+  ): Promise<RegisterResponseDto> {
+    try {
+      return await this.authService.registerWithGoogle(dto);
     } catch (error) {
       if (error instanceof AuthError) {
         throw new HttpException(

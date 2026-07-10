@@ -1,6 +1,5 @@
-import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { BusinessType } from '../../business/entities/business.entity';
 
 export class RegisterWithGoogleDto {
   @ApiProperty({
@@ -26,13 +25,4 @@ export class RegisterWithGoogleDto {
   @IsString()
   @IsOptional()
   lastName?: string;
-
-  @ApiPropertyOptional({
-    description: 'Legal business type',
-    enum: BusinessType,
-    example: BusinessType.SOLE_PROPRIETORSHIP,
-  })
-  @IsEnum(BusinessType)
-  @IsOptional()
-  businessType?: BusinessType;
 }

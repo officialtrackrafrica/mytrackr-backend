@@ -96,6 +96,30 @@ export class UserController {
     return this.sanitizeUser(user);
   }
 
+  @Get('me/google-signup')
+  @ApiOperation({ summary: 'Check whether current user signed up with Google' })
+  @ApiResponse({
+    status: 200,
+    description: 'Google signup status for current user',
+  })
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Read, 'User'))
+  async getGoogleSignupStatus(
+    @Request() req: AuthenticatedRequest,
+  ): Promise<{ signedUpWithGoogle: boolean }> {
+    const user = await this.usersRepository.findOne({
+      where: { id: req.user.id },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return {
+      signedUpWithGoogle:
+        user.signedUpWithGoogle || Boolean(user.googleId && !user.passwordHash),
+    };
+  }
+
   @Get('me/notification-preferences')
   @ApiOperation({ summary: 'Get my notification preferences' })
   @ApiResponse({
@@ -306,6 +330,9 @@ export class UserController {
       country: user.country,
       timezone: user.timezone,
       businessType: user.business?.businessType as BusinessType | undefined,
+      signedUpWithGoogle:
+        user.signedUpWithGoogle || Boolean(user.googleId && !user.passwordHash),
+      hasSelectedBusinessType: Boolean(user.business?.businessType),
       notificationPreferences: this.resolveNotificationPreferences(
         user.notificationPreferences,
       ),
@@ -392,8 +419,10 @@ export class UserController {
       }
     }
 
-    if (buffer.toString('ascii', 0, 6) === 'GIF87a' ||
-        buffer.toString('ascii', 0, 6) === 'GIF89a') {
+    if (
+      buffer.toString('ascii', 0, 6) === 'GIF87a' ||
+      buffer.toString('ascii', 0, 6) === 'GIF89a'
+    ) {
       return {
         width: buffer.readUInt16LE(6),
         height: buffer.readUInt16LE(8),

@@ -5,7 +5,10 @@ import { JwtService } from '@nestjs/jwt';
 import { v4 as uuidv4 } from 'uuid';
 import * as crypto from 'crypto';
 import { User } from '../entities';
-import { Business, BusinessType } from '../../business/entities/business.entity';
+import {
+  Business,
+  BusinessType,
+} from '../../business/entities/business.entity';
 import { SessionService } from './session.service';
 import { RolesService } from './roles.service';
 // import { MfaService } from './mfa.service';
@@ -364,6 +367,7 @@ export class AuthService {
         googleId,
         firstName,
         lastName,
+        signedUpWithGoogle: true,
         isVerified: true,
         isActive: true,
         securitySettings: { mfaEnabled: false },
@@ -371,6 +375,7 @@ export class AuthService {
 
       const savedUser = await this.usersRepository.save(newUser);
 
+      await this.ensureBusinessExistsForUser(savedUser);
       await this.rolesService.assignRoleToUser(savedUser.id, 'User');
       const session = await this.sessionService.createSession(savedUser.id);
       const tokens = await this.generateTokens(savedUser.id, session.id);
@@ -623,14 +628,8 @@ export class AuthService {
       );
     }
 
-    const {
-      email,
-      password,
-      firstName,
-      lastName,
-      businessName,
-      businessType,
-    } = dto;
+    const { email, password, firstName, lastName, businessName, businessType } =
+      dto;
     const normalizedEmail = this.normalizeEmail(email);
 
     const existing = await this.usersRepository.findOne({
@@ -689,7 +688,7 @@ export class AuthService {
   async registerWithGoogle(
     dto: RegisterWithGoogleDto,
   ): Promise<RegisterResponseDto> {
-    const { googleIdToken, firstName, lastName, businessType } = dto;
+    const { googleIdToken, firstName, lastName } = dto;
 
     const googleId = googleIdToken || `google_${Date.now()}`;
 
@@ -708,6 +707,7 @@ export class AuthService {
       googleId,
       firstName,
       lastName,
+      signedUpWithGoogle: true,
       isVerified: true,
       isActive: true,
       securitySettings: { mfaEnabled: false },
@@ -716,8 +716,7 @@ export class AuthService {
     const savedUser = await this.usersRepository.save(newUser);
 
     const newBusiness = this.businessRepository.create({
-      name: `${firstName}'s Business`,
-      businessType: businessType ?? BusinessType.SOLE_PROPRIETORSHIP,
+      name: `${firstName?.trim() || 'MyTrackr'}'s Business`,
       owner: savedUser,
       userId: savedUser.id,
     });
@@ -754,6 +753,11 @@ export class AuthService {
       user.isActive = true;
     }
 
+    if (!user.signedUpWithGoogle && user.googleId && !user.passwordHash) {
+      await this.usersRepository.update(user.id, { signedUpWithGoogle: true });
+      user.signedUpWithGoogle = true;
+    }
+
     if (!user.roles || !user.roles.some((role) => role.name === 'User')) {
       await this.rolesService.assignRoleToUser(user.id, 'User');
     }
@@ -783,13 +787,10 @@ export class AuthService {
     }
 
     const ownerName =
-      user.firstName?.trim() ||
-      user.email?.split('@')[0]?.trim() ||
-      'MyTrackr';
+      user.firstName?.trim() || user.email?.split('@')[0]?.trim() || 'MyTrackr';
 
     const business = this.businessRepository.create({
       name: `${ownerName}'s Business`,
-      businessType: BusinessType.SOLE_PROPRIETORSHIP,
       owner: user,
       userId: user.id,
     });
@@ -829,6 +830,8 @@ export class AuthService {
       lastName: user.lastName,
       profilePicture: user.profilePicture,
       businessType: user.business?.businessType,
+      signedUpWithGoogle: this.hasGoogleSignup(user),
+      hasSelectedBusinessType: Boolean(user.business?.businessType),
       notificationPreferences: {
         appUpdates: {
           email: user.notificationPreferences?.appUpdates?.email ?? true,
@@ -868,6 +871,12 @@ export class AuthService {
     await this.usersRepository.update(user.id, {
       securitySettings: updates,
     });
+  }
+
+  private hasGoogleSignup(user: User): boolean {
+    return (
+      user.signedUpWithGoogle || Boolean(user.googleId && !user.passwordHash)
+    );
   }
 
   async uploadProfilePicture(userId: string, file: any): Promise<User> {

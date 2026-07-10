@@ -43,6 +43,18 @@ const INTEGRATION_API_KEY_PAYMENT_TYPE = 'integration_api_key_subscription';
 const SCHEDULED_SUBSCRIPTION_LOCK_KEY = 'subscriptions:activation:lock';
 const SCHEDULED_SUBSCRIPTION_LOCK_TTL_SECONDS = 55;
 const SCHEDULED_SUBSCRIPTION_CHECK_INTERVAL_MS = 60_000;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+interface SubscriptionCheckoutPricing {
+  amountDue: number;
+  fullPlanPrice: number;
+  proratedCredit: number;
+  remainingDays: number;
+  currentPlanDailyPrice: number;
+  isProratedUpgrade: boolean;
+  currentPlanId?: string;
+  currentPlanName?: string;
+}
 
 @Injectable()
 export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
@@ -130,7 +142,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
             plan.slug,
             Boolean(
               (plan.capabilities || {})[featureKey] ||
-                (plan.features || []).includes(featureKey),
+              (plan.features || []).includes(featureKey),
             ),
           ]),
         ),
@@ -300,17 +312,38 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
+    const pricing = await this.calculateSubscriptionCheckoutPricing(
+      user.id,
+      plan,
+    );
+    if (pricing.amountDue <= 0) {
+      throw new BadRequestException(
+        'The prorated upgrade amount must be greater than zero',
+      );
+    }
+
     const reference = `sub_${crypto.randomBytes(8).toString('hex')}`;
-    const gatewayAmount = Math.round(plan.price * 100);
+    const gatewayAmount = Math.round(pricing.amountDue * 100);
 
     const tx = this.txRepository.create({
       user,
-      amount: plan.price,
+      amount: pricing.amountDue,
       currency: plan.currency,
       gateway: gatewayName,
       reference,
       status: 'pending',
-      metadata: { planId: plan.id, type: 'subscription_initialization' },
+      metadata: {
+        planId: plan.id,
+        type: 'subscription_initialization',
+        fullPlanPrice: pricing.fullPlanPrice,
+        amountDue: pricing.amountDue,
+        proratedCredit: pricing.proratedCredit,
+        remainingDays: pricing.remainingDays,
+        currentPlanDailyPrice: pricing.currentPlanDailyPrice,
+        isProratedUpgrade: pricing.isProratedUpgrade,
+        currentPlanId: pricing.currentPlanId,
+        currentPlanName: pricing.currentPlanName,
+      },
     });
 
     await this.txRepository.save(tx);
@@ -319,16 +352,30 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       amount: gatewayAmount,
       email: user.email,
       reference,
-      plan: plan.gatewayPlanId,
+      plan: pricing.isProratedUpgrade ? undefined : plan.gatewayPlanId,
       metadata: {
         userId: user.id,
         planId: plan.id,
+        fullPlanPrice: pricing.fullPlanPrice,
+        amountDue: pricing.amountDue,
+        proratedCredit: pricing.proratedCredit,
+        remainingDays: pricing.remainingDays,
+        currentPlanDailyPrice: pricing.currentPlanDailyPrice,
+        isProratedUpgrade: pricing.isProratedUpgrade,
+        currentPlanId: pricing.currentPlanId,
+        currentPlanName: pricing.currentPlanName,
       },
     });
 
     return {
       authorizationUrl: initResponse.authorizationUrl,
       reference: initResponse.reference,
+      amount: pricing.amountDue,
+      currency: plan.currency,
+      fullPlanPrice: pricing.fullPlanPrice,
+      proratedCredit: pricing.proratedCredit,
+      remainingDays: pricing.remainingDays,
+      isProratedUpgrade: pricing.isProratedUpgrade,
     };
   }
 
@@ -494,6 +541,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
             verification.customerCode,
             verification.rawResponse?.data?.authorization,
             verification.rawResponse?.data,
+            tx.metadata,
           );
         } else if (
           tx.metadata?.type === INTEGRATION_API_KEY_PAYMENT_TYPE &&
@@ -520,6 +568,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     customerCode: string = '',
     authorization?: Record<string, any>,
     gatewayPaymentData?: Record<string, any>,
+    paymentMetadata?: Record<string, any>,
   ) {
     const plan = await this.planRepository.findOne({ where: { id: planId } });
     const user = await this.subRepository.manager.findOne(User, {
@@ -536,10 +585,10 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     const now = new Date();
     const hasRemainingActiveTime = Boolean(
       existingActiveSubscription?.currentPeriodEnd &&
-        existingActiveSubscription.currentPeriodEnd > now,
+      existingActiveSubscription.currentPeriodEnd > now,
     );
-    const isSamePlanRenewal =
-      existingActiveSubscription?.plan?.id === plan.id;
+    const isSamePlanRenewal = existingActiveSubscription?.plan?.id === plan.id;
+    const isProratedUpgrade = paymentMetadata?.isProratedUpgrade === true;
 
     if (!hasRemainingActiveTime && existingActiveSubscription) {
       existingActiveSubscription.status = 'canceled';
@@ -547,9 +596,10 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       await this.subRepository.save(existingActiveSubscription);
     }
 
-    const startDate = hasRemainingActiveTime
-      ? new Date(existingActiveSubscription!.currentPeriodEnd)
-      : now;
+    const startDate =
+      hasRemainingActiveTime && !isProratedUpgrade
+        ? new Date(existingActiveSubscription!.currentPeriodEnd)
+        : now;
     const endDate = this.calculatePeriodEnd(startDate, plan.interval);
 
     let gatewaySubscriptionId = '';
@@ -566,7 +616,8 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       !gatewaySubscriptionId &&
       plan.gatewayPlanId &&
       customerCode &&
-      authorization?.authorization_code
+      authorization?.authorization_code &&
+      !isProratedUpgrade
     ) {
       try {
         const created = await this.paystackService.createSubscription({
@@ -587,7 +638,11 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    if (hasRemainingActiveTime && existingActiveSubscription && isSamePlanRenewal) {
+    if (
+      hasRemainingActiveTime &&
+      existingActiveSubscription &&
+      isSamePlanRenewal
+    ) {
       existingActiveSubscription.plan = plan;
       existingActiveSubscription.currentPeriodEnd = endDate;
       existingActiveSubscription.gatewaySubscriptionId = gatewaySubscriptionId;
@@ -603,6 +658,61 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       await this.subRepository.save(existingActiveSubscription);
       this.logger.log(
         `Extended plan ${plan.name} for user ${user.id} until ${endDate.toISOString()}`,
+      );
+      return;
+    }
+
+    if (
+      hasRemainingActiveTime &&
+      existingActiveSubscription &&
+      isProratedUpgrade
+    ) {
+      if (
+        existingActiveSubscription.gatewaySubscriptionId &&
+        existingActiveSubscription.gatewayEmailToken
+      ) {
+        await this.paystackService.disableSubscription({
+          code: existingActiveSubscription.gatewaySubscriptionId,
+          token: existingActiveSubscription.gatewayEmailToken,
+        });
+      }
+
+      existingActiveSubscription.status = 'canceled';
+      existingActiveSubscription.cancelAtPeriodEnd = false;
+      existingActiveSubscription.canceledAt = now;
+      await this.subRepository.save(existingActiveSubscription);
+
+      if (
+        !gatewaySubscriptionId &&
+        plan.gatewayPlanId &&
+        customerCode &&
+        authorization?.authorization_code
+      ) {
+        const created = await this.paystackService.createSubscription({
+          customer: customerCode,
+          plan: plan.gatewayPlanId,
+          authorization: authorization.authorization_code,
+        });
+        gatewaySubscriptionId = created.subscriptionCode;
+        gatewayEmailToken = created.emailToken;
+      }
+
+      const upgradedSubscription = this.subRepository.create({
+        user,
+        plan,
+        status: 'active',
+        currentPeriodStart: now,
+        currentPeriodEnd: endDate,
+        gatewaySubscriptionId,
+        gatewayCustomerCode: customerCode,
+        gatewayEmailToken,
+        paymentAuthorization: authorization || null,
+        cancelAtPeriodEnd: false,
+      });
+
+      await this.subRepository.save(upgradedSubscription);
+      this.logger.log(
+        `Upgraded user ${user.id} from ${existingActiveSubscription.plan.name} to ${plan.name} with prorated payment`,
       );
       return;
     }
@@ -726,6 +836,108 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     return endDate;
   }
 
+  private async calculateSubscriptionCheckoutPricing(
+    userId: string,
+    targetPlan: Plan,
+  ): Promise<SubscriptionCheckoutPricing> {
+    const fullPlanPrice = Number(targetPlan.price);
+    const basePricing: SubscriptionCheckoutPricing = {
+      amountDue: this.roundCurrency(fullPlanPrice),
+      fullPlanPrice: this.roundCurrency(fullPlanPrice),
+      proratedCredit: 0,
+      remainingDays: 0,
+      currentPlanDailyPrice: 0,
+      isProratedUpgrade: false,
+    };
+
+    const existingActiveSubscription = await this.subRepository.findOne({
+      where: { user: { id: userId }, status: 'active' },
+      relations: ['plan'],
+      order: { createdAt: 'DESC' },
+    });
+
+    const now = new Date();
+    if (
+      !existingActiveSubscription?.plan ||
+      !existingActiveSubscription.currentPeriodEnd ||
+      existingActiveSubscription.currentPeriodEnd <= now
+    ) {
+      if (
+        existingActiveSubscription?.currentPeriodEnd &&
+        existingActiveSubscription.currentPeriodEnd <= now
+      ) {
+        existingActiveSubscription.status = 'past_due';
+        await this.subRepository.save(existingActiveSubscription);
+      }
+      return basePricing;
+    }
+
+    const currentPlanPrice = Number(existingActiveSubscription.plan.price);
+    if (
+      existingActiveSubscription.plan.id === targetPlan.id ||
+      fullPlanPrice <= currentPlanPrice
+    ) {
+      return basePricing;
+    }
+
+    const billingPeriodDays = this.getSubscriptionBillingPeriodDays(
+      existingActiveSubscription,
+      now,
+    );
+    const remainingDays = Math.ceil(
+      (existingActiveSubscription.currentPeriodEnd.getTime() - now.getTime()) /
+        MS_PER_DAY,
+    );
+    const currentPlanDailyPrice = currentPlanPrice / billingPeriodDays;
+    const proratedCredit = this.roundCurrency(
+      currentPlanDailyPrice * remainingDays,
+    );
+    const amountDue = this.roundCurrency(
+      Math.max(fullPlanPrice - proratedCredit, 0),
+    );
+
+    return {
+      amountDue,
+      fullPlanPrice: this.roundCurrency(fullPlanPrice),
+      proratedCredit,
+      remainingDays,
+      currentPlanDailyPrice: this.roundCurrency(currentPlanDailyPrice),
+      isProratedUpgrade: true,
+      currentPlanId: existingActiveSubscription.plan.id,
+      currentPlanName: existingActiveSubscription.plan.name,
+    };
+  }
+
+  private getSubscriptionBillingPeriodDays(
+    subscription: Subscription,
+    fallbackDate: Date,
+  ): number {
+    if (
+      subscription.currentPeriodStart &&
+      subscription.currentPeriodEnd &&
+      subscription.currentPeriodEnd > subscription.currentPeriodStart
+    ) {
+      return Math.max(
+        1,
+        Math.ceil(
+          (subscription.currentPeriodEnd.getTime() -
+            subscription.currentPeriodStart.getTime()) /
+            MS_PER_DAY,
+        ),
+      );
+    }
+
+    return this.getDaysInMonth(fallbackDate);
+  }
+
+  private getDaysInMonth(date: Date): number {
+    return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  }
+
+  private roundCurrency(amount: number): number {
+    return Math.round(amount * 100) / 100;
+  }
+
   private async activateScheduledSubscriptionIfDue(
     userId: string,
   ): Promise<Subscription | null> {
@@ -766,10 +978,11 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       return null;
     }
 
-    const activatedSubscription = await this.activateScheduledSubscriptionRecord(
-      scheduledSubscription.id,
-      now,
-    );
+    const activatedSubscription =
+      await this.activateScheduledSubscriptionRecord(
+        scheduledSubscription.id,
+        now,
+      );
     return activatedSubscription;
   }
 

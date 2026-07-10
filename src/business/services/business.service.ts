@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Business, BusinessType } from '../entities/business.entity';
-import { UpdateBusinessDto } from '../dto';
+import { SelectBusinessTypeDto, UpdateBusinessDto } from '../dto';
 
 @Injectable()
 export class BusinessService {
@@ -39,6 +39,29 @@ export class BusinessService {
   async getBusinessIdForUser(userId: string): Promise<string> {
     const business = await this.getBusinessForUser(userId);
     return business.id;
+  }
+
+  async getBusinessTypeSelectionStatus(userId: string): Promise<{
+    name: string;
+    hasSelectedBusinessType: boolean;
+    businessType: BusinessType | null;
+  }> {
+    const business = await this.getBusinessForUser(userId);
+    return {
+      name: business.name,
+      hasSelectedBusinessType: Boolean(business.businessType),
+      businessType: business.businessType,
+    };
+  }
+
+  async selectBusinessType(
+    userId: string,
+    dto: SelectBusinessTypeDto,
+  ): Promise<Business> {
+    const business = await this.getBusinessForUser(userId);
+    business.name = dto.name.trim();
+    business.businessType = dto.businessType;
+    return this.businessRepository.save(business);
   }
 
   async findOne(id: string, userId: string): Promise<Business> {

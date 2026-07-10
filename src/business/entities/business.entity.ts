@@ -28,9 +28,9 @@ export class Business {
   @Column({
     type: 'enum',
     enum: BusinessType,
-    default: BusinessType.SOLE_PROPRIETORSHIP,
+    nullable: true,
   })
-  businessType: BusinessType;
+  businessType: BusinessType | null;
 
   @Column({ default: 'NGN' })
   currency: string;

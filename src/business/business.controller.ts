@@ -23,6 +23,8 @@ import {
   UpdateBusinessDto,
   BusinessResponseDto,
   BusinessTypeOptionDto,
+  BusinessTypeSelectionStatusDto,
+  SelectBusinessTypeDto,
 } from './dto';
 import { SWAGGER_TAGS } from '../common/docs';
 import { ErrorResponseDto } from '../common/errors';
@@ -61,6 +63,33 @@ export class BusinessController {
   })
   getMyBusiness(@Req() req: any) {
     return this.businessService.getBusinessForUser(req.user.id);
+  }
+
+  @Get('my-business/business-type-selection')
+  @ApiOperation({
+    summary: 'Check whether the authenticated user selected a business type',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Business type selection status',
+    type: BusinessTypeSelectionStatusDto,
+  })
+  getMyBusinessTypeSelectionStatus(@Req() req: any) {
+    return this.businessService.getBusinessTypeSelectionStatus(req.user.id);
+  }
+
+  @Patch('my-business/business-type')
+  @ApiOperation({
+    summary: "Set the authenticated user's business name and business type",
+  })
+  @ApiBody({ type: SelectBusinessTypeDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Business name and type selected',
+    type: BusinessResponseDto,
+  })
+  selectMyBusinessType(@Req() req: any, @Body() dto: SelectBusinessTypeDto) {
+    return this.businessService.selectBusinessType(req.user.id, dto);
   }
 
   @Patch(':id')

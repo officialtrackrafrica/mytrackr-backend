@@ -43,8 +43,21 @@ export class UserResponseDto {
     description: 'Business type',
     enum: BusinessType,
     required: false,
+    nullable: true,
   })
-  businessType?: BusinessType;
+  businessType?: BusinessType | null;
+
+  @ApiProperty({
+    description: 'Whether the user originally signed up with Google',
+    example: false,
+  })
+  signedUpWithGoogle: boolean;
+
+  @ApiProperty({
+    description: 'Whether the user has selected a business type',
+    example: true,
+  })
+  hasSelectedBusinessType: boolean;
 
   @ApiProperty({
     description: 'User notification preferences',

@@ -2,6 +2,7 @@ import {
   IsString,
   IsEnum,
   IsOptional,
+  IsNotEmpty,
   MinLength,
   MaxLength,
 } from 'class-validator';
@@ -41,6 +42,29 @@ export class UpdateBusinessDto {
   currency?: string;
 }
 
+export class SelectBusinessTypeDto {
+  @ApiProperty({
+    description: 'Business name',
+    example: 'Acme Ventures Ltd',
+    minLength: 2,
+    maxLength: 100,
+  })
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(2)
+  @MaxLength(100)
+  name: string;
+
+  @ApiProperty({
+    description: 'Selected business type',
+    enum: BusinessType,
+    example: BusinessType.PRIVATE_LIMITED_COMPANY,
+  })
+  @IsEnum(BusinessType)
+  @IsNotEmpty()
+  businessType: BusinessType;
+}
+
 // ─── Response DTOs ───────────────────────────────────────────────────────────
 
 export class BusinessResponseDto {
@@ -54,8 +78,9 @@ export class BusinessResponseDto {
     description: 'Business type',
     enum: BusinessType,
     example: BusinessType.SOLE_PROPRIETORSHIP,
+    nullable: true,
   })
-  businessType: BusinessType;
+  businessType: BusinessType | null;
 
   @ApiProperty({ description: 'Currency code', example: 'NGN' })
   currency: string;
@@ -83,4 +108,26 @@ export class BusinessTypeOptionDto {
     example: 'Sole Proprietorship',
   })
   label: string;
+}
+
+export class BusinessTypeSelectionStatusDto {
+  @ApiProperty({
+    description: 'Current business name',
+    example: 'Acme Ventures Ltd',
+  })
+  name: string;
+
+  @ApiProperty({
+    description: 'Whether the user has selected a business type',
+    example: false,
+  })
+  hasSelectedBusinessType: boolean;
+
+  @ApiProperty({
+    description: 'Selected business type',
+    enum: BusinessType,
+    nullable: true,
+    required: false,
+  })
+  businessType: BusinessType | null;
 }

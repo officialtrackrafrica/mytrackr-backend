@@ -41,6 +41,9 @@ export class User {
   googleId: string;
 
   @Column({ default: false })
+  signedUpWithGoogle: boolean;
+
+  @Column({ default: false })
   isVerified: boolean;
 
   @Column({ nullable: true })

@@ -65,7 +65,8 @@ export class RegisterDto {
   lastName?: string;
 
   @ApiProperty({
-    description: 'Legal business type',
+    description:
+      'Legal business type. Ignored for Google registration; Google users must select it after signup.',
     enum: BusinessType,
     example: BusinessType.SOLE_PROPRIETORSHIP,
     required: false,

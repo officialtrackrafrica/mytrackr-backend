@@ -88,8 +88,8 @@ export class BalanceSheetService {
         cat: TransactionCategory.EQUITY,
       })
       .andWhere('tx.direction = :dir', { dir: TransactionDirection.DEBIT })
-      .andWhere('tx.subCategory = :sub', {
-        sub: 'Owner Withdrawal (for personal use)',
+      .andWhere('tx.subCategory IN (:...subs)', {
+        subs: ['Personal use', 'Owner Withdrawal (for personal use)'],
       })
       .select('SUM(tx.amount)', 'total')
       .getRawOne();

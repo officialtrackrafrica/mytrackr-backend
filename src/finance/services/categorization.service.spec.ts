@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import {
   Transaction,
@@ -42,6 +43,7 @@ describe('CategorizationService', () => {
       predict: jest
         .fn()
         .mockResolvedValue({ category: 'Uncategorized', confidence: 0 }),
+      learnFeedback: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -55,6 +57,7 @@ describe('CategorizationService', () => {
           useValue: subCatRepo,
         },
         { provide: AiCategorizationService, useValue: aiService },
+        { provide: ConfigService, useValue: { get: jest.fn() } },
       ],
     }).compile();
 

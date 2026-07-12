@@ -52,7 +52,7 @@ export class AiCategorizationService implements OnModuleInit {
     narration: string,
     correctCategory: string,
     userId: string = '',
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
       this.logger.debug(`Sending feedback: ${narration} -> ${correctCategory}`);
       await lastValueFrom(
@@ -63,8 +63,10 @@ export class AiCategorizationService implements OnModuleInit {
         }),
       );
       this.logger.log(`Successfully learned feedback for: ${narration}`);
+      return true;
     } catch (error) {
       this.logger.error(`Failed to send feedback via gRPC: ${error.message}`);
+      return false;
     }
   }
 }

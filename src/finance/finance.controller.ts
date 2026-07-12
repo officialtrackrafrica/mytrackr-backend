@@ -676,6 +676,12 @@ export class FinanceController {
     }
 
     await this.transactionRepository.save(tx);
+    if (tx.isCategorised) {
+      await this.categorizationService.learnFromCategorizedTransaction(
+        tx,
+        req.user.id,
+      );
+    }
     return this.serializeTransaction(
       await this.transactionRepository.findOneBy({ id: tx.id }),
     );

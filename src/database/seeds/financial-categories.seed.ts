@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import {
   AccountCategory,
   AccountCategoryType,
@@ -21,11 +21,27 @@ export class FinancialCategoriesSeed {
   async run() {
     this.logger.log('Seeding financial categories and sub-categories...');
 
+    await this.categoryRepo.delete({
+      isSystem: true,
+      type: In([
+        AccountCategoryType.ASSET,
+        AccountCategoryType.LIABILITY,
+        AccountCategoryType.EQUITY,
+        AccountCategoryType.TRANSFER,
+      ]),
+    });
+
     const categories = [
       {
         name: 'Income',
         type: AccountCategoryType.INCOME,
-        subs: ['Money from sales', 'Gifted money', 'Other money inflow'],
+        subs: [
+          'Money from sales',
+          'Money from brand deal',
+          'Money from creative gigs',
+          'Gifted money',
+          'Other money inflow',
+        ],
       },
       {
         name: 'Selling/Production Cost',
@@ -37,9 +53,12 @@ export class FinancialCategoriesSeed {
         type: AccountCategoryType.EXPENSE,
         subs: [
           'Rent',
+          'Salary and Wages',
           'Wages & Salaries',
           'Marketing/Advertising',
+          'Subscriptions',
           'Software Subscription',
+          'Professional Services',
           'Utility Bill (Light, Water, Waste etc.)',
           'Airtime/Internet Subscription',
           'Transportation & Logistics',
@@ -53,42 +72,9 @@ export class FinancialCategoriesSeed {
         ],
       },
       {
-        name: 'Assets',
-        type: AccountCategoryType.ASSET,
-        subs: [
-          'Cash in Bank Account',
-          'Cash in Hand',
-          'Goods/Stock/Inventory',
-          'Money Owed by Customers (Receivables)',
-          'Land & Buildings',
-          'Equipment & Machinery',
-          'Furniture',
-          'Other Assets',
-        ],
-      },
-      {
-        name: 'Liabilities',
-        type: AccountCategoryType.LIABILITY,
-        subs: [
-          'Business Loan',
-          'Cooperative Loan',
-          'Friends & Family Loan',
-          'Money owed to Supplier',
-          'Other Liabilities',
-        ],
-      },
-      {
-        name: 'Owner’s Money',
+        name: 'Personal Withdrawal',
         type: AccountCategoryType.EQUITY,
-        subs: ['Capital contributed', 'Owner Withdrawal (for personal use)'],
-      },
-      {
-        name: 'Internal Transfers',
-        type: AccountCategoryType.TRANSFER,
-        subs: [
-          'Transfer to other business account',
-          'Transfer from other business account',
-        ],
+        subs: ['Personal use', 'Owner Withdrawal (for personal use)'],
       },
     ];
 

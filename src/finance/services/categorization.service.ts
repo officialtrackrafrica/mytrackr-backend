@@ -168,12 +168,20 @@ export class CategorizationService {
 
             // ── Step 1: Rule-based matching ──────────────────────────────────
             if (!tx.isCategorised) {
-              this.applyRules(tx, activeRules);
+              await this.applyRules(tx, activeRules);
             }
 
             // ── Step 2: AI prediction ───────────────────────────────────────
             if (!tx.isCategorised) {
               await this.applyAiPrediction(tx, dto.description, userId ?? '');
+            }
+
+            if (!tx.isCategorised) {
+              await this.applyGeminiPrediction(
+                tx,
+                businessId || undefined,
+                userId ?? '',
+              );
             }
 
             // ── Step 3: Mono default category ───────────────────────────────
@@ -236,11 +244,19 @@ export class CategorizationService {
         continue;
       }
 
-      this.applyRules(tx, activeRules);
+      await this.applyRules(tx, activeRules);
 
       // ── Step 2: AI prediction (only if rules didn't match) ─────────────────
       if (!tx.isCategorised) {
         await this.applyAiPrediction(tx, dto.description, userId ?? '');
+      }
+
+      if (!tx.isCategorised) {
+        await this.applyGeminiPrediction(
+          tx,
+          businessId || undefined,
+          userId ?? '',
+        );
       }
 
       // ── Step 3: Mono default category ─────────────────────────────────────
@@ -337,7 +353,7 @@ export class CategorizationService {
       await this.applyAiPrediction(tx, description, userId ?? '');
 
       if (!tx.isCategorised) {
-        const ruleMatched = this.applyRules(tx, activeRules);
+        const ruleMatched = await this.applyRules(tx, activeRules);
         if (ruleMatched) {
           await this.learnFromCategorizedTransaction(tx, userId ?? '');
         }
@@ -560,7 +576,10 @@ export class CategorizationService {
     return false;
   }
 
-  private applyRules(tx: Transaction, rules: CategorizationRule[]): boolean {
+  private async applyRules(
+    tx: Transaction,
+    rules: CategorizationRule[],
+  ): Promise<boolean> {
     const desc = (tx.description || '').toLowerCase();
     const name = (tx.name || '').toLowerCase();
 
@@ -596,11 +615,38 @@ export class CategorizationService {
         tx.ruleId = rule.id;
         tx.categorySource = CategorySource.RULE;
         tx.isCategorised = true;
+        await this.resolveRuleCategoryIds(tx, rule);
         return true;
       }
     }
 
     return false;
+  }
+
+  private async resolveRuleCategoryIds(
+    tx: Transaction,
+    rule: CategorizationRule,
+  ): Promise<void> {
+    if (rule.subCategory) {
+      const subCategory = await this.subCategoryRepo.findOne({
+        where: { name: rule.subCategory },
+        relations: ['category'],
+      });
+
+      if (subCategory?.category) {
+        tx.subCategoryId = subCategory.id;
+        tx.categoryId = subCategory.category.id;
+        tx.category = subCategory.category.type as TransactionCategory;
+        return;
+      }
+    }
+
+    const category = await this.categoryRepo.findOne({
+      where: { type: rule.category as any },
+    });
+    if (category) {
+      tx.categoryId = category.id;
+    }
   }
 
   async learnFromCategorizedTransaction(
@@ -995,12 +1041,27 @@ export class CategorizationService {
     if (txsToUpdate.length === 0) return 0;
 
     const ids = txsToUpdate.map((t) => t.id);
-    await this.transactionRepository.update(ids, {
+    const updateData: Partial<Transaction> = {
       category: rule.category as TransactionCategory,
       subCategory: rule.subCategory,
       ruleId: rule.id,
       categorySource: CategorySource.RULE,
       isCategorised: true,
+    };
+    const sampleTx = new Transaction();
+    await this.resolveRuleCategoryIds(sampleTx, rule);
+    if (sampleTx.categoryId) {
+      updateData.categoryId = sampleTx.categoryId;
+    }
+    if (sampleTx.subCategoryId) {
+      updateData.subCategoryId = sampleTx.subCategoryId;
+    }
+    if (sampleTx.category) {
+      updateData.category = sampleTx.category;
+    }
+
+    await this.transactionRepository.update(ids, {
+      ...updateData,
     });
 
     return ids.length;

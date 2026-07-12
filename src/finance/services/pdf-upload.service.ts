@@ -441,6 +441,39 @@ export class PdfUploadService {
     return null;
   }
 
+  private tryParseCompactSignedAmountRow(line: string): ParsedRow | null {
+    const compactSignedAmountPattern =
+      /^(\d{1,2}\s[A-Za-z]{3}\s(?:20\d{2}|\d{2}))(\d{1,2}\s[A-Za-z]{3}\s(?:20\d{2}|\d{2}))(.+?)([+-][\d,]+\.\d{2})(-?[\d,]+\.\d{2})([A-Za-z-]+)?(.+)?$/i;
+
+    const match = line.match(compactSignedAmountPattern);
+    if (!match) {
+      return null;
+    }
+
+    const [, transactionDate, , description, signedAmount, , , reference] =
+      match;
+    if (this.shouldSkipDescription(description)) {
+      return null;
+    }
+
+    const amount = this.parseAmount(signedAmount);
+    if (amount === 0) {
+      return null;
+    }
+
+    return {
+      date: this.formatDate(transactionDate),
+      amount: Math.abs(amount),
+      direction:
+        signedAmount.trim().startsWith('+')
+          ? TransactionDirection.CREDIT
+          : TransactionDirection.DEBIT,
+      description: description.trim(),
+      name: this.extractName(description),
+      reference: reference?.trim() || undefined,
+    };
+  }
+
   /**
    * Extract transaction rows using single-line and multi-line state machines.
    */
@@ -479,6 +512,13 @@ export class PdfUploadService {
       const mergedColumnsRow = this.tryParseMergedColumnsRow(line);
       if (mergedColumnsRow) {
         rows.push(mergedColumnsRow);
+        pendingTx = null;
+        continue;
+      }
+
+      const compactSignedAmountRow = this.tryParseCompactSignedAmountRow(line);
+      if (compactSignedAmountRow) {
+        rows.push(compactSignedAmountRow);
         pendingTx = null;
         continue;
       }
@@ -667,6 +707,48 @@ export class PdfUploadService {
 
   private formatDate(dateStr: string): string {
     // Standardize to YYYY-MM-DD
+    const normalizedDate = dateStr.trim();
+    const explicitDateMatch = normalizedDate.match(
+      /^(\d{1,2})[-/\s]([A-Za-z]{3,}|\d{1,2})[-/\s](\d{2}|(?:19|20)\d{2})$/i,
+    );
+    if (explicitDateMatch) {
+      const [, day, month, yearPart] = explicitDateMatch;
+      const months: Record<string, string> = {
+        JAN: '01',
+        JANUARY: '01',
+        FEB: '02',
+        FEBRUARY: '02',
+        MAR: '03',
+        MARCH: '03',
+        APR: '04',
+        APRIL: '04',
+        MAY: '05',
+        JUN: '06',
+        JUNE: '06',
+        JUL: '07',
+        JULY: '07',
+        AUG: '08',
+        AUGUST: '08',
+        SEP: '09',
+        SEPT: '09',
+        SEPTEMBER: '09',
+        OCT: '10',
+        OCTOBER: '10',
+        NOV: '11',
+        NOVEMBER: '11',
+        DEC: '12',
+        DECEMBER: '12',
+      };
+      const year = yearPart.length === 2 ? `20${yearPart}` : yearPart;
+      const monthNumber = /^[A-Za-z]/.test(month)
+        ? months[month.toUpperCase()]
+        : month.padStart(2, '0');
+
+      if (monthNumber) {
+        return `${year}-${monthNumber}-${day.padStart(2, '0')}`;
+      }
+    }
+
     const d = new Date(dateStr);
     if (!isNaN(d.getTime())) {
       return d.toISOString().split('T')[0];

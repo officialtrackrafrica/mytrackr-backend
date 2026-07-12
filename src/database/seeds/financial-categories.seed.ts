@@ -21,6 +21,20 @@ export class FinancialCategoriesSeed {
   async run() {
     this.logger.log('Seeding financial categories and sub-categories...');
 
+    await this.subCategoryRepo.delete({
+      isSystem: true,
+      name: In([
+        'Salary and Wages',
+        'Wages & Salaries',
+        'Subscriptions',
+        'Software Subscription',
+        'Utility Bill (Light, Water, Waste etc.)',
+        'Airtime/Internet Subscription',
+        'Personal use',
+        'Owner Withdrawal (for personal use)',
+      ]),
+    });
+
     await this.categoryRepo.delete({
       isSystem: true,
       type: In([
@@ -53,28 +67,39 @@ export class FinancialCategoriesSeed {
         type: AccountCategoryType.EXPENSE,
         subs: [
           'Rent',
-          'Salary and Wages',
-          'Wages & Salaries',
+          'Salaries & Wages',
           'Marketing/Advertising',
-          'Subscriptions',
-          'Software Subscription',
-          'Professional Services',
-          'Utility Bill (Light, Water, Waste etc.)',
-          'Airtime/Internet Subscription',
+          'Subscription - Capcut, Captions etc.',
+          'Utlity Bill (Light, Water, Waste etc.)',
+          'Airtime/Data Subscription',
           'Transportation & Logistics',
           'Bank Charges',
           'Travel Expenses',
           'Supplies & Stationery',
           'Repairs & Maintenance',
           'Taxes & Levies',
+          'Professional Services',
           'Insurance',
           'Miscellaneous',
         ],
       },
       {
+        name: "Owner's Money",
+        type: AccountCategoryType.EQUITY,
+        subs: ['Capital contributed'],
+      },
+      {
         name: 'Personal Withdrawal',
         type: AccountCategoryType.EQUITY,
-        subs: ['Personal use', 'Owner Withdrawal (for personal use)'],
+        subs: ['Personal Use'],
+      },
+      {
+        name: 'Internal Transfers',
+        type: AccountCategoryType.TRANSFER,
+        subs: [
+          'Transfer from other business account',
+          'Transfer to other business account',
+        ],
       },
     ];
 

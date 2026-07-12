@@ -1,11 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Req,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Post, Body, Req, UseGuards } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -24,6 +17,7 @@ import {
   BillingHistoryItemDto,
   StoreBillingCardDto,
   BillingCardMetadataDto,
+  BillingCardChangeCheckoutResponseDto,
 } from '../dto/subscription.dto';
 import { SWAGGER_TAGS } from '../../common/docs';
 import { ErrorResponseDto } from '../../common/errors';
@@ -105,6 +99,28 @@ export class SubscriptionController {
   })
   async storeBillingCard(@Req() req: any, @Body() dto: StoreBillingCardDto) {
     return this.subscriptionService.storeBillingCard(req.user.id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('billing-card/change/checkout')
+  @ApiOperation({
+    summary: 'Initialize Paystack checkout to replace the billing card',
+  })
+  @ApiResponse({
+    status: 201,
+    description:
+      'Returns a Paystack authorization URL for collecting the replacement card',
+    type: BillingCardChangeCheckoutResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'No active subscription or invalid billing setup',
+    type: ErrorResponseDto,
+  })
+  async initializeBillingCardChangeCheckout(@Req() req: any) {
+    return this.subscriptionService.initializeBillingCardChangeCheckout(
+      req.user,
+    );
   }
 
   @UseGuards(JwtAuthGuard)
@@ -206,5 +222,4 @@ export class SubscriptionController {
   async cancelSubscription(@Req() req: any) {
     return this.subscriptionService.cancelSubscription(req.user.id);
   }
-
 }

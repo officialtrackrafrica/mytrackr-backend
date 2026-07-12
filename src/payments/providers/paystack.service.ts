@@ -265,10 +265,96 @@ export class PaystackService implements IPaymentGateway {
         emailToken: data.data.email_token,
       };
     } catch (error) {
-      this.logger.error(`Paystack subscription creation error: ${error.message}`);
+      this.logger.error(
+        `Paystack subscription creation error: ${error.message}`,
+      );
       throw new HttpException(
         {
           message: 'Subscription creation failed',
+          cause: error.message,
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async fetchSubscription(
+    subscriptionCode: string,
+  ): Promise<Record<string, any>> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/subscription/${subscriptionCode}`,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${this.secretKey}`,
+          },
+          signal: controller.signal,
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.status) {
+        throw new Error(data.message || 'Failed to fetch subscription');
+      }
+
+      return data.data;
+    } catch (error) {
+      this.logger.error(`Paystack subscription fetch error: ${error.message}`);
+      throw new HttpException(
+        {
+          message: 'Subscription fetch failed',
+          cause: error.message,
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async generateSubscriptionUpdateLink(
+    subscriptionCode: string,
+  ): Promise<{ link: string }> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/subscription/${subscriptionCode}/manage/link`,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${this.secretKey}`,
+          },
+          signal: controller.signal,
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.status) {
+        throw new Error(
+          data.message || 'Failed to generate subscription update link',
+        );
+      }
+
+      return {
+        link: data.data.link,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Paystack subscription update link error: ${error.message}`,
+      );
+      throw new HttpException(
+        {
+          message: 'Subscription update link generation failed',
           cause: error.message,
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -301,7 +387,9 @@ export class PaystackService implements IPaymentGateway {
         throw new Error(data.message || 'Failed to disable subscription');
       }
     } catch (error) {
-      this.logger.error(`Paystack subscription disable error: ${error.message}`);
+      this.logger.error(
+        `Paystack subscription disable error: ${error.message}`,
+      );
       throw new HttpException(
         {
           message: 'Subscription cancellation failed',

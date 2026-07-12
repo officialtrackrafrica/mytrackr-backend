@@ -204,7 +204,9 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getBillingCard(userId: string) {
-    const subscription = await this.getLatestSubscription(userId);
+    const subscription = await this.refreshBillingCardFromGateway(
+      await this.getLatestSubscription(userId),
+    );
     return this.toBillingCardMetadata(subscription);
   }
 
@@ -274,6 +276,45 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
 
     await this.subRepository.save(subscription);
     return this.toBillingCardMetadata(subscription);
+  }
+
+  async initializeBillingCardChangeCheckout(user: User) {
+    if (!user.email) {
+      throw new BadRequestException(
+        'An email address is required to initialize billing card change',
+      );
+    }
+
+    const subscription = await this.subRepository.findOne({
+      where: { user: { id: user.id }, status: 'active' },
+      relations: ['plan'],
+      order: { createdAt: 'DESC' },
+    });
+
+    if (!subscription || !subscription.plan) {
+      throw new BadRequestException('No active subscription found');
+    }
+
+    if (!subscription.plan.gatewayPlanId) {
+      throw new BadRequestException(
+        'Subscription plan is missing its payment gateway plan mapping',
+      );
+    }
+
+    if (!subscription.gatewaySubscriptionId) {
+      throw new BadRequestException(
+        'Subscription is missing its Paystack subscription code',
+      );
+    }
+
+    const updateLink =
+      await this.paystackService.generateSubscriptionUpdateLink(
+        subscription.gatewaySubscriptionId,
+      );
+
+    return {
+      authorizationUrl: updateLink.link,
+    };
   }
 
   async initializeSubscription(user: User, dto?: InitializeSubscriptionDto) {
@@ -1290,6 +1331,42 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       status: 'pending',
       cancelAtPeriodEnd: false,
     });
+  }
+
+  private async refreshBillingCardFromGateway(
+    subscription: Subscription | null,
+  ): Promise<Subscription | null> {
+    if (!subscription?.gatewaySubscriptionId) {
+      return subscription;
+    }
+
+    try {
+      const gatewaySubscription = await this.paystackService.fetchSubscription(
+        subscription.gatewaySubscriptionId,
+      );
+      const authorization = gatewaySubscription.authorization;
+      const customerCode =
+        gatewaySubscription.customer?.customer_code ||
+        gatewaySubscription.customer_code;
+
+      if (authorization) {
+        subscription.paymentAuthorization = authorization;
+      }
+
+      if (customerCode) {
+        subscription.gatewayCustomerCode = customerCode;
+      }
+
+      if (authorization || customerCode) {
+        return this.subRepository.save(subscription);
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Unable to refresh billing card from Paystack: ${this.getErrorMessage(error)}`,
+      );
+    }
+
+    return subscription;
   }
 
   private toBillingCardMetadata(subscription: Subscription | null) {

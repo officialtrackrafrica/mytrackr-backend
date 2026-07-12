@@ -106,6 +106,11 @@ export class SubscriptionInitResponseDto {
   isProratedUpgrade?: boolean;
 }
 
+export class BillingCardChangeCheckoutResponseDto {
+  @ApiProperty()
+  authorizationUrl: string;
+}
+
 export class AdditionalBankAccountFeeStatusDto {
   @ApiProperty({ example: 2500 })
   price: number;

@@ -516,6 +516,12 @@ export class MonoService {
     const entities = await Promise.all(
       importableTransactions.map(async (tx) => {
         let finalCategory: string | null = null;
+        let finalCategoryId: string | null = null;
+        let finalSubCategory: string | null = autoCategorize
+          ? tx.sub_category || null
+          : null;
+        let finalSubCategoryId: string | null = null;
+        let finalAiCategory: string | null = null;
         let finalCategorySource = CategorySource.MONO;
         const monoTransactionId = tx.id || tx._id;
 
@@ -532,6 +538,19 @@ export class MonoService {
             predicted.category !== 'Uncategorized'
               ? CategorySource.AI
               : CategorySource.MONO;
+          finalAiCategory =
+            predicted.category !== 'Uncategorized' ? predicted.category : null;
+        }
+
+        const resolvedCategory = await this.resolveMonoTransactionCategory(
+          finalCategory,
+          finalSubCategory || finalAiCategory,
+        );
+        if (resolvedCategory) {
+          finalCategory = resolvedCategory.category;
+          finalCategoryId = resolvedCategory.categoryId;
+          finalSubCategory = resolvedCategory.subCategory;
+          finalSubCategoryId = resolvedCategory.subCategoryId;
         }
 
         return this.transactionRepository.create({
@@ -541,8 +560,12 @@ export class MonoService {
           amount: tx.amount,
           type: tx.type,
           category: finalCategory,
-          subCategory: autoCategorize ? tx.sub_category || null : null,
+          subCategory: finalSubCategory,
+          categoryId: finalCategoryId,
+          subCategoryId: finalSubCategoryId,
+          aiCategory: finalAiCategory,
           categorySource: finalCategorySource,
+          isCategorised: !!finalCategory || !!finalSubCategory,
           currency: tx.currency || 'NGN',
           balance: tx.balance,
           date: new Date(tx.date),
@@ -1504,6 +1527,54 @@ export class MonoService {
     financeTransaction.categorySource = transaction.categorySource;
 
     await this.financeTransactionRepository.save(financeTransaction);
+  }
+
+  private async resolveMonoTransactionCategory(
+    category: string | null,
+    subCategory: string | null,
+  ): Promise<{
+    category: string | null;
+    categoryId: string | null;
+    subCategory: string | null;
+    subCategoryId: string | null;
+  } | null> {
+    const subCategoryCandidates = [subCategory, category].filter(
+      (value): value is string => !!value && value.trim().length > 0,
+    );
+
+    for (const candidate of subCategoryCandidates) {
+      const matchedSubCategory = await this.subCategoryRepo.findOne({
+        where: { name: candidate },
+        relations: ['category'],
+      });
+
+      if (matchedSubCategory?.category) {
+        return {
+          category: matchedSubCategory.category.type,
+          categoryId: matchedSubCategory.category.id,
+          subCategory: matchedSubCategory.name,
+          subCategoryId: matchedSubCategory.id,
+        };
+      }
+    }
+
+    if (!category) {
+      return null;
+    }
+
+    const matchedCategory = await this.categoryRepo.findOne({
+      where: [{ name: category }, { type: category as any }],
+    });
+    if (!matchedCategory) {
+      return null;
+    }
+
+    return {
+      category: matchedCategory.type,
+      categoryId: matchedCategory.id,
+      subCategory: subCategory || null,
+      subCategoryId: null,
+    };
   }
 
   private async getFinanceIdMap(transactions: MonoTransaction[]) {

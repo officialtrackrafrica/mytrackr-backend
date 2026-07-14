@@ -336,8 +336,8 @@ export class DeveloperDocsService {
       },
       {
         method: 'POST',
-        path: '/integrations/paystack/connect',
-        auth: 'x-mytrackr-api-key',
+        path: '/integrations/:id/paystack/connect',
+        auth: 'accessToken cookie',
         summary: 'Store a merchant Paystack secret key for direct sync.',
         requestExample: this.json({
           secretKey: 'sk_live_xxx',
@@ -356,8 +356,8 @@ export class DeveloperDocsService {
       },
       {
         method: 'POST',
-        path: '/integrations/paystack/sync',
-        auth: 'x-mytrackr-api-key',
+        path: '/integrations/:id/paystack/sync',
+        auth: 'accessToken cookie',
         summary: 'Fetch Paystack transactions and import inflow metrics.',
         requestExample: this.json({
           startDate: '2026-06-01',

@@ -190,48 +190,61 @@ export class IntegrationsController {
     return this.integrationsService.getMetrics(req.integration, query);
   }
 
-  @UseGuards(IntegrationApiKeyGuard)
-  @Post('paystack/connect')
-  @ApiHeader({ name: 'x-mytrackr-api-key', required: true })
+  @UseGuards(JwtAuthGuard)
+  @ApiCookieAuth('accessToken')
+  @Post(':id/paystack/connect')
+  @ApiParam({ name: 'id', description: 'Integration ID' })
   @ApiOperation({
     summary: 'Store merchant Paystack secret key for direct ecommerce sync',
   })
   @ApiBody({ type: ConnectPaystackDto })
   @ApiResponse({ status: 201, type: PaystackConnectionResponseDto })
-  async connectPaystack(@Req() req: any, @Body() dto: ConnectPaystackDto) {
-    return this.integrationsService.connectPaystack(req.integration, dto);
+  async connectPaystack(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: ConnectPaystackDto,
+  ) {
+    return this.integrationsService.connectPaystack(req.user.id, id, dto);
   }
 
-  @UseGuards(IntegrationApiKeyGuard)
-  @Get('paystack/connection')
-  @ApiHeader({ name: 'x-mytrackr-api-key', required: true })
+  @UseGuards(JwtAuthGuard)
+  @ApiCookieAuth('accessToken')
+  @Get(':id/paystack/connection')
+  @ApiParam({ name: 'id', description: 'Integration ID' })
   @ApiOperation({ summary: 'Get Paystack direct-sync connection status' })
   @ApiResponse({ status: 200, type: PaystackConnectionResponseDto })
-  async getPaystackConnection(@Req() req: any) {
-    return this.integrationsService.getPaystackConnection(req.integration);
+  async getPaystackConnection(@Req() req: any, @Param('id') id: string) {
+    return this.integrationsService.getPaystackConnection(req.user.id, id);
   }
 
-  @UseGuards(IntegrationApiKeyGuard)
-  @Post('paystack/sync')
-  @ApiHeader({ name: 'x-mytrackr-api-key', required: true })
+  @UseGuards(JwtAuthGuard)
+  @ApiCookieAuth('accessToken')
+  @Post(':id/paystack/sync')
+  @ApiParam({ name: 'id', description: 'Integration ID' })
   @ApiOperation({
     summary: 'Fetch Paystack transactions and import ecommerce inflow metrics',
   })
   @ApiBody({ type: SyncPaystackDto })
   @ApiResponse({ status: 201, type: PaystackSyncResponseDto })
-  async syncPaystack(@Req() req: any, @Body() dto: SyncPaystackDto) {
+  async syncPaystack(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: SyncPaystackDto,
+  ) {
     return this.integrationsService.syncPaystackTransactions(
-      req.integration,
+      req.user.id,
+      id,
       dto,
     );
   }
 
-  @UseGuards(IntegrationApiKeyGuard)
-  @Delete('paystack/connection')
-  @ApiHeader({ name: 'x-mytrackr-api-key', required: true })
+  @UseGuards(JwtAuthGuard)
+  @ApiCookieAuth('accessToken')
+  @Delete(':id/paystack/connection')
+  @ApiParam({ name: 'id', description: 'Integration ID' })
   @ApiOperation({ summary: 'Disconnect Paystack direct sync' })
   @ApiResponse({ status: 200, type: IntegrationMessageResponseDto })
-  async disconnectPaystack(@Req() req: any) {
-    return this.integrationsService.disconnectPaystack(req.integration);
+  async disconnectPaystack(@Req() req: any, @Param('id') id: string) {
+    return this.integrationsService.disconnectPaystack(req.user.id, id);
   }
 }

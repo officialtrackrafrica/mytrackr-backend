@@ -457,7 +457,13 @@ export class IntegrationsService {
     };
   }
 
-  async connectPaystack(integration: Integration, dto: ConnectPaystackDto) {
+  async connectPaystack(
+    userId: string,
+    integrationId: string,
+    dto: ConnectPaystackDto,
+  ) {
+    const integration = await this.findOwnedIntegration(userId, integrationId);
+
     if (
       !dto.secretKey.startsWith('sk_live_') &&
       !dto.secretKey.startsWith('sk_test_')
@@ -502,7 +508,8 @@ export class IntegrationsService {
     return this.toPaystackConnectionResponse(saved);
   }
 
-  async getPaystackConnection(integration: Integration) {
+  async getPaystackConnection(userId: string, integrationId: string) {
+    const integration = await this.findOwnedIntegration(userId, integrationId);
     const connection = await this.paystackConnectionRepository.findOne({
       where: { integrationId: integration.id },
     });
@@ -514,7 +521,8 @@ export class IntegrationsService {
     return this.toPaystackConnectionResponse(connection);
   }
 
-  async disconnectPaystack(integration: Integration) {
+  async disconnectPaystack(userId: string, integrationId: string) {
+    const integration = await this.findOwnedIntegration(userId, integrationId);
     const connection = await this.paystackConnectionRepository.findOne({
       where: { integrationId: integration.id },
     });
@@ -537,9 +545,11 @@ export class IntegrationsService {
   }
 
   async syncPaystackTransactions(
-    integration: Integration,
+    userId: string,
+    integrationId: string,
     dto: SyncPaystackDto,
   ) {
+    const integration = await this.findOwnedIntegration(userId, integrationId);
     const connection = await this.paystackConnectionRepository.findOne({
       where: { integrationId: integration.id, isActive: true },
     });

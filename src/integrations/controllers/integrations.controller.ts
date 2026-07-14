@@ -192,59 +192,43 @@ export class IntegrationsController {
 
   @UseGuards(JwtAuthGuard)
   @ApiCookieAuth('accessToken')
-  @Post(':id/paystack/connect')
-  @ApiParam({ name: 'id', description: 'Integration ID' })
+  @Post('paystack/connect')
   @ApiOperation({
     summary: 'Store merchant Paystack secret key for direct ecommerce sync',
   })
   @ApiBody({ type: ConnectPaystackDto })
   @ApiResponse({ status: 201, type: PaystackConnectionResponseDto })
-  async connectPaystack(
-    @Req() req: any,
-    @Param('id') id: string,
-    @Body() dto: ConnectPaystackDto,
-  ) {
-    return this.integrationsService.connectPaystack(req.user.id, id, dto);
+  async connectPaystack(@Req() req: any, @Body() dto: ConnectPaystackDto) {
+    return this.integrationsService.connectPaystack(req.user.id, dto);
   }
 
   @UseGuards(JwtAuthGuard)
   @ApiCookieAuth('accessToken')
-  @Get(':id/paystack/connection')
-  @ApiParam({ name: 'id', description: 'Integration ID' })
+  @Get('paystack/connection')
   @ApiOperation({ summary: 'Get Paystack direct-sync connection status' })
   @ApiResponse({ status: 200, type: PaystackConnectionResponseDto })
-  async getPaystackConnection(@Req() req: any, @Param('id') id: string) {
-    return this.integrationsService.getPaystackConnection(req.user.id, id);
+  async getPaystackConnection(@Req() req: any) {
+    return this.integrationsService.getPaystackConnection(req.user.id);
   }
 
   @UseGuards(JwtAuthGuard)
   @ApiCookieAuth('accessToken')
-  @Post(':id/paystack/sync')
-  @ApiParam({ name: 'id', description: 'Integration ID' })
+  @Post('paystack/sync')
   @ApiOperation({
     summary: 'Fetch Paystack transactions and import ecommerce inflow metrics',
   })
   @ApiBody({ type: SyncPaystackDto })
   @ApiResponse({ status: 201, type: PaystackSyncResponseDto })
-  async syncPaystack(
-    @Req() req: any,
-    @Param('id') id: string,
-    @Body() dto: SyncPaystackDto,
-  ) {
-    return this.integrationsService.syncPaystackTransactions(
-      req.user.id,
-      id,
-      dto,
-    );
+  async syncPaystack(@Req() req: any, @Body() dto: SyncPaystackDto) {
+    return this.integrationsService.syncPaystackTransactions(req.user.id, dto);
   }
 
   @UseGuards(JwtAuthGuard)
   @ApiCookieAuth('accessToken')
-  @Delete(':id/paystack/connection')
-  @ApiParam({ name: 'id', description: 'Integration ID' })
+  @Delete('paystack/connection')
   @ApiOperation({ summary: 'Disconnect Paystack direct sync' })
   @ApiResponse({ status: 200, type: IntegrationMessageResponseDto })
-  async disconnectPaystack(@Req() req: any, @Param('id') id: string) {
-    return this.integrationsService.disconnectPaystack(req.user.id, id);
+  async disconnectPaystack(@Req() req: any) {
+    return this.integrationsService.disconnectPaystack(req.user.id);
   }
 }

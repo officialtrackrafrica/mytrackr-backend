@@ -26,7 +26,7 @@ export class SyncPaystackDto {
 
 export class PaystackConnectionResponseDto {
   @ApiProperty() id: string;
-  @ApiProperty() integrationId: string;
+  @ApiProperty() businessId: string;
   @ApiProperty() keyPreview: string;
   @ApiPropertyOptional() businessName?: string;
   @ApiPropertyOptional() businessEmail?: string;

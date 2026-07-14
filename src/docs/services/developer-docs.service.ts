@@ -79,10 +79,6 @@ export class DeveloperDocsService {
         'integration.updated',
         'integration.revoked',
         'integration.event.received',
-        'integration.paystack.connected',
-        'integration.paystack.disconnected',
-        'integration.paystack.sync.completed',
-        'integration.paystack.sync.failed',
       ],
       webhookHeaders: this.getWebhookHeaders(),
       webhookPayloadExample: this.getWebhookPayloadExample(),
@@ -109,8 +105,8 @@ export class DeveloperDocsService {
         body: 'Post order and payment events from your backend using x-mytrackr-api-key.',
       },
       {
-        title: '5. Read metrics and optional Paystack sync',
-        body: 'Fetch aggregated metrics from the private metrics endpoint and optionally connect a merchant Paystack account for direct sync.',
+        title: '5. Read metrics',
+        body: 'Fetch aggregated metrics from the private metrics endpoint.',
       },
     ];
   }
@@ -336,16 +332,16 @@ export class DeveloperDocsService {
       },
       {
         method: 'POST',
-        path: '/integrations/:id/paystack/connect',
+        path: '/integrations/paystack/connect',
         auth: 'accessToken cookie',
-        summary: 'Store a merchant Paystack secret key for direct sync.',
+        summary: 'Store a merchant Paystack secret key for direct sync at the business level.',
         requestExample: this.json({
           secretKey: 'sk_live_xxx',
         }),
         responseExample: this.json({
           id: 'cad65b2c-d876-462d-9f31-a3cc680fef98',
-          integrationId: 'ff77a8db-cf6c-4f58-b9d0-2c6a7f9c2011',
-          keyPreview: 'sk_live_xxx',
+          businessId: '3c6eb988-ec8f-4d08-8dc5-ef7d2a38f108',
+          keyPreview: '****4abc',
           businessName: 'Acme Stores',
           businessEmail: 'owner@example.com',
           country: 'NG',
@@ -356,9 +352,9 @@ export class DeveloperDocsService {
       },
       {
         method: 'POST',
-        path: '/integrations/:id/paystack/sync',
+        path: '/integrations/paystack/sync',
         auth: 'accessToken cookie',
-        summary: 'Fetch Paystack transactions and import inflow metrics.',
+        summary: 'Fetch Paystack transactions and import business finance transactions.',
         requestExample: this.json({
           startDate: '2026-06-01',
           endDate: '2026-06-30',
@@ -371,8 +367,8 @@ export class DeveloperDocsService {
           fetchedRefunds: 2,
           connection: {
             id: 'cad65b2c-d876-462d-9f31-a3cc680fef98',
-            integrationId: 'ff77a8db-cf6c-4f58-b9d0-2c6a7f9c2011',
-            keyPreview: 'sk_live_xxx',
+            businessId: '3c6eb988-ec8f-4d08-8dc5-ef7d2a38f108',
+            keyPreview: '****4abc',
             isActive: true,
             lastSyncedAt: '2026-06-14T10:31:22.000Z',
             lastSuccessfulSyncAt: '2026-06-14T10:31:22.000Z',
@@ -538,7 +534,7 @@ export function verifyMyTrackrWebhook(rawBody, signatureHeader) {
 
   private getWebhookVerificationExample() {
     return this.json({
-      event: 'integration.paystack.sync.completed',
+      event: 'integration.event.received',
       data: {
         imported: 25,
         skipped: 3,

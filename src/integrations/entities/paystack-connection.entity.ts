@@ -7,19 +7,22 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { Integration } from './integration.entity';
+import { Business } from '../../business/entities/business.entity';
 
 @Entity('integration_paystack_connections')
 export class PaystackConnection {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => Integration, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'integrationId' })
-  integration: Integration;
+  @ManyToOne(() => Business, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'businessId' })
+  business: Business;
 
   @Column({ unique: true })
-  integrationId: string;
+  businessId: string;
+
+  @Column()
+  userId: string;
 
   @Column({ type: 'jsonb' })
   encryptedSecretKey: {

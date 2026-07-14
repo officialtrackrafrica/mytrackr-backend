@@ -16,11 +16,7 @@ type IntegrationWebhookEvent =
   | 'integration.created'
   | 'integration.updated'
   | 'integration.revoked'
-  | 'integration.event.received'
-  | 'integration.paystack.connected'
-  | 'integration.paystack.disconnected'
-  | 'integration.paystack.sync.completed'
-  | 'integration.paystack.sync.failed';
+  | 'integration.event.received';
 
 type DeliveryEnvelope = {
   id: string;

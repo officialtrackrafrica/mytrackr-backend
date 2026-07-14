@@ -459,10 +459,9 @@ export class IntegrationsService {
 
   async connectPaystack(
     userId: string,
-    integrationId: string,
     dto: ConnectPaystackDto,
   ) {
-    const integration = await this.findOwnedIntegration(userId, integrationId);
+    const business = await this.businessService.getBusinessForUser(userId);
 
     if (
       !dto.secretKey.startsWith('sk_live_') &&
@@ -473,16 +472,18 @@ export class IntegrationsService {
 
     const metadata = await this.fetchPaystackMetadata(dto.secretKey);
     let connection = await this.paystackConnectionRepository.findOne({
-      where: { integrationId: integration.id },
+      where: { businessId: business.id },
     });
 
     if (!connection) {
       connection = this.paystackConnectionRepository.create({
-        integration,
-        integrationId: integration.id,
+        business,
+        businessId: business.id,
+        userId,
       });
     }
 
+    connection.userId = userId;
     connection.encryptedSecretKey = this.encryptionService.encrypt(
       dto.secretKey,
     );
@@ -494,24 +495,13 @@ export class IntegrationsService {
     connection.lastSyncError = null;
 
     const saved = await this.paystackConnectionRepository.save(connection);
-    await this.integrationWebhookService.deliver(
-      integration,
-      'integration.paystack.connected',
-      {
-        connectionId: saved.id,
-        keyPreview: saved.keyLast4 ? `****${saved.keyLast4}` : null,
-        businessName: saved.businessName || null,
-        businessEmail: saved.businessEmail || null,
-        country: saved.country || null,
-      },
-    );
     return this.toPaystackConnectionResponse(saved);
   }
 
-  async getPaystackConnection(userId: string, integrationId: string) {
-    const integration = await this.findOwnedIntegration(userId, integrationId);
+  async getPaystackConnection(userId: string) {
+    const business = await this.businessService.getBusinessForUser(userId);
     const connection = await this.paystackConnectionRepository.findOne({
-      where: { integrationId: integration.id },
+      where: { businessId: business.id },
     });
 
     if (!connection) {
@@ -521,10 +511,10 @@ export class IntegrationsService {
     return this.toPaystackConnectionResponse(connection);
   }
 
-  async disconnectPaystack(userId: string, integrationId: string) {
-    const integration = await this.findOwnedIntegration(userId, integrationId);
+  async disconnectPaystack(userId: string) {
+    const business = await this.businessService.getBusinessForUser(userId);
     const connection = await this.paystackConnectionRepository.findOne({
-      where: { integrationId: integration.id },
+      where: { businessId: business.id },
     });
 
     if (!connection) {
@@ -533,25 +523,16 @@ export class IntegrationsService {
 
     connection.isActive = false;
     await this.paystackConnectionRepository.save(connection);
-    await this.integrationWebhookService.deliver(
-      integration,
-      'integration.paystack.disconnected',
-      {
-        connectionId: connection.id,
-        disconnectedAt: new Date().toISOString(),
-      },
-    );
     return { message: 'Paystack connection disconnected' };
   }
 
   async syncPaystackTransactions(
     userId: string,
-    integrationId: string,
     dto: SyncPaystackDto,
   ) {
-    const integration = await this.findOwnedIntegration(userId, integrationId);
+    const business = await this.businessService.getBusinessForUser(userId);
     const connection = await this.paystackConnectionRepository.findOne({
-      where: { integrationId: integration.id, isActive: true },
+      where: { businessId: business.id, isActive: true },
     });
 
     if (!connection) {
@@ -588,78 +569,53 @@ export class IntegrationsService {
 
       for (const tx of transactions) {
         if (tx.status === 'success') {
-          const result = await this.ingestEvent(integration, {
-            event: IntegrationEventType.ORDER_PAID,
-            externalId: `paystack_charge_${tx.id || tx.reference}`,
-            orderId: tx.reference,
-            amount: Number(tx.amount || 0) / 100,
-            currency: tx.currency || integration.business.currency || 'NGN',
-            paymentFee: Number(tx.fees || 0) / 100,
-            paymentProvider: 'paystack',
-            occurredAt: tx.paid_at || tx.created_at,
-            customer: {
-              email: tx.customer?.email,
-              name:
-                `${tx.customer?.first_name || ''} ${tx.customer?.last_name || ''}`.trim() ||
-                undefined,
+          const importedSale = await this.saveBusinessFinanceTransaction(
+            business.id,
+            userId,
+            {
+              externalId: `paystack:charge:${tx.id || tx.reference}:revenue`,
+              name: 'Paystack',
+              amount: Number(tx.amount || 0) / 100,
+              direction: TransactionDirection.CREDIT,
+              description: `Paystack sale${tx.reference ? ` ${tx.reference}` : ''}`,
+              date: new Date(tx.paid_at || tx.created_at),
+              category: 'INCOME',
             },
-            metadata: {
-              source: 'paystack_direct_sync',
-              reference: tx.reference,
-              channel: tx.channel,
-              authorization: tx.authorization
-                ? {
-                    brand: tx.authorization.brand,
-                    cardType: tx.authorization.card_type,
-                    bank: tx.authorization.bank,
-                  }
-                : undefined,
-            },
-          });
-          result.duplicate ? skipped++ : imported++;
-        } else if (tx.status === 'failed') {
-          const result = await this.ingestEvent(integration, {
-            event: IntegrationEventType.PAYMENT_FAILED,
-            externalId: `paystack_failed_${tx.id || tx.reference}`,
-            orderId: tx.reference,
-            amount: Number(tx.amount || 0) / 100,
-            currency: tx.currency || integration.business.currency || 'NGN',
-            paymentProvider: 'paystack',
-            occurredAt: tx.created_at,
-            customer: { email: tx.customer?.email },
-            metadata: {
-              source: 'paystack_direct_sync',
-              reference: tx.reference,
-              gatewayResponse: tx.gateway_response,
-            },
-          });
-          result.duplicate ? skipped++ : imported++;
+          );
+
+          if (importedSale && Number(tx.fees || 0) > 0) {
+            await this.saveBusinessFinanceTransaction(business.id, userId, {
+              externalId: `paystack:charge:${tx.id || tx.reference}:fee`,
+              name: 'Paystack Fee',
+              amount: Number(tx.fees || 0) / 100,
+              direction: TransactionDirection.DEBIT,
+              description: `Paystack fee${tx.reference ? ` ${tx.reference}` : ''}`,
+              date: new Date(tx.paid_at || tx.created_at),
+              category: 'EXPENSE',
+              subCategory: 'Payment Fees',
+            });
+          }
+
+          importedSale ? imported++ : skipped++;
         }
       }
 
       for (const refund of refunds) {
-        const result = await this.ingestEvent(integration, {
-          event: IntegrationEventType.ORDER_REFUNDED,
-          externalId: `paystack_refund_${refund.id || refund.transaction?.reference}`,
-          orderId: refund.transaction?.reference,
-          amount: Number(refund.amount || 0) / 100,
-          currency:
-            refund.currency ||
-            refund.transaction?.currency ||
-            integration.business.currency ||
-            'NGN',
-          paymentProvider: 'paystack',
-          occurredAt: refund.created_at || refund.processed_at,
-          customer: {
-            email: refund.transaction?.customer?.email,
+        const importedRefund = await this.saveBusinessFinanceTransaction(
+          business.id,
+          userId,
+          {
+            externalId: `paystack:refund:${refund.id || refund.transaction?.reference}:refund`,
+            name: 'Paystack Refund',
+            amount: Number(refund.amount || 0) / 100,
+            direction: TransactionDirection.DEBIT,
+            description: `Paystack refund${refund.transaction?.reference ? ` ${refund.transaction.reference}` : ''}`,
+            date: new Date(refund.created_at || refund.processed_at),
+            category: 'INCOME',
+            subCategory: 'Refunds',
           },
-          metadata: {
-            source: 'paystack_direct_sync',
-            refundStatus: refund.status,
-            transactionReference: refund.transaction?.reference,
-          },
-        });
-        result.duplicate ? skipped++ : imported++;
+        );
+        importedRefund ? imported++ : skipped++;
       }
 
       connection.lastSyncedAt = endDate;
@@ -676,38 +632,14 @@ export class IntegrationsService {
         connection: this.toPaystackConnectionResponse(connection),
       };
 
-      await this.integrationWebhookService.deliver(
-        integration,
-        'integration.paystack.sync.completed',
-        {
-          imported,
-          skipped,
-          fetched: result.fetched,
-          fetchedTransactions: transactions.length,
-          fetchedRefunds: refunds.length,
-          startDate: startDate.toISOString(),
-          endDate: endDate.toISOString(),
-          connectionId: connection.id,
-        },
-      );
-
       return result;
     } catch (error) {
       connection.lastSyncError =
         error instanceof Error ? error.message : 'Paystack sync failed';
       await this.paystackConnectionRepository.save(connection);
-      await this.integrationWebhookService.deliver(
-        integration,
-        'integration.paystack.sync.failed',
-        {
-          startDate: startDate.toISOString(),
-          endDate: endDate.toISOString(),
-          connectionId: connection.id,
-          error:
-            error instanceof Error ? error.message : 'Paystack sync failed',
-        },
+      throw new BadRequestException(
+        error instanceof Error ? error.message : 'Paystack sync failed',
       );
-      throw error;
     }
   }
 
@@ -878,7 +810,7 @@ export class IntegrationsService {
   private toPaystackConnectionResponse(connection: PaystackConnection) {
     return {
       id: connection.id,
-      integrationId: connection.integrationId,
+      businessId: connection.businessId,
       keyPreview: `****${connection.keyLast4}`,
       businessName: connection.businessName || undefined,
       businessEmail: connection.businessEmail || undefined,
@@ -890,6 +822,49 @@ export class IntegrationsService {
       createdAt: connection.createdAt,
       updatedAt: connection.updatedAt,
     };
+  }
+
+  private async saveBusinessFinanceTransaction(
+    businessId: string,
+    userId: string,
+    dto: {
+      externalId: string;
+      name: string;
+      amount: number;
+      direction: TransactionDirection;
+      description: string;
+      date: Date;
+      category: string;
+      subCategory?: string;
+    },
+  ) {
+    const existing = await this.transactionRepository.findOne({
+      where: { externalId: dto.externalId },
+    });
+
+    if (existing) {
+      return false;
+    }
+
+    const tx = this.transactionRepository.create({
+      externalId: dto.externalId,
+      name: dto.name,
+      amount: dto.amount,
+      direction: dto.direction,
+      description: dto.description,
+      date: dto.date,
+      businessId,
+      userId,
+      category: dto.category,
+      subCategory: dto.subCategory,
+      manualCategory: dto.category,
+      manualSubCategory: dto.subCategory,
+      categorySource: CategorySource.MANUAL,
+      isCategorised: true,
+    });
+
+    await this.transactionRepository.save(tx);
+    return true;
   }
 
   private async saveFinanceTransaction(

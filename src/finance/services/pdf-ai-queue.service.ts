@@ -10,6 +10,7 @@ import Redis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
 import { REDIS_CLIENT } from '../../common/redis';
 import { CategorizationService } from './categorization.service';
+import { buildPdfTransactionExternalIds } from './pdf-transaction-external-id.util';
 import { StatementAiParserService } from './statement-ai-parser.service';
 
 type PdfAiJobStatus = 'queued' | 'processing' | 'completed' | 'failed';
@@ -358,15 +359,17 @@ export class PdfAiQueueService implements OnModuleInit, OnModuleDestroy {
           return;
         }
 
+        const externalIds = buildPdfTransactionExternalIds(
+          parsedRows,
+          record.businessId,
+        );
         const imported = await this.categorizationService.ingestTransactions(
           record.businessId,
           record.userId,
-          parsedRows.map((row) => ({
+          parsedRows.map((row, index) => ({
             businessId: record.businessId,
             userId: record.userId,
-            externalId:
-              row.reference ||
-              `pdf:${record.businessId}:${row.date}:${row.amount}:${row.direction}:${row.description}`,
+            externalId: externalIds[index],
             date: new Date(row.date),
             name: row.name,
             amount: row.amount,

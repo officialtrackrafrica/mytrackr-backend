@@ -8,6 +8,7 @@ import {
   PdfAiQueueService,
   PdfUploadQueuedResult,
 } from './pdf-ai-queue.service';
+import { buildPdfTransactionExternalIds } from './pdf-transaction-external-id.util';
 import { StatementAiParserService } from './statement-ai-parser.service';
 import { ParsedRow } from './statement-parser.types';
 
@@ -161,15 +162,14 @@ export class PdfUploadService {
       );
     }
 
+    const externalIds = buildPdfTransactionExternalIds(parsedRows, businessId);
     const imported = await this.categorizationService.ingestTransactions(
       businessId,
       userId,
-      parsedRows.map((row) => ({
+      parsedRows.map((row, index) => ({
         businessId,
         userId,
-        externalId:
-          row.reference ||
-          `pdf:${businessId}:${row.date}:${row.amount}:${row.direction}:${row.description}`,
+        externalId: externalIds[index],
         date: new Date(row.date),
         name: row.name,
         amount: row.amount,
@@ -333,15 +333,14 @@ export class PdfUploadService {
       );
     }
 
+    const externalIds = buildPdfTransactionExternalIds(parsedRows, businessId);
     const imported = await this.categorizationService.ingestTransactions(
       businessId,
       userId,
-      parsedRows.map((row) => ({
+      parsedRows.map((row, index) => ({
         businessId,
         userId,
-        externalId:
-          row.reference ||
-          `pdf:${businessId}:${row.date}:${row.amount}:${row.direction}:${row.description}`,
+        externalId: externalIds[index],
         date: new Date(row.date),
         name: row.name,
         amount: row.amount,

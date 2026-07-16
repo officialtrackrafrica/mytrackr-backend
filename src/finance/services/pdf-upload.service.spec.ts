@@ -17,6 +17,7 @@ describe('PdfUploadService', () => {
   let categorizationService: { ingestTransactions: jest.Mock };
 
   beforeEach(async () => {
+    mockPdf.mockReset();
     categorizationService = {
       ingestTransactions: jest.fn().mockResolvedValue(2),
     };
@@ -130,6 +131,28 @@ describe('PdfUploadService', () => {
       ]),
       { autoCategorize: false },
     );
+  });
+
+  it('should assign stable unique external IDs to repeated PDF rows', async () => {
+    const mockText = `
+      TRANSACTION DETAILS
+      10-MAR-2025 POS PURCHASE 1,000.00 0.00 45,000.00
+      10-MAR-2025 POS PURCHASE 1,000.00 0.00 45,000.00
+    `;
+    mockPdf.mockResolvedValue({ text: mockText });
+
+    await service.processPdf(Buffer.from('dummy'), 'biz-1', 'user-1');
+
+    const [, , dtos] = categorizationService.ingestTransactions.mock.calls[0];
+    expect(dtos).toEqual([
+      expect.objectContaining({
+        externalId: 'pdf:biz-1:2025-03-10:1000:DEBIT:POS PURCHASE',
+      }),
+      expect.objectContaining({
+        externalId:
+          'pdf:biz-1:2025-03-10:1000:DEBIT:POS PURCHASE:duplicate-2',
+      }),
+    ]);
   });
 
   it('should extract transactions from compact signed amount statement rows', async () => {

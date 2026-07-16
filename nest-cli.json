@@ -15,6 +15,10 @@
       {
         "include": "docs/templates/**/*",
         "watchAssets": true
+      },
+      {
+        "include": "public/**/*",
+        "watchAssets": true
       }
     ],
     "deleteOutDir": true

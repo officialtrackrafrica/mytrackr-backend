@@ -618,7 +618,11 @@ export class FinanceController {
     const businessId = await this.businessService.getBusinessIdForUser(
       req.user.id,
     );
-    const tx = await this.resolveFinanceTransaction(req.user.id, businessId, id);
+    const tx = await this.resolveFinanceTransaction(
+      req.user.id,
+      businessId,
+      id,
+    );
     if (!tx) {
       throw AppException.notFound(
         'Transaction not found',
@@ -710,7 +714,11 @@ export class FinanceController {
     const businessId = await this.businessService.getBusinessIdForUser(
       req.user.id,
     );
-    const tx = await this.resolveFinanceTransaction(req.user.id, businessId, id);
+    const tx = await this.resolveFinanceTransaction(
+      req.user.id,
+      businessId,
+      id,
+    );
     if (!tx) {
       throw AppException.notFound(
         'Transaction not found',
@@ -751,7 +759,11 @@ export class FinanceController {
       req.user.id,
     );
 
-    const tx = await this.resolveFinanceTransaction(req.user.id, businessId, id);
+    const tx = await this.resolveFinanceTransaction(
+      req.user.id,
+      businessId,
+      id,
+    );
     if (!tx) {
       throw AppException.notFound(
         'Transaction not found',
@@ -766,7 +778,10 @@ export class FinanceController {
         relations: ['monoAccount', 'monoAccount.user'],
       });
 
-      if (!monoTransaction || monoTransaction.monoAccount?.user?.id !== req.user.id) {
+      if (
+        !monoTransaction ||
+        monoTransaction.monoAccount?.user?.id !== req.user.id
+      ) {
         throw AppException.notFound(
           'Transaction not found',
           'FINANCE_TRANSACTION_NOT_FOUND',
@@ -918,6 +933,40 @@ export class FinanceController {
     return res.send(pdf);
   }
 
+  @Get('transactions/report.csv')
+  @ApiOperation({
+    summary: 'Download transaction report as CSV',
+    description:
+      "Downloads a CSV export of the user's business transactions. Supports the same filters as GET /finance/transactions.",
+  })
+  @ApiProduces('text/csv')
+  @ApiResponse({ status: 200, description: 'CSV file download' })
+  async downloadTransactionReportCsv(
+    @Req() req: any,
+    @Res() res: Response,
+    @Query() queryDto: TransactionQueryDto,
+  ) {
+    const business = await this.businessService.getBusinessForUser(req.user.id);
+    const query = this.buildTransactionQuery(business.id, queryDto);
+    const sortBy = queryDto.sortBy || 'date';
+    const sortOrder = queryDto.sortOrder === 'ASC' ? 'ASC' : 'DESC';
+
+    const transactions = await query
+      .orderBy(this.transactionSortColumns[sortBy] || 'tx.date', sortOrder)
+      .getMany();
+
+    const csv = this.generateTransactionsCsv(transactions, business.currency);
+    const csvBuffer = Buffer.from(csv, 'utf8');
+    const filename = `mytrackr-transaction-report-${new Date()
+      .toISOString()
+      .slice(0, 10)}.csv`;
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', csvBuffer.length);
+    return res.send(csvBuffer);
+  }
+
   private async resolveFinanceTransaction(
     userId: string,
     businessId: string,
@@ -964,8 +1013,9 @@ export class FinanceController {
 
   private serializeAsset(asset: Asset) {
     const categoryId =
-      this.assetCategoryOptions.find((option) => option.value === asset.category)
-        ?.id || '';
+      this.assetCategoryOptions.find(
+        (option) => option.value === asset.category,
+      )?.id || '';
 
     return {
       ...asset,
@@ -1075,8 +1125,7 @@ export class FinanceController {
 
     const explicitSubCategoryList =
       this.parseCommaSeparatedValues(subCategories);
-    const subCategoryParamValues =
-      this.parseCommaSeparatedValues(subCategory);
+    const subCategoryParamValues = this.parseCommaSeparatedValues(subCategory);
 
     if (
       explicitSubCategoryList.length > 0 ||
@@ -1167,6 +1216,58 @@ export class FinanceController {
       sourceTransactionId,
       sourceProvider,
     };
+  }
+
+  private generateTransactionsCsv(
+    transactions: Transaction[],
+    currency: string,
+  ): string {
+    const headers = [
+      'Date',
+      'Type',
+      'Amount',
+      'Currency',
+      'Category',
+      'Sub Category',
+      'Description',
+      'Name',
+      'External ID',
+      'Categorized',
+    ];
+
+    const rows = transactions.map((tx) => [
+      this.formatCsvDate(tx.date),
+      tx.direction,
+      Number(tx.amount || 0).toFixed(2),
+      currency || 'NGN',
+      tx.category || '',
+      tx.subCategory || '',
+      tx.description || '',
+      tx.name || '',
+      tx.externalId || '',
+      tx.isCategorised ? 'Yes' : 'No',
+    ]);
+
+    return [headers, ...rows]
+      .map((row) => row.map((value) => this.escapeCsvValue(value)).join(','))
+      .join('\r\n')
+      .concat('\r\n');
+  }
+
+  private escapeCsvValue(value: unknown): string {
+    const stringValue = String(value ?? '');
+    if (/[",\r\n]/.test(stringValue)) {
+      return `"${stringValue.replace(/"/g, '""')}"`;
+    }
+    return stringValue;
+  }
+
+  private formatCsvDate(value: Date | string): string {
+    const date = value instanceof Date ? value : new Date(value);
+    if (isNaN(date.getTime())) {
+      return '';
+    }
+    return date.toISOString().slice(0, 10);
   }
 
   @Post('transactions/retroactive-ai-sync')
@@ -1282,7 +1383,8 @@ export class FinanceController {
   })
   @ApiResponse({
     status: 201,
-    description: 'PDF processed immediately — shows imported, skipped, and errors',
+    description:
+      'PDF processed immediately — shows imported, skipped, and errors',
     type: CsvUploadResponseDto,
   })
   @ApiResponse({
@@ -1300,8 +1402,7 @@ export class FinanceController {
     required: false,
     type: Boolean,
     example: false,
-    description:
-      'Set to true to auto-categorize imported OCR/PDF transactions',
+    description: 'Set to true to auto-categorize imported OCR/PDF transactions',
   })
   async uploadPdf(
     @Req() req: any,
@@ -1362,7 +1463,10 @@ export class FinanceController {
     @Req() req: any,
     @Param('jobId', ParseUUIDPipe) jobId: string,
   ) {
-    const status = await this.pdfAiQueueService.getJobStatus(jobId, req.user.id);
+    const status = await this.pdfAiQueueService.getJobStatus(
+      jobId,
+      req.user.id,
+    );
     if (!status) {
       throw AppException.notFound(
         'Queued PDF job not found',

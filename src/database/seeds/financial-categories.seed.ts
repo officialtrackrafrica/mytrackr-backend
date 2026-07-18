@@ -73,6 +73,7 @@ export class FinancialCategoriesSeed {
           'Utlity Bill (Light, Water, Waste etc.)',
           'Airtime/Data Subscription',
           'Transportation & Logistics',
+          'Food and Snacks',
           'Bank Charges',
           'Travel Expenses',
           'Supplies & Stationery',

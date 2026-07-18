@@ -230,11 +230,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    const subscription = await this.subRepository.findOne({
-      where: { user: { id: user.id }, status: 'active' },
-      relations: ['plan'],
-      order: { createdAt: 'DESC' },
-    });
+    const subscription = await this.activateScheduledSubscriptionIfDue(user.id);
 
     if (!subscription || !subscription.plan) {
       throw new BadRequestException('No active subscription found');
@@ -255,6 +251,72 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
 
     return {
       authorizationUrl: updateLink.link,
+    };
+  }
+
+  async verifySubscriptionPayment(userId: string, reference: string) {
+    if (!reference) {
+      throw new BadRequestException('Payment reference is required');
+    }
+
+    const tx = await this.txRepository.findOne({
+      where: { reference },
+      relations: ['user'],
+    });
+
+    if (!tx || tx.user?.id !== userId) {
+      throw new BadRequestException('Payment reference was not found');
+    }
+
+    const planId = tx.metadata?.planId;
+    if (!planId) {
+      throw new BadRequestException(
+        'Payment reference is not for a subscription checkout',
+      );
+    }
+
+    if (tx.status === 'success') {
+      const subscription = await this.getUserSubscriptionStatus(userId);
+      if (subscription.hasActiveSubscription) {
+        return {
+          status: tx.status,
+          reference: tx.reference,
+          subscription,
+        };
+      }
+    }
+
+    const gateway = this.paymentFactory.getGateway(tx.gateway);
+    const verification = await gateway.verifyPayment(reference);
+
+    if (verification.status !== 'success') {
+      tx.status = verification.status;
+      await this.txRepository.save(tx);
+
+      throw new BadRequestException(
+        `Payment verification returned ${verification.status}`,
+      );
+    }
+
+    tx.status = 'success';
+    tx.gatewayReference = verification.gatewayReference || tx.gatewayReference;
+    tx.paymentMethod =
+      verification.rawResponse?.data?.channel || tx.paymentMethod || 'unknown';
+    await this.txRepository.save(tx);
+
+    await this.provisionSubscription(
+      tx.user.id,
+      planId,
+      verification.customerCode,
+      verification.rawResponse?.data?.authorization,
+      verification.rawResponse?.data,
+      tx.metadata,
+    );
+
+    return {
+      status: verification.status,
+      reference: verification.reference,
+      subscription: await this.getUserSubscriptionStatus(userId),
     };
   }
 
@@ -740,7 +802,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
         existingActiveSubscription.gatewaySubscriptionId;
       gatewayEmailToken =
         gatewayEmailToken || existingActiveSubscription.gatewayEmailToken;
-      this.assertPaystackSubscriptionCodeStored(
+      this.warnIfPaystackSubscriptionCodeMissing(
         plan,
         user,
         gatewaySubscriptionId,
@@ -807,7 +869,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
         gatewayEmailToken = created.emailToken;
       }
 
-      this.assertPaystackSubscriptionCodeStored(
+      this.warnIfPaystackSubscriptionCodeMissing(
         plan,
         user,
         gatewaySubscriptionId,
@@ -854,7 +916,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
           existingScheduledSubscription.gatewaySubscriptionId;
         gatewayEmailToken =
           gatewayEmailToken || existingScheduledSubscription.gatewayEmailToken;
-        this.assertPaystackSubscriptionCodeStored(
+        this.warnIfPaystackSubscriptionCodeMissing(
           plan,
           user,
           gatewaySubscriptionId,
@@ -876,7 +938,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
 
         await this.subRepository.save(existingScheduledSubscription);
       } else {
-        this.assertPaystackSubscriptionCodeStored(
+        this.warnIfPaystackSubscriptionCodeMissing(
           plan,
           user,
           gatewaySubscriptionId,
@@ -905,7 +967,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    this.assertPaystackSubscriptionCodeStored(
+    this.warnIfPaystackSubscriptionCodeMissing(
       plan,
       user,
       gatewaySubscriptionId,
@@ -929,7 +991,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(`Provisioned plan ${plan.name} for user ${user.id}`);
   }
 
-  private assertPaystackSubscriptionCodeStored(
+  private warnIfPaystackSubscriptionCodeMissing(
     plan: Plan,
     user: User,
     gatewaySubscriptionId: string,
@@ -939,7 +1001,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    throw new Error(
+    this.logger.warn(
       `Paystack subscription code was not available while ${context} for user ${user.id}`,
     );
   }

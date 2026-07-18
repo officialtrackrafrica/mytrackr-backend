@@ -1,10 +1,19 @@
-import { Controller, Get, Post, Body, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Req,
+  UseGuards,
+  Param,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiCookieAuth,
   ApiBody,
+  ApiParam,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards';
 import { SubscriptionService } from '../services/subscription.service';
@@ -164,6 +173,33 @@ export class SubscriptionController {
   })
   async subscribe(@Req() req: any, @Body() dto?: InitializeSubscriptionDto) {
     return this.subscriptionService.initializeSubscription(req.user, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('verify/:reference')
+  @ApiOperation({
+    summary: 'Verify a subscription payment and provision the plan',
+    description:
+      'Use this after Paystack redirects back to the frontend. It finalizes the subscription if the webhook was delayed or missed.',
+  })
+  @ApiParam({ name: 'reference', description: 'Payment reference to verify' })
+  @ApiResponse({
+    status: 200,
+    description: 'Payment verification result and current subscription status',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid reference or payment was not successful',
+    type: ErrorResponseDto,
+  })
+  async verifySubscriptionPayment(
+    @Req() req: any,
+    @Param('reference') reference: string,
+  ) {
+    return this.subscriptionService.verifySubscriptionPayment(
+      req.user.id,
+      reference,
+    );
   }
 
   @UseGuards(JwtAuthGuard)

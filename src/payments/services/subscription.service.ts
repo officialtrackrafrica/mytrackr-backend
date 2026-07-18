@@ -275,37 +275,13 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    let subscriptionCode = '';
-    let emailToken = '';
-
-    try {
-      const created = await this.paystackService.createSubscription({
-        customer: customerCode,
-        plan: subscription.plan.gatewayPlanId,
-        authorization: authorizationCode,
-      });
-      subscriptionCode = created.subscriptionCode;
-      emailToken = created.emailToken;
-    } catch (error) {
-      this.logger.warn(
-        `Unable to recreate Paystack subscription before card change: ${this.getErrorMessage(error)}`,
+    const { subscriptionCode, emailToken } =
+      await this.createOrFindPaystackSubscription(
+        customerCode,
+        subscription.plan.gatewayPlanId,
+        authorizationCode,
+        'before card change',
       );
-
-      try {
-        const existing =
-          await this.paystackService.findSubscriptionForCustomerPlan(
-            customerCode,
-            subscription.plan.gatewayPlanId,
-          );
-
-        subscriptionCode = existing?.subscription_code || '';
-        emailToken = existing?.email_token || '';
-      } catch (lookupError) {
-        this.logger.warn(
-          `Unable to find existing Paystack subscription before card change: ${this.getErrorMessage(lookupError)}`,
-        );
-      }
-    }
 
     if (!subscriptionCode) {
       throw new BadRequestException(
@@ -319,6 +295,86 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     subscription.canceledAt = null;
     subscription.status = 'active';
     await this.subRepository.save(subscription);
+  }
+
+  private async createOrFindPaystackSubscription(
+    customerCode: string,
+    planCode: string,
+    authorizationCode: string,
+    context: string,
+  ): Promise<{ subscriptionCode: string; emailToken: string }> {
+    try {
+      const created = await this.paystackService.createSubscription({
+        customer: customerCode,
+        plan: planCode,
+        authorization: authorizationCode,
+      });
+
+      return {
+        subscriptionCode: created.subscriptionCode,
+        emailToken: created.emailToken,
+      };
+    } catch (error) {
+      this.logger.warn(
+        `Unable to create Paystack subscription ${context}: ${this.getErrorMessage(error)}`,
+      );
+    }
+
+    try {
+      const existing =
+        await this.paystackService.findSubscriptionForCustomerPlan(
+          customerCode,
+          planCode,
+        );
+
+      return {
+        subscriptionCode: existing?.subscription_code || '',
+        emailToken: existing?.email_token || '',
+      };
+    } catch (lookupError) {
+      this.logger.warn(
+        `Unable to find existing Paystack subscription ${context}: ${this.getErrorMessage(lookupError)}`,
+      );
+    }
+
+    return { subscriptionCode: '', emailToken: '' };
+  }
+
+  private async repairPaystackSubscriptionCodeFromLookup(
+    subscription: Subscription,
+    context: string,
+  ): Promise<void> {
+    if (subscription.gatewaySubscriptionId) {
+      return;
+    }
+
+    const customerCode = subscription.gatewayCustomerCode;
+    const planCode = subscription.plan?.gatewayPlanId;
+
+    if (!customerCode || !planCode) {
+      return;
+    }
+
+    try {
+      const existing =
+        await this.paystackService.findSubscriptionForCustomerPlan(
+          customerCode,
+          planCode,
+        );
+
+      if (!existing?.subscription_code) {
+        return;
+      }
+
+      subscription.gatewaySubscriptionId = existing.subscription_code;
+      subscription.gatewayEmailToken =
+        existing.email_token || subscription.gatewayEmailToken;
+      await this.subRepository.save(subscription);
+    } catch (error) {
+      this.logger.warn(
+        `Unable to repair Paystack subscription code ${context}: ${this.getErrorMessage(error)}`,
+      );
+    }
   }
 
   async initializeSubscription(user: User, dto?: InitializeSubscriptionDto) {
@@ -664,23 +720,14 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       authorization?.authorization_code &&
       !isProratedUpgrade
     ) {
-      try {
-        const created = await this.paystackService.createSubscription({
-          customer: customerCode,
-          plan: plan.gatewayPlanId,
-          authorization: authorization.authorization_code,
-        });
-        gatewaySubscriptionId = created.subscriptionCode;
-        gatewayEmailToken = created.emailToken;
-      } catch (error) {
-        const message = this.getErrorMessage(error);
-        if (!message.toLowerCase().includes('already in place')) {
-          throw error;
-        }
-        this.logger.warn(
-          `Paystack subscription already exists for user ${user.id} and plan ${plan.name}; provisioning local subscription only.`,
-        );
-      }
+      const created = await this.createOrFindPaystackSubscription(
+        customerCode,
+        plan.gatewayPlanId,
+        authorization.authorization_code,
+        `while provisioning plan ${plan.name} for user ${user.id}`,
+      );
+      gatewaySubscriptionId = created.subscriptionCode;
+      gatewayEmailToken = created.emailToken;
     }
 
     if (
@@ -688,6 +735,18 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       existingActiveSubscription &&
       isSamePlanRenewal
     ) {
+      gatewaySubscriptionId =
+        gatewaySubscriptionId ||
+        existingActiveSubscription.gatewaySubscriptionId;
+      gatewayEmailToken =
+        gatewayEmailToken || existingActiveSubscription.gatewayEmailToken;
+      this.assertPaystackSubscriptionCodeStored(
+        plan,
+        user,
+        gatewaySubscriptionId,
+        `renewing plan ${plan.name}`,
+      );
+
       existingActiveSubscription.plan = plan;
       existingActiveSubscription.currentPeriodEnd = endDate;
       existingActiveSubscription.gatewaySubscriptionId = gatewaySubscriptionId;
@@ -712,6 +771,11 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       existingActiveSubscription &&
       isProratedUpgrade
     ) {
+      await this.repairPaystackSubscriptionCodeFromLookup(
+        existingActiveSubscription,
+        `before upgrading user ${user.id} from ${existingActiveSubscription.plan.name}`,
+      );
+
       if (
         existingActiveSubscription.gatewaySubscriptionId &&
         existingActiveSubscription.gatewayEmailToken
@@ -733,14 +797,22 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
         customerCode &&
         authorization?.authorization_code
       ) {
-        const created = await this.paystackService.createSubscription({
-          customer: customerCode,
-          plan: plan.gatewayPlanId,
-          authorization: authorization.authorization_code,
-        });
+        const created = await this.createOrFindPaystackSubscription(
+          customerCode,
+          plan.gatewayPlanId,
+          authorization.authorization_code,
+          `while upgrading user ${user.id} to ${plan.name}`,
+        );
         gatewaySubscriptionId = created.subscriptionCode;
         gatewayEmailToken = created.emailToken;
       }
+
+      this.assertPaystackSubscriptionCodeStored(
+        plan,
+        user,
+        gatewaySubscriptionId,
+        `upgrading to ${plan.name}`,
+      );
 
       const upgradedSubscription = this.subRepository.create({
         user,
@@ -777,6 +849,18 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       });
 
       if (existingScheduledSubscription) {
+        gatewaySubscriptionId =
+          gatewaySubscriptionId ||
+          existingScheduledSubscription.gatewaySubscriptionId;
+        gatewayEmailToken =
+          gatewayEmailToken || existingScheduledSubscription.gatewayEmailToken;
+        this.assertPaystackSubscriptionCodeStored(
+          plan,
+          user,
+          gatewaySubscriptionId,
+          `scheduling plan ${plan.name}`,
+        );
+
         existingScheduledSubscription.plan = plan;
         existingScheduledSubscription.currentPeriodStart = scheduledStartDate;
         existingScheduledSubscription.currentPeriodEnd = scheduledEndDate;
@@ -792,6 +876,13 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
 
         await this.subRepository.save(existingScheduledSubscription);
       } else {
+        this.assertPaystackSubscriptionCodeStored(
+          plan,
+          user,
+          gatewaySubscriptionId,
+          `scheduling plan ${plan.name}`,
+        );
+
         const scheduledSubscription = this.subRepository.create({
           user,
           plan,
@@ -814,6 +905,13 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    this.assertPaystackSubscriptionCodeStored(
+      plan,
+      user,
+      gatewaySubscriptionId,
+      `provisioning plan ${plan.name}`,
+    );
+
     const sub = this.subRepository.create({
       user,
       plan,
@@ -829,6 +927,21 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
 
     await this.subRepository.save(sub);
     this.logger.log(`Provisioned plan ${plan.name} for user ${user.id}`);
+  }
+
+  private assertPaystackSubscriptionCodeStored(
+    plan: Plan,
+    user: User,
+    gatewaySubscriptionId: string,
+    context: string,
+  ): void {
+    if (!plan.gatewayPlanId || gatewaySubscriptionId) {
+      return;
+    }
+
+    throw new Error(
+      `Paystack subscription code was not available while ${context} for user ${user.id}`,
+    );
   }
 
   private extractPaystackSubscriptionDetails(data?: Record<string, any>): {

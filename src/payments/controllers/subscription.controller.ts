@@ -126,21 +126,21 @@ export class SubscriptionController {
   @UseGuards(JwtAuthGuard)
   @Post('billing-card/change')
   @ApiOperation({
-    summary: 'Replace the billing card for the current subscription',
+    summary: 'Initialize Paystack card update for the current subscription',
   })
-  @ApiBody({ type: StoreBillingCardDto })
   @ApiResponse({
-    status: 200,
-    description: 'Billing card changed successfully',
-    type: BillingCardMetadataDto,
+    status: 201,
+    description:
+      'Returns a Paystack authorization URL for collecting the replacement card',
+    type: BillingCardChangeCheckoutResponseDto,
   })
   @ApiResponse({
     status: 400,
-    description: 'No active subscription or invalid billing card metadata',
+    description: 'No active subscription or invalid billing setup',
     type: ErrorResponseDto,
   })
-  async changeBillingCard(@Req() req: any, @Body() dto: StoreBillingCardDto) {
-    return this.subscriptionService.changeBillingCard(req.user.id, dto);
+  async changeBillingCard(@Req() req: any) {
+    return this.subscriptionService.changeBillingCard(req.user);
   }
 
   @UseGuards(JwtAuthGuard)

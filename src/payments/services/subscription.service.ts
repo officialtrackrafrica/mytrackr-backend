@@ -219,63 +219,8 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     return this.toBillingCardMetadata(subscription);
   }
 
-  async changeBillingCard(userId: string, dto: StoreBillingCardDto) {
-    const subscription = await this.subRepository.findOne({
-      where: { user: { id: userId }, status: 'active' },
-      relations: ['plan'],
-      order: { createdAt: 'DESC' },
-    });
-
-    if (!subscription || !subscription.plan) {
-      throw new BadRequestException('No active subscription found');
-    }
-
-    const authorizationCode = dto.authorization?.authorization_code;
-    if (!authorizationCode) {
-      throw new BadRequestException(
-        'A Paystack authorization_code is required to change the billing card',
-      );
-    }
-
-    if (!subscription.gatewayCustomerCode) {
-      subscription.gatewayCustomerCode =
-        dto.customerCode || subscription.gatewayCustomerCode;
-    }
-
-    if (!subscription.gatewayCustomerCode) {
-      throw new BadRequestException(
-        'Customer code is required before changing the billing card',
-      );
-    }
-
-    if (!subscription.plan.gatewayPlanId) {
-      throw new BadRequestException(
-        'Subscription plan is missing its payment gateway plan mapping',
-      );
-    }
-
-    if (subscription.gatewaySubscriptionId && subscription.gatewayEmailToken) {
-      await this.paystackService.disableSubscription({
-        code: subscription.gatewaySubscriptionId,
-        token: subscription.gatewayEmailToken,
-      });
-    }
-
-    const created = await this.paystackService.createSubscription({
-      customer: subscription.gatewayCustomerCode,
-      plan: subscription.plan.gatewayPlanId,
-      authorization: authorizationCode,
-    });
-
-    subscription.gatewaySubscriptionId = created.subscriptionCode;
-    subscription.gatewayEmailToken = created.emailToken;
-    subscription.paymentAuthorization = dto.authorization;
-    subscription.cancelAtPeriodEnd = false;
-    subscription.canceledAt = null;
-    subscription.status = 'active';
-
-    await this.subRepository.save(subscription);
-    return this.toBillingCardMetadata(subscription);
+  async changeBillingCard(user: User) {
+    return this.initializeBillingCardChangeCheckout(user);
   }
 
   async initializeBillingCardChangeCheckout(user: User) {

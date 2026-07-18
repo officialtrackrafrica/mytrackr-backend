@@ -832,6 +832,11 @@ export class AuthService {
       businessType: user.business?.businessType,
       signedUpWithGoogle: this.hasGoogleSignup(user),
       hasSelectedBusinessType: Boolean(user.business?.businessType),
+      hasSubmittedAcquisitionSource: Boolean(
+        user.acquisitionSourceSubmittedAt || user.acquisitionSource,
+      ),
+      acquisitionSource: user.acquisitionSource || null,
+      acquisitionSourceOther: user.acquisitionSourceOther || null,
       notificationPreferences: {
         appUpdates: {
           email: user.notificationPreferences?.appUpdates?.email ?? true,

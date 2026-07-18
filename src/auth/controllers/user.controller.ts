@@ -29,6 +29,9 @@ import { PoliciesGuard } from '../../casl/guards/policies.guard';
 import { CheckPolicies } from '../../casl/decorators/check-policies.decorator';
 import { User } from '../entities';
 import {
+  AcquisitionSourceOptionDto,
+  AcquisitionSourceStatusDto,
+  SubmitAcquisitionSourceDto,
   UpdateProfileDto,
   UserResponseDto,
   ChangePasswordDto,
@@ -50,6 +53,7 @@ import {
 } from '../../admin/dto';
 import { AdminSystemService } from '../../admin/services/admin-system.service';
 import { BusinessType } from '../../business/entities/business.entity';
+import { UserAcquisitionSource } from '../entities/user.entity';
 
 interface AuthenticatedRequest {
   user: {
@@ -59,6 +63,17 @@ interface AuthenticatedRequest {
 
 const MAX_PROFILE_PICTURE_WIDTH = 800;
 const MAX_PROFILE_PICTURE_HEIGHT = 400;
+const ACQUISITION_SOURCE_OPTIONS: AcquisitionSourceOptionDto[] = [
+  { value: UserAcquisitionSource.SALES_AGENT, label: 'Sales agent' },
+  { value: UserAcquisitionSource.INSTAGRAM, label: 'Instagram' },
+  { value: UserAcquisitionSource.TIKTOK, label: 'TikTok' },
+  { value: UserAcquisitionSource.FACEBOOK, label: 'Facebook' },
+  {
+    value: UserAcquisitionSource.WORD_OF_MOUTH_REFERRAL,
+    label: 'Word of mouth/referral',
+  },
+  { value: UserAcquisitionSource.OTHERS, label: 'Others' },
+];
 
 @ApiTags(SWAGGER_TAGS[3].name)
 @Controller('users')
@@ -117,6 +132,55 @@ export class UserController {
     return {
       signedUpWithGoogle:
         user.signedUpWithGoogle || Boolean(user.googleId && !user.passwordHash),
+    };
+  }
+
+  @Get('me/acquisition-source/options')
+  @ApiOperation({ summary: 'List acquisition source options' })
+  @ApiResponse({
+    status: 200,
+    description: 'Allowed acquisition source options',
+    type: [AcquisitionSourceOptionDto],
+  })
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Read, 'User'))
+  getAcquisitionSourceOptions(): AcquisitionSourceOptionDto[] {
+    return ACQUISITION_SOURCE_OPTIONS;
+  }
+
+  @Patch('me/acquisition-source')
+  @ApiOperation({ summary: 'Submit where the current user found MyTrackr' })
+  @ApiBody({ type: SubmitAcquisitionSourceDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Acquisition source submitted',
+    type: AcquisitionSourceStatusDto,
+  })
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Update, 'User'))
+  async submitAcquisitionSource(
+    @Request() req: AuthenticatedRequest,
+    @Body() dto: SubmitAcquisitionSourceDto,
+  ): Promise<AcquisitionSourceStatusDto> {
+    const otherDetail =
+      dto.source === UserAcquisitionSource.OTHERS
+        ? dto.otherDetail?.trim() || null
+        : null;
+    const submittedAt = new Date();
+
+    const result = await this.usersRepository.update(req.user.id, {
+      acquisitionSource: dto.source,
+      acquisitionSourceOther: otherDetail,
+      acquisitionSourceSubmittedAt: submittedAt,
+    });
+
+    if (!result.affected) {
+      throw new NotFoundException('User not found');
+    }
+
+    return {
+      hasSubmittedAcquisitionSource: true,
+      acquisitionSource: dto.source,
+      acquisitionSourceOther: otherDetail,
+      acquisitionSourceSubmittedAt: submittedAt,
     };
   }
 
@@ -333,6 +397,11 @@ export class UserController {
       signedUpWithGoogle:
         user.signedUpWithGoogle || Boolean(user.googleId && !user.passwordHash),
       hasSelectedBusinessType: Boolean(user.business?.businessType),
+      hasSubmittedAcquisitionSource: Boolean(
+        user.acquisitionSourceSubmittedAt || user.acquisitionSource,
+      ),
+      acquisitionSource: user.acquisitionSource || null,
+      acquisitionSourceOther: user.acquisitionSourceOther || null,
       notificationPreferences: this.resolveNotificationPreferences(
         user.notificationPreferences,
       ),

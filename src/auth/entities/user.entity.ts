@@ -14,6 +14,15 @@ import { Role } from './role.entity';
 import { Business } from '../../business/entities/business.entity';
 import { MonoAccount } from '../../mono/entities/mono-account.entity';
 
+export enum UserAcquisitionSource {
+  SALES_AGENT = 'SALES_AGENT',
+  INSTAGRAM = 'INSTAGRAM',
+  TIKTOK = 'TIKTOK',
+  FACEBOOK = 'FACEBOOK',
+  WORD_OF_MOUTH_REFERRAL = 'WORD_OF_MOUTH_REFERRAL',
+  OTHERS = 'OTHERS',
+}
+
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn('uuid')
@@ -120,6 +129,15 @@ export class User {
       sms: boolean;
     };
   };
+
+  @Column({ type: 'enum', enum: UserAcquisitionSource, nullable: true })
+  acquisitionSource?: UserAcquisitionSource | null;
+
+  @Column({ type: 'text', nullable: true })
+  acquisitionSourceOther?: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  acquisitionSourceSubmittedAt?: Date | null;
 
   @OneToMany(() => Session, (session) => session.user)
   sessions: Session[];

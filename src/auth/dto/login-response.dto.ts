@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { BusinessType } from '../../business/entities/business.entity';
+import { UserAcquisitionSource } from '../entities/user.entity';
 import { NotificationPreferencesDto } from './notification-preferences.dto';
 
 export class UserResponseDto {
@@ -58,6 +59,27 @@ export class UserResponseDto {
     example: true,
   })
   hasSelectedBusinessType: boolean;
+
+  @ApiProperty({
+    description: 'Whether the user has submitted where they found MyTrackr',
+    example: false,
+  })
+  hasSubmittedAcquisitionSource: boolean;
+
+  @ApiProperty({
+    description: 'Where the user first found MyTrackr',
+    enum: UserAcquisitionSource,
+    required: false,
+    nullable: true,
+  })
+  acquisitionSource?: UserAcquisitionSource | null;
+
+  @ApiProperty({
+    description: 'Optional detail for the acquisition source',
+    required: false,
+    nullable: true,
+  })
+  acquisitionSourceOther?: string | null;
 
   @ApiProperty({
     description: 'User notification preferences',

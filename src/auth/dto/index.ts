@@ -20,3 +20,4 @@ export * from './forgot-password.dto';
 export * from './reset-password.dto';
 export * from './upload-profile-picture.dto';
 export * from './notification-preferences.dto';
+export * from './acquisition-source.dto';

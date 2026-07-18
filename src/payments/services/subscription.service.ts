@@ -275,14 +275,46 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    const created = await this.paystackService.createSubscription({
-      customer: customerCode,
-      plan: subscription.plan.gatewayPlanId,
-      authorization: authorizationCode,
-    });
+    let subscriptionCode = '';
+    let emailToken = '';
 
-    subscription.gatewaySubscriptionId = created.subscriptionCode;
-    subscription.gatewayEmailToken = created.emailToken;
+    try {
+      const created = await this.paystackService.createSubscription({
+        customer: customerCode,
+        plan: subscription.plan.gatewayPlanId,
+        authorization: authorizationCode,
+      });
+      subscriptionCode = created.subscriptionCode;
+      emailToken = created.emailToken;
+    } catch (error) {
+      this.logger.warn(
+        `Unable to recreate Paystack subscription before card change: ${this.getErrorMessage(error)}`,
+      );
+
+      try {
+        const existing =
+          await this.paystackService.findSubscriptionForCustomerPlan(
+            customerCode,
+            subscription.plan.gatewayPlanId,
+          );
+
+        subscriptionCode = existing?.subscription_code || '';
+        emailToken = existing?.email_token || '';
+      } catch (lookupError) {
+        this.logger.warn(
+          `Unable to find existing Paystack subscription before card change: ${this.getErrorMessage(lookupError)}`,
+        );
+      }
+    }
+
+    if (!subscriptionCode) {
+      throw new BadRequestException(
+        'Unable to prepare Paystack card update link because this subscription has no Paystack subscription code. Ask the user to complete subscription checkout again so Paystack can attach a billing card.',
+      );
+    }
+
+    subscription.gatewaySubscriptionId = subscriptionCode;
+    subscription.gatewayEmailToken = emailToken;
     subscription.cancelAtPeriodEnd = false;
     subscription.canceledAt = null;
     subscription.status = 'active';

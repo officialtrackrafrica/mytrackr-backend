@@ -319,6 +319,63 @@ export class PaystackService implements IPaymentGateway {
     }
   }
 
+  async findSubscriptionForCustomerPlan(
+    customerCode: string,
+    planCode: string,
+  ): Promise<Record<string, any> | null> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    try {
+      const params = new URLSearchParams({
+        customer: customerCode,
+        plan: planCode,
+        perPage: '50',
+      });
+
+      const response = await fetch(`${this.baseUrl}/subscription?${params}`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${this.secretKey}`,
+        },
+        signal: controller.signal,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.status) {
+        throw new Error(data.message || 'Failed to list subscriptions');
+      }
+
+      const subscriptions = Array.isArray(data.data) ? data.data : [];
+      return (
+        subscriptions.find((subscription) => {
+          const subscriptionCustomerCode =
+            subscription.customer?.customer_code || subscription.customer_code;
+          const subscriptionPlanCode =
+            subscription.plan?.plan_code || subscription.plan_code;
+
+          return (
+            subscription.subscription_code &&
+            subscriptionCustomerCode === customerCode &&
+            subscriptionPlanCode === planCode
+          );
+        }) || null
+      );
+    } catch (error) {
+      this.logger.error(`Paystack subscription list error: ${error.message}`);
+      throw new HttpException(
+        {
+          message: 'Subscription lookup failed',
+          cause: error.message,
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   async generateSubscriptionUpdateLink(
     subscriptionCode: string,
   ): Promise<{ link: string }> {

@@ -246,11 +246,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    if (!subscription.gatewaySubscriptionId) {
-      throw new BadRequestException(
-        'Subscription is missing its Paystack subscription code',
-      );
-    }
+    await this.ensurePaystackSubscriptionCode(subscription);
 
     const updateLink =
       await this.paystackService.generateSubscriptionUpdateLink(
@@ -260,6 +256,37 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     return {
       authorizationUrl: updateLink.link,
     };
+  }
+
+  private async ensurePaystackSubscriptionCode(
+    subscription: Subscription,
+  ): Promise<void> {
+    if (subscription.gatewaySubscriptionId) {
+      return;
+    }
+
+    const customerCode = subscription.gatewayCustomerCode;
+    const authorizationCode =
+      subscription.paymentAuthorization?.authorization_code;
+
+    if (!customerCode || !authorizationCode) {
+      throw new BadRequestException(
+        'Subscription is missing its Paystack subscription code and cannot be rebuilt because billing customer or authorization metadata is missing',
+      );
+    }
+
+    const created = await this.paystackService.createSubscription({
+      customer: customerCode,
+      plan: subscription.plan.gatewayPlanId,
+      authorization: authorizationCode,
+    });
+
+    subscription.gatewaySubscriptionId = created.subscriptionCode;
+    subscription.gatewayEmailToken = created.emailToken;
+    subscription.cancelAtPeriodEnd = false;
+    subscription.canceledAt = null;
+    subscription.status = 'active';
+    await this.subRepository.save(subscription);
   }
 
   async initializeSubscription(user: User, dto?: InitializeSubscriptionDto) {

@@ -7,6 +7,7 @@ import {
   Res,
   HttpException,
   HttpStatus,
+  HttpCode,
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
@@ -349,6 +350,64 @@ export class AuthController {
       throw new HttpException(
         {
           error: 'LOGIN_FAILED',
+          message: error instanceof Error ? error.message : 'Unknown error',
+        },
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+  }
+
+  @Post('admin/login')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ windowMs: 60 * 60 * 1000, max: 100 })
+  @Throttle({ default: { ttl: 60 * 60 * 1000, limit: 100 } })
+  @ApiOperation({
+    summary: 'Admin login with email and password',
+    description:
+      'Authenticates users with Admin or Super Admin roles and sets access/refresh cookies.',
+  })
+  @ApiBody({ type: EmailLoginDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Admin login successful - access/refresh cookies set',
+    type: LoginResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Invalid credentials' })
+  @ApiResponse({ status: 403, description: 'Admin access is required' })
+  @ApiResponse({ status: 429, description: 'Rate limited' })
+  async loginAsAdmin(
+    @Body() loginDto: EmailLoginDto,
+    @Req() req: any,
+    @Res({ passthrough: true }) res: ExpressResponse,
+  ): Promise<LoginResponseDto> {
+    try {
+      const deviceInfo = {
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      };
+      const result = await this.authService.loginAsAdmin(loginDto, deviceInfo);
+
+      if (result.accessToken && result.refreshToken) {
+        setCookies(res, {
+          accessToken: result.accessToken,
+          refreshToken: result.refreshToken,
+        });
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { accessToken: _at, refreshToken: _rt, ...safeResult } = result;
+        return safeResult as LoginResponseDto;
+      }
+      return result;
+    } catch (error) {
+      if (error instanceof AuthError) {
+        throw new HttpException(
+          { error: error.code, message: error.message },
+          error.status,
+        );
+      }
+      throw new HttpException(
+        {
+          error: 'ADMIN_LOGIN_FAILED',
           message: error instanceof Error ? error.message : 'Unknown error',
         },
         HttpStatus.UNAUTHORIZED,

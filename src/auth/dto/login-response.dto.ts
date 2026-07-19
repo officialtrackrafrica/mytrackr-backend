@@ -23,6 +23,14 @@ export class UserResponseDto {
   })
   profilePicture?: string;
 
+  @ApiProperty({
+    description: 'Assigned role names',
+    example: ['Super Admin'],
+    required: false,
+    type: [String],
+  })
+  roles?: string[];
+
   @ApiProperty({ description: 'Is email verified', example: true })
   isVerified: boolean;
 

@@ -47,6 +47,8 @@ interface TokenPayload {
   deviceId?: string;
 }
 
+const ADMIN_LOGIN_ROLES = ['Admin', 'Super Admin'];
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -102,11 +104,34 @@ export class AuthService {
     return this.validateAndLoginUser(user, password, deviceInfo);
   }
 
+  async loginAsAdmin(
+    loginDto: EmailLoginDto,
+    deviceInfo?: any,
+  ): Promise<LoginResponseDto> {
+    const normalizedEmail = this.normalizeEmail(loginDto.email);
+    const { password } = loginDto;
+    const user = await this.usersRepository.findOne({
+      where: { email: normalizedEmail },
+      relations: ['roles'],
+    });
+
+    return this.validateAndLoginUser(user, password, deviceInfo, {
+      requiredRoles: ADMIN_LOGIN_ROLES,
+      assignDefaultUserRole: false,
+    });
+  }
+
   private async validateAndLoginUser(
     user: User | null,
     password?: string,
     deviceInfo?: any,
+    options: {
+      requiredRoles?: string[];
+      assignDefaultUserRole?: boolean;
+    } = {},
   ): Promise<LoginResponseDto> {
+    const { requiredRoles, assignDefaultUserRole = true } = options;
+
     if (!user) {
       throw new AuthError('INVALID_CREDENTIALS', 'Invalid credentials');
     }
@@ -137,7 +162,22 @@ export class AuthService {
       );
     }
 
-    if (user.roles && !user.roles.some((role) => role.name === 'User')) {
+    if (
+      requiredRoles?.length &&
+      !user.roles?.some((role) => requiredRoles.includes(role.name))
+    ) {
+      throw new AuthError(
+        'ADMIN_ACCESS_DENIED',
+        'Admin access is required',
+        403,
+      );
+    }
+
+    if (
+      assignDefaultUserRole &&
+      user.roles &&
+      !user.roles.some((role) => role.name === 'User')
+    ) {
       await this.rolesService.assignRoleToUser(user.id, 'User');
       const updatedUser = await this.usersRepository.findOne({
         where: { id: user.id },
@@ -829,6 +869,7 @@ export class AuthService {
       firstName: user.firstName,
       lastName: user.lastName,
       profilePicture: user.profilePicture,
+      roles: user.roles?.map((role) => role.name),
       businessType: user.business?.businessType,
       signedUpWithGoogle: this.hasGoogleSignup(user),
       hasSelectedBusinessType: Boolean(user.business?.businessType),

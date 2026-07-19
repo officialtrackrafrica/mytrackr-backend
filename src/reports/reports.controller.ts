@@ -162,9 +162,11 @@ export class ReportsController {
   })
   @ApiQuery({ name: 'startDate', required: true, type: String })
   @ApiQuery({ name: 'endDate', required: true, type: String })
+  @ApiProduces('text/csv')
   @ApiResponse({ status: 200, description: 'CSV file download' })
   async exportPnl(
     @Req() req: any,
+    @Res() res: Response,
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
   ) {
@@ -179,13 +181,39 @@ export class ReportsController {
     }
 
     const csv = await this.pnlService.generatePnlCsv(req.user.id, start, end);
-    return csv;
+    return this.sendCsv(res, csv, 'mytrackr-profit-loss-report');
+  }
+
+  @Get('cash-flow/export')
+  @ApiOperation({
+    summary: 'Export Cash Flow statement to CSV',
+    description:
+      "Downloads the user's cash flow statement with burn rate and runway metrics as a CSV file.",
+  })
+  @ApiQuery({ name: 'startDate', required: true, type: String })
+  @ApiQuery({ name: 'endDate', required: true, type: String })
+  @ApiProduces('text/csv')
+  @ApiResponse({ status: 200, description: 'CSV file download' })
+  async exportCashFlow(
+    @Req() req: any,
+    @Res() res: Response,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+  ) {
+    const { start, end } = this.parseRequiredDateRange(startDate, endDate);
+    const csv = await this.cashFlowService.generateCashFlowCsv(
+      req.user.id,
+      start,
+      end,
+    );
+    return this.sendCsv(res, csv, 'mytrackr-cash-flow-statement');
   }
 
   @Get('pnl/export.pdf')
   @ApiOperation({
     summary: 'Export Profit & Loss report to PDF',
-    description: "Downloads the user's business P&L report as a clean PDF file.",
+    description:
+      "Downloads the user's business P&L report as a clean PDF file.",
   })
   @ApiQuery({ name: 'startDate', required: true, type: String })
   @ApiQuery({ name: 'endDate', required: true, type: String })
@@ -230,7 +258,10 @@ export class ReportsController {
       ...report.expenses.other.lines.map((line) =>
         this.formatAmountLine(line.subCategory || 'Other Expense', line.amount),
       ),
-      this.formatAmountLine('Total Other Expenses', report.expenses.other.total),
+      this.formatAmountLine(
+        'Total Other Expenses',
+        report.expenses.other.total,
+      ),
       '',
       this.formatAmountLine('Net Profit', report.netProfit),
       `Net Profit Margin: ${report.netProfitMargin.toFixed(2)}%`,
@@ -323,6 +354,15 @@ export class ReportsController {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Length', pdf.length);
     return res.send(pdf);
+  }
+
+  private sendCsv(res: Response, csv: string, filenamePrefix: string) {
+    const filename = `${filenamePrefix}-${new Date()
+      .toISOString()
+      .slice(0, 10)}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(csv);
   }
 
   private formatDate(date: Date): string {

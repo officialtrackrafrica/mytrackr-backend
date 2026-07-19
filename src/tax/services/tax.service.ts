@@ -80,6 +80,81 @@ export class TaxService {
     };
   }
 
+  async generateTaxEstimateCsv(
+    userId: string,
+    year: number,
+    userDeductions: number | UserTaxDeductions = 0,
+  ): Promise<string> {
+    const report = await this.calculateTaxEstimate(
+      userId,
+      year,
+      userDeductions,
+    );
+    const rows: Array<Array<string | number | boolean | null>> = [
+      ['Tax Estimate Report'],
+      ['Tax Year', report.year],
+      [
+        'Period',
+        `${report.period.startDate.slice(0, 10)} to ${report.period.endDate.slice(0, 10)}`,
+      ],
+      [],
+      ['Summary', 'Amount'],
+      ['Total Revenue', report.totalRevenue],
+      ['Total COGS', report.totalCogs],
+      ['Total Expenses', report.totalExpenses],
+      ['Net Profit', report.netProfit],
+      ['Total Assets', report.totalAssets],
+      ['Taxable Profit', report.taxableProfit],
+      [],
+      ['Deductions', 'Amount'],
+      ['Health Insurance', report.deductions.healthInsurance],
+      ['Life Insurance', report.deductions.lifeInsurance],
+      ['Pension', report.deductions.pension],
+      ['Housing Fund', report.deductions.housingFund],
+      ['Rent', report.deductions.rent],
+      ['Extra', report.deductions.extra],
+      ['Total Deductions', report.deductions.total],
+      [],
+      ['Personal Income Tax', 'Value'],
+      ['Chargeable Income', report.pitCalculation.chargeableIncome],
+      [
+        'Consolidated Relief Allowance',
+        report.pitCalculation.consolidatedReliefAllowance,
+      ],
+      ['Minimum Tax Floor', report.pitCalculation.minimumTaxFloor],
+      ['Estimated Annual PIT', report.pitCalculation.estimatedAnnualTax],
+      ['Monthly PIT Set Aside', report.pitCalculation.estimatedMonthlySetAside],
+      [
+        'Minimum Tax Applied',
+        report.pitCalculation.minimumTaxApplied ? 'Yes' : 'No',
+      ],
+      [],
+      ['PIT Band', 'Rate', 'Taxable Amount', 'Tax Generated'],
+      ...report.pitCalculation.breakdown.map((band) => [
+        band.bandLimit,
+        band.rate,
+        band.taxableAmount,
+        band.taxGenerated,
+      ]),
+      [],
+      ['Company Income Tax', 'Value'],
+      ['Company Size', report.citCalculation.companySize],
+      ['Tax Rate Applied', report.citCalculation.taxRateApplied],
+      ['Assessable Profit', report.citCalculation.assessableProfit],
+      ['Estimated Annual CIT', report.citCalculation.estimatedAnnualTax],
+      ['CIT Exempt', report.citCalculation.isExempt ? 'Yes' : 'No'],
+    ];
+
+    return rows.map((row) => row.map(this.csvCell).join(',')).join('\n');
+  }
+
+  private csvCell(value: string | number | boolean | null): string {
+    const stringValue = String(value ?? '');
+    return /[",\n\r]/.test(stringValue)
+      ? `"${stringValue.replace(/"/g, '""')}"`
+      : stringValue;
+  }
+
   private async buildTaxPeriodEstimate(
     businessId: string,
     period: {
@@ -237,7 +312,9 @@ export class TaxService {
         deductionsMap['life insurance'] + deductionsMap['life assurance'],
       pension: deductionsMap.pension,
       housingFund: deductionsMap.nhf + deductionsMap['national housing fund'],
-      rent: this.calculateRentRelief(parseFloat(rentExpenseResult?.total || '0')),
+      rent: this.calculateRentRelief(
+        parseFloat(rentExpenseResult?.total || '0'),
+      ),
     };
 
     const explicitDeductions =
@@ -281,12 +358,7 @@ export class TaxService {
       rent,
       extra,
       total:
-        healthInsurance +
-        lifeInsurance +
-        pension +
-        housingFund +
-        rent +
-        extra,
+        healthInsurance + lifeInsurance + pension + housingFund + rent + extra,
     };
   }
 

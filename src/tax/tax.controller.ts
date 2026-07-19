@@ -135,7 +135,10 @@ export class TaxController {
       this.formatAmountLine('Total Assets', report.totalAssets),
       '',
       'DEDUCTIONS',
-      this.formatAmountLine('Health Insurance', report.deductions.healthInsurance),
+      this.formatAmountLine(
+        'Health Insurance',
+        report.deductions.healthInsurance,
+      ),
       this.formatAmountLine('Life Insurance', report.deductions.lifeInsurance),
       this.formatAmountLine('Pension', report.deductions.pension),
       this.formatAmountLine('Housing Fund', report.deductions.housingFund),
@@ -193,6 +196,53 @@ export class TaxController {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Length', pdf.length);
     return res.send(pdf);
+  }
+
+  @Get('estimate/report.csv')
+  @ApiOperation({
+    summary: 'Download tax estimate report as CSV',
+    description:
+      'Downloads PIT and CIT tax estimate details for the selected tax year as a CSV file.',
+  })
+  @ApiQuery({
+    name: 'year',
+    required: true,
+    type: Number,
+    description: 'Tax year e.g. 2025',
+  })
+  @ApiQuery({
+    name: 'deductions',
+    required: false,
+    type: Number,
+    description: 'User-specified deductions in Naira',
+  })
+  @ApiProduces('text/csv')
+  @ApiResponse({ status: 200, description: 'CSV file download' })
+  async getTaxEstimateCsv(
+    @Req() req: any,
+    @Res() res: Response,
+    @Query() query: Record<string, any>,
+    @Query('year') year?: string,
+    @Query('deductions') deductions?: string,
+  ) {
+    const yearNumber = parseInt(year || '', 10);
+    if (!year || isNaN(yearNumber)) {
+      throw AppException.badRequest(
+        'Valid tax year is required',
+        'TAX_INVALID_YEAR',
+      );
+    }
+
+    const csv = await this.taxService.generateTaxEstimateCsv(
+      req.user.id,
+      yearNumber,
+      this.parseDeductionsQuery(query, deductions),
+    );
+
+    const filename = `mytrackr-tax-estimate-${yearNumber}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(csv);
   }
 
   private parseDeductionsQuery(

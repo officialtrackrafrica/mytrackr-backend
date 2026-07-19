@@ -100,6 +100,43 @@ export class CashFlowService {
     };
   }
 
+  async generateCashFlowCsv(
+    userId: string,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<string> {
+    const report = await this.calculateCashFlow(userId, startDate, endDate);
+    const rows = [
+      ['Cash Flow Statement'],
+      [
+        'Period',
+        `${startDate.toISOString().slice(0, 10)} to ${endDate
+          .toISOString()
+          .slice(0, 10)}`,
+      ],
+      [],
+      ['Metric', 'Amount'],
+      ['Cash In', report.cashIn],
+      ['Cash Out', report.cashOut],
+      ['Net Cash Flow', report.netCashFlow],
+      ['Internal Transfer In', report.internalTransfers.internalIn],
+      ['Internal Transfer Out', report.internalTransfers.internalOut],
+      ['Monthly Burn Rate', report.monthlyBurnRate],
+      ['Cash Balance', report.cashBalance],
+      ['Months of Runway', report.monthsOfRunway ?? 'N/A'],
+      ['Low Runway Alert', report.lowRunwayAlert ? 'Yes' : 'No'],
+    ];
+
+    return rows.map((row) => row.map(this.csvCell).join(',')).join('\n');
+  }
+
+  private csvCell(value: string | number | boolean | null): string {
+    const stringValue = String(value ?? '');
+    return /[",\n\r]/.test(stringValue)
+      ? `"${stringValue.replace(/"/g, '""')}"`
+      : stringValue;
+  }
+
   private emptyCashFlow() {
     return {
       cashIn: 0,

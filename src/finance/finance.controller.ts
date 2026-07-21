@@ -85,6 +85,8 @@ import {
 @ApiCookieAuth('accessToken')
 export class FinanceController {
   private readonly logger = new Logger(FinanceController.name);
+  private readonly categorizedTransactionCondition =
+    'tx.category IS NOT NULL AND tx.category != \'\' AND tx."subCategory" IS NOT NULL AND tx."subCategory" != \'\'';
   private readonly transactionSortColumns: Record<string, string> = {
     date: 'tx.date',
     amount: 'tx.amount',
@@ -1081,9 +1083,11 @@ export class FinanceController {
     }
 
     if (isCategorised !== undefined) {
-      query.andWhere('tx."isCategorised" = :isCategorised', {
-        isCategorised,
-      });
+      query.andWhere(
+        isCategorised
+          ? this.categorizedTransactionCondition
+          : `NOT (${this.categorizedTransactionCondition})`,
+      );
     }
 
     if (categoryId) {
@@ -1175,11 +1179,11 @@ export class FinanceController {
       .clone()
       .select('COUNT(*)', 'totalTransactions')
       .addSelect(
-        'SUM(CASE WHEN tx."isCategorised" = true THEN 1 ELSE 0 END)',
+        `SUM(CASE WHEN ${this.categorizedTransactionCondition} THEN 1 ELSE 0 END)`,
         'totalCategorized',
       )
       .addSelect(
-        'SUM(CASE WHEN tx."isCategorised" = false THEN 1 ELSE 0 END)',
+        `SUM(CASE WHEN NOT (${this.categorizedTransactionCondition}) THEN 1 ELSE 0 END)`,
         'totalUncategorized',
       )
       .getRawOne();

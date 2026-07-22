@@ -65,6 +65,8 @@ type GeminiCategorizationResult = {
   confidence?: number;
 };
 
+export type RetroactiveAiProvider = 'gemini' | 'legacy';
+
 /**
  * Confidence threshold above which the AI prediction is auto-applied and the
  * transaction is marked as fully categorised without human review.
@@ -332,6 +334,7 @@ export class CategorizationService {
   async retroactiveAiSync(
     businessId: string | null,
     userId: string | null,
+    provider: RetroactiveAiProvider = 'gemini',
   ): Promise<number> {
     const query = this.transactionRepository
       .createQueryBuilder('tx')
@@ -416,19 +419,29 @@ export class CategorizationService {
 
       const ruleMatched = await this.applyRules(tx, activeRules);
       if (!tx.isCategorised) {
-        await this.applyAiPrediction(tx, description, userId ?? '');
+        if (provider === 'legacy') {
+          await this.applyAiPrediction(tx, description, userId ?? '');
+        } else {
+          await this.applyGeminiPrediction(
+            tx,
+            businessId || undefined,
+            userId ?? '',
+          );
+        }
       } else if (ruleMatched) {
         await this.learnFromCategorizedTransaction(tx, userId ?? '');
       }
 
       if (!tx.isCategorised) {
-        const geminiMatched = await this.applyGeminiPrediction(
-          tx,
-          businessId || undefined,
-          userId ?? '',
-        );
-        if (geminiMatched) {
-          await this.learnFromCategorizedTransaction(tx, userId ?? '');
+        if (provider === 'legacy') {
+          const geminiMatched = await this.applyGeminiPrediction(
+            tx,
+            businessId || undefined,
+            userId ?? '',
+          );
+          if (geminiMatched) {
+            await this.learnFromCategorizedTransaction(tx, userId ?? '');
+          }
         }
       }
 

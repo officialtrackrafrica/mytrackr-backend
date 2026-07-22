@@ -636,6 +636,7 @@ export class MonoService {
           bankName: acc.institutionName,
           monoAccountId: acc.monoAccountId,
           accountNumber: acc.accountNumber,
+          currency: acc.currency || 'NGN',
           syncedRange: {
             earliest: acc.earliestSyncedAt,
             latest: acc.lastSyncedAt,
@@ -643,6 +644,9 @@ export class MonoService {
           total: transactions.length,
           data: transactions.map((transaction) => ({
             ...transaction,
+            amount: this.toMajorCurrencyUnit(transaction.amount),
+            balance: this.toMajorCurrencyUnit(transaction.balance),
+            currency: transaction.currency || acc.currency || 'NGN',
             financeTransactionId:
               financeIdByExternalId.get(
                 `mono_${transaction.monoTransactionId}`,
@@ -1133,7 +1137,7 @@ export class MonoService {
         dataStatus: data?.meta?.data_status,
         name: data?.account?.name,
         accountNumber: data?.account?.accountNumber,
-        currency: data?.account?.currency,
+        currency: data?.account?.currency || 'NGN',
         balance: data?.account?.balance,
         type: data?.account?.type,
         bvn: data?.account?.bvn,
@@ -1325,11 +1329,16 @@ export class MonoService {
   private toMonoAccountResponse(account: MonoAccount) {
     return {
       ...account,
+      currency: account.currency || 'NGN',
       balance:
         account.balance === null || account.balance === undefined
           ? account.balance
-          : Number(account.balance) / 100,
+          : this.toMajorCurrencyUnit(account.balance),
     };
+  }
+
+  private toMajorCurrencyUnit(amount: number | string): number {
+    return Number(amount) / 100;
   }
 
   private async findFinanceTransactionId(

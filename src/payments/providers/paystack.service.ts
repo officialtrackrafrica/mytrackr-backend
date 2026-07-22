@@ -15,6 +15,7 @@ export class PaystackService implements IPaymentGateway {
   private readonly baseUrl = 'https://api.paystack.co';
   private readonly defaultCallbackUrl =
     'https://mytrackr-frontend.vercel.app/dashboard';
+  private readonly defaultCheckoutChannels: string[];
 
   constructor(private configService: ConfigService) {
     const key = this.configService.get<string>('PAYSTACK_SECRET_KEY');
@@ -24,6 +25,9 @@ export class PaystackService implements IPaymentGateway {
       );
     }
     this.secretKey = key.trim();
+    this.defaultCheckoutChannels = this.parseCheckoutChannels(
+      this.configService.get<string>('PAYSTACK_CHECKOUT_CHANNELS'),
+    );
   }
 
   async initializePayment(payload: InitializePaymentDto): Promise<{
@@ -47,6 +51,7 @@ export class PaystackService implements IPaymentGateway {
           reference: payload.reference,
           plan: payload.plan,
           metadata: payload.metadata,
+          channels: payload.channels || this.defaultCheckoutChannels,
           callback_url:
             this.configService.get<string>('PAYSTACK_CALLBACK_URL') ||
             this.defaultCallbackUrl,
@@ -77,6 +82,25 @@ export class PaystackService implements IPaymentGateway {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  private parseCheckoutChannels(rawChannels?: string): string[] {
+    const configuredChannels = rawChannels
+      ?.split(',')
+      .map((channel) => channel.trim())
+      .filter(Boolean);
+
+    return configuredChannels?.length
+      ? configuredChannels
+      : [
+          'card',
+          'bank',
+          'bank_transfer',
+          'ussd',
+          'qr',
+          'mobile_money',
+          'payattitude',
+        ];
   }
 
   async createPlan(payload: {

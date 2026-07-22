@@ -4,6 +4,7 @@ export interface InitializePaymentDto {
   reference: string;
   plan?: string;
   metadata?: Record<string, any>;
+  channels?: string[];
 }
 
 export interface VerifyPaymentResponse {

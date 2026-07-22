@@ -14,6 +14,17 @@ async function bootstrap() {
   const httpAdapter = app.get(HttpAdapterHost);
   const expressApp = app.getHttpAdapter().getInstance();
 
+  app.use((req: any, _res: any, next: () => void) => {
+    const [path, query = ''] = req.url.split('?');
+    const normalizedPath = path.replace(/\/{2,}/g, '/');
+
+    if (normalizedPath !== path) {
+      req.url = query ? `${normalizedPath}?${query}` : normalizedPath;
+    }
+
+    next();
+  });
+
   app.use(cookieParser());
 
   app.use(

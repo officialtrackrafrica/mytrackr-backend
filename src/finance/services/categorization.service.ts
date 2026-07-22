@@ -340,40 +340,12 @@ export class CategorizationService {
       .createQueryBuilder('tx')
       .where(
         new Brackets((qb) => {
-          qb.where('tx.isCategorised = :isCategorised', {
-            isCategorised: false,
-          })
-            .orWhere(
-              'tx.categorySource = :aiSource AND tx.direction = :creditDirection AND tx.category IN (:...debitCategories)',
-              {
-                aiSource: CategorySource.AI,
-                creditDirection: TransactionDirection.CREDIT,
-                debitCategories: [
-                  TransactionCategory.EXPENSE,
-                  TransactionCategory.COGS,
-                  TransactionCategory.ASSET,
-                ],
-              },
-            )
-            .orWhere(
-              'tx.categorySource = :aiSource AND tx.direction = :debitDirection AND tx.category IN (:...creditCategories)',
-              {
-                aiSource: CategorySource.AI,
-                debitDirection: TransactionDirection.DEBIT,
-                creditCategories: [
-                  TransactionCategory.INCOME,
-                  TransactionCategory.LIABILITY,
-                  TransactionCategory.EQUITY,
-                ],
-              },
-            )
-            .orWhere(
-              'tx.categorySource = :aiSource AND tx.subCategory = :badUtilitySubCategory',
-              {
-                aiSource: CategorySource.AI,
-                badUtilitySubCategory: 'Utlity Bill (Light, Water, Waste etc.)',
-              },
-            );
+          qb.where('tx.categorySource IS NULL').orWhere(
+            'tx.categorySource != :manualSource',
+            {
+              manualSource: CategorySource.MANUAL,
+            },
+          );
         }),
       );
 
@@ -383,15 +355,15 @@ export class CategorizationService {
       query.andWhere('tx.userId = :userId', { userId });
     }
 
-    const uncategorised = await query.getMany();
+    const transactions = await query.getMany();
 
-    if (uncategorised.length === 0) {
+    if (transactions.length === 0) {
       this.logger.log('Retroactive AI sync: nothing to update.');
       return 0;
     }
 
     this.logger.log(
-      `Retroactive AI sync: processing ${uncategorised.length} uncategorised transactions...`,
+      `Retroactive AI sync: reprocessing ${transactions.length} transactions with ${provider}...`,
     );
 
     const activeRules = await this.ruleRepository.find({
@@ -400,22 +372,20 @@ export class CategorizationService {
     });
 
     let updatedCount = 0;
-    for (const tx of uncategorised) {
+    for (const tx of transactions) {
       const description = this.getCategorizationText(tx);
-      const wasInvalidAiCategory =
-        tx.categorySource === CategorySource.AI &&
-        tx.category &&
-        (!this.isCategoryDirectionCompatible(tx, tx.category) ||
-          tx.subCategory === 'Utlity Bill (Light, Water, Waste etc.)');
-
-      if (wasInvalidAiCategory) {
-        tx.category = null as any;
-        tx.subCategory = null as any;
-        tx.categoryId = null as any;
-        tx.subCategoryId = null as any;
-        tx.aiCategory = null as any;
-        tx.isCategorised = false;
-      }
+      tx.category = null as any;
+      tx.subCategory = null as any;
+      tx.categoryId = null as any;
+      tx.subCategoryId = null as any;
+      tx.aiCategory = null as any;
+      tx.ruleCategory = null as any;
+      tx.ruleSubCategory = null as any;
+      tx.heuristicCategory = null as any;
+      tx.ruleId = null as any;
+      tx.notes = null as any;
+      tx.isCategorised = false;
+      tx.categorySource = CategorySource.HEURISTIC;
 
       const ruleMatched = await this.applyRules(tx, activeRules);
       if (!tx.isCategorised) {
@@ -465,7 +435,7 @@ export class CategorizationService {
       updatedCount++;
     }
 
-    await this.transactionRepository.save(uncategorised, { chunk: 100 });
+    await this.transactionRepository.save(transactions, { chunk: 100 });
 
     this.logger.log(
       `Retroactive AI sync complete: updated ${updatedCount} transactions.`,

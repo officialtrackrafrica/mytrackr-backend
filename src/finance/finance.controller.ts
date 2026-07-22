@@ -1279,8 +1279,7 @@ export class FinanceController {
   @ApiOperation({
     summary: 'Initialize AI categorisation sync',
     description:
-      'Runs Gemini AI prediction (+ direction fallback) over all uncategorised ' +
-      'transactions for the current business, instantly populating reports.',
+      'Reprocesses all non-manual transactions for the current business using Gemini AI, preserving user manual overrides.',
   })
   @ApiQuery({
     name: 'provider',

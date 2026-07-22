@@ -173,7 +173,11 @@ export class CategorizationService {
 
             // ── Step 2: AI prediction ───────────────────────────────────────
             if (!tx.isCategorised) {
-              await this.applyAiPrediction(tx, dto.description, userId ?? '');
+              await this.applyAiPrediction(
+                tx,
+                this.getCategorizationText(dto),
+                userId ?? '',
+              );
             }
 
             if (!tx.isCategorised) {
@@ -248,7 +252,11 @@ export class CategorizationService {
 
       // ── Step 2: AI prediction (only if rules didn't match) ─────────────────
       if (!tx.isCategorised) {
-        await this.applyAiPrediction(tx, dto.description, userId ?? '');
+        await this.applyAiPrediction(
+          tx,
+          this.getCategorizationText(dto),
+          userId ?? '',
+        );
       }
 
       if (!tx.isCategorised) {
@@ -325,11 +333,54 @@ export class CategorizationService {
     businessId: string | null,
     userId: string | null,
   ): Promise<number> {
-    const where: any = { isCategorised: false };
-    if (businessId) where.businessId = businessId;
-    else if (userId) where.userId = userId;
+    const query = this.transactionRepository
+      .createQueryBuilder('tx')
+      .where(
+        new Brackets((qb) => {
+          qb.where('tx.isCategorised = :isCategorised', {
+            isCategorised: false,
+          })
+            .orWhere(
+              'tx.categorySource = :aiSource AND tx.direction = :creditDirection AND tx.category IN (:...debitCategories)',
+              {
+                aiSource: CategorySource.AI,
+                creditDirection: TransactionDirection.CREDIT,
+                debitCategories: [
+                  TransactionCategory.EXPENSE,
+                  TransactionCategory.COGS,
+                  TransactionCategory.ASSET,
+                ],
+              },
+            )
+            .orWhere(
+              'tx.categorySource = :aiSource AND tx.direction = :debitDirection AND tx.category IN (:...creditCategories)',
+              {
+                aiSource: CategorySource.AI,
+                debitDirection: TransactionDirection.DEBIT,
+                creditCategories: [
+                  TransactionCategory.INCOME,
+                  TransactionCategory.LIABILITY,
+                  TransactionCategory.EQUITY,
+                ],
+              },
+            )
+            .orWhere(
+              'tx.categorySource = :aiSource AND tx.subCategory = :badUtilitySubCategory',
+              {
+                aiSource: CategorySource.AI,
+                badUtilitySubCategory: 'Utlity Bill (Light, Water, Waste etc.)',
+              },
+            );
+        }),
+      );
 
-    const uncategorised = await this.transactionRepository.find({ where });
+    if (businessId) {
+      query.andWhere('tx.businessId = :businessId', { businessId });
+    } else if (userId) {
+      query.andWhere('tx.userId = :userId', { userId });
+    }
+
+    const uncategorised = await query.getMany();
 
     if (uncategorised.length === 0) {
       this.logger.log('Retroactive AI sync: nothing to update.');
@@ -347,16 +398,27 @@ export class CategorizationService {
 
     let updatedCount = 0;
     for (const tx of uncategorised) {
-      const description = tx.description || tx.name || '';
+      const description = this.getCategorizationText(tx);
+      const wasInvalidAiCategory =
+        tx.categorySource === CategorySource.AI &&
+        tx.category &&
+        (!this.isCategoryDirectionCompatible(tx, tx.category) ||
+          tx.subCategory === 'Utlity Bill (Light, Water, Waste etc.)');
 
-      // Try AI first
-      await this.applyAiPrediction(tx, description, userId ?? '');
+      if (wasInvalidAiCategory) {
+        tx.category = null as any;
+        tx.subCategory = null as any;
+        tx.categoryId = null as any;
+        tx.subCategoryId = null as any;
+        tx.aiCategory = null as any;
+        tx.isCategorised = false;
+      }
 
+      const ruleMatched = await this.applyRules(tx, activeRules);
       if (!tx.isCategorised) {
-        const ruleMatched = await this.applyRules(tx, activeRules);
-        if (ruleMatched) {
-          await this.learnFromCategorizedTransaction(tx, userId ?? '');
-        }
+        await this.applyAiPrediction(tx, description, userId ?? '');
+      } else if (ruleMatched) {
+        await this.learnFromCategorizedTransaction(tx, userId ?? '');
       }
 
       if (!tx.isCategorised) {
@@ -443,7 +505,7 @@ export class CategorizationService {
 
       // Fix categorisation
       if (!tx.isCategorised) {
-        const description = tx.description || tx.name || '';
+        const description = this.getCategorizationText(tx);
         await this.applyAiPrediction(tx, description, userId);
 
         if (!tx.isCategorised) {
@@ -529,22 +591,39 @@ export class CategorizationService {
         predicted.category !== 'Uncategorized' &&
         predicted.confidence >= AI_AUTO_APPLY_THRESHOLD
       ) {
-        // AI returns a sub-category name
-        const sub = await this.subCategoryRepo.findOne({
-          where: { name: predicted.category },
-          relations: ['category'],
-        });
+        const sub = await this.resolveAiSubCategory(predicted.category);
 
         if (sub) {
+          if (!this.isCategoryDirectionCompatible(tx, sub.category.type)) {
+            tx.aiCategory = predicted.category;
+            tx.notes = `AI suggestion rejected: ${predicted.category} is not compatible with ${tx.direction}`;
+            this.logger.warn(
+              `Rejected AI prediction "${predicted.category}" for ${tx.direction} transaction: "${description}"`,
+            );
+            return false;
+          }
+
+          if (!this.hasSubCategoryEvidence(sub.name, description)) {
+            tx.aiCategory = predicted.category;
+            tx.notes = `AI suggestion rejected: ${predicted.category} is not supported by transaction text`;
+            this.logger.warn(
+              `Rejected AI prediction "${predicted.category}" without text evidence for: "${description}"`,
+            );
+            return false;
+          }
+
           tx.subCategory = sub.name;
           tx.subCategoryId = sub.id;
           tx.category = sub.category.type as TransactionCategory;
           tx.categoryId = sub.category.id;
           tx.isCategorised = true;
         } else {
-          // Fallback if AI name doesn't match our dynamic list
-          tx.category = predicted.category as TransactionCategory;
-          tx.isCategorised = true;
+          tx.aiCategory = predicted.category;
+          tx.notes = `AI suggestion rejected: ${predicted.category} does not match an active subcategory`;
+          this.logger.warn(
+            `Rejected unknown AI category "${predicted.category}" for: "${description}"`,
+          );
+          return false;
         }
 
         tx.aiCategory = predicted.category;
@@ -574,6 +653,75 @@ export class CategorizationService {
     }
 
     return false;
+  }
+
+  private async resolveAiSubCategory(
+    predictedCategory: string,
+  ): Promise<AccountSubCategory | null> {
+    const normalizedPrediction = this.normalizeCategoryName(predictedCategory);
+
+    const subCategories = await this.subCategoryRepo.find({
+      relations: ['category'],
+    });
+
+    return (
+      subCategories.find(
+        (subCategory) =>
+          this.normalizeCategoryName(subCategory.name) ===
+          normalizedPrediction,
+      ) || null
+    );
+  }
+
+  private hasSubCategoryEvidence(
+    subCategoryName: string,
+    description: string,
+  ): boolean {
+    const normalizedSubCategory = this.normalizeCategoryName(subCategoryName);
+    const normalizedDescription = this.normalizeCategoryName(description);
+
+    if (normalizedSubCategory.includes('utlity bill')) {
+      return /\b(electric|electricity|water|waste|utility|utilities|nepa|phcn|disco|ikeja electric|eko electric|aedc|ibedc|kedco|phed|jed|yedc)\b/i.test(
+        normalizedDescription,
+      );
+    }
+
+    return true;
+  }
+
+  private isCategoryDirectionCompatible(
+    tx: Transaction,
+    categoryType: string,
+  ): boolean {
+    if (tx.direction === TransactionDirection.CREDIT) {
+      const compatibleCreditCategories: string[] = [
+        TransactionCategory.INCOME,
+        TransactionCategory.LIABILITY,
+        TransactionCategory.EQUITY,
+        TransactionCategory.TRANSFER,
+      ];
+      return compatibleCreditCategories.includes(categoryType);
+    }
+
+    if (tx.direction === TransactionDirection.DEBIT) {
+      const compatibleDebitCategories: string[] = [
+        TransactionCategory.EXPENSE,
+        TransactionCategory.COGS,
+        TransactionCategory.ASSET,
+        TransactionCategory.TRANSFER,
+      ];
+      return compatibleDebitCategories.includes(categoryType);
+    }
+
+    return true;
+  }
+
+  private normalizeCategoryName(value: string): string {
+    return value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   private async applyRules(
@@ -653,7 +801,7 @@ export class CategorizationService {
     tx: Transaction,
     userId: string,
   ): Promise<void> {
-    const description = tx.description || tx.name || '';
+    const description = this.getCategorizationText(tx);
     const label = tx.subCategory || tx.category;
 
     if (!description || !label) {
@@ -722,6 +870,7 @@ export class CategorizationService {
       'You are a transaction categorization assistant for MyTrackr.',
       'Choose exactly one category and, when possible, one subcategory from the provided catalog.',
       'Never invent a category or subcategory outside the catalog.',
+      'The transaction direction is authoritative: CREDIT transactions cannot be categorized as EXPENSE, COGS, or ASSET; DEBIT transactions cannot be categorized as INCOME, LIABILITY, or EQUITY unless the catalog category is TRANSFER.',
       'Return JSON only with this exact shape:',
       '{"categoryName":"string","categoryType":"string","subCategoryName":"string or omitted","confidence":0.0}',
       'Confidence must be between 0 and 1.',
@@ -915,12 +1064,26 @@ export class CategorizationService {
       return false;
     }
 
+    if (!this.isCategoryDirectionCompatible(tx, category.type)) {
+      tx.notes = `AI suggestion rejected: ${category.type} is not compatible with ${tx.direction}`;
+      return false;
+    }
+
     const subCategory = result.subCategoryName
       ? category.subCategories.find(
           (item) =>
             item.name.toLowerCase() === result.subCategoryName!.toLowerCase(),
         )
       : undefined;
+
+    const categorizationText = this.getCategorizationText(tx);
+    if (
+      subCategory &&
+      !this.hasSubCategoryEvidence(subCategory.name, categorizationText)
+    ) {
+      tx.notes = `AI suggestion rejected: ${subCategory.name} is not supported by transaction text`;
+      return false;
+    }
 
     tx.category = category.type as TransactionCategory;
     tx.categoryId = category.id;
@@ -931,6 +1094,17 @@ export class CategorizationService {
     tx.isCategorised = true;
 
     return true;
+  }
+
+  private getCategorizationText(tx: {
+    name?: string | null;
+    description?: string | null;
+  }) {
+    return [tx.name, tx.description]
+      .map((value) => value?.trim())
+      .filter(Boolean)
+      .filter((value, index, values) => values.indexOf(value) === index)
+      .join(' - ');
   }
 
   private extractJsonObject(outputText: string): string | null {

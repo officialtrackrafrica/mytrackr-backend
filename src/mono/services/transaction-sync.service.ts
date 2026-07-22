@@ -155,6 +155,7 @@ export class TransactionSyncService {
       userId: userId || undefined,
       externalId: `mono_${mt.monoTransactionId}`,
       date: mt.date,
+      name: this.extractCounterpartyName(mt.narration),
       amount: Number(mt.amount) / 100,
       direction:
         mt.type === 'credit'
@@ -176,6 +177,43 @@ export class TransactionSyncService {
     );
 
     return { synced, skipped: null };
+  }
+
+  private extractCounterpartyName(narration?: string | null): string | undefined {
+    if (!narration) {
+      return undefined;
+    }
+
+    const normalized = narration.replace(/\s+/g, ' ').trim();
+    const upper = normalized.toUpperCase();
+    const transferMatch = upper.match(
+      /(?:MOBILE\s+)?TRF\s+(?:TO|FROM)\s+(?:PAY\/\s*\/)?(.+?)(?:COMMISSION|VAT|CHARGE|FEE|$)/,
+    );
+
+    if (transferMatch?.[1]) {
+      const name = this.cleanCounterpartyName(transferMatch[1]);
+      if (name) return name;
+    }
+
+    const vatPrefixMatch = upper.match(
+      /^(.+?)VAT\s+(?:MOBILE\s+)?TRF\s+(?:TO|FROM)\s+(?:PAY\/\s*\/)?/,
+    );
+    if (vatPrefixMatch?.[1]) {
+      const name = this.cleanCounterpartyName(vatPrefixMatch[1]);
+      if (name) return name;
+    }
+
+    return undefined;
+  }
+
+  private cleanCounterpartyName(value: string): string | undefined {
+    const cleaned = value
+      .replace(/\/+/g, ' ')
+      .replace(/\b(PAY|MOBILE|TRF|TO|FROM|VAT|COMMISSION|CHARGE|FEE)\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    return cleaned.length >= 3 ? cleaned : undefined;
   }
 
   async syncAllUserTransactions(

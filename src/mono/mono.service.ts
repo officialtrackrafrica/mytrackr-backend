@@ -569,7 +569,7 @@ export class MonoService {
           categorySource: finalCategorySource,
           isCategorised: !!finalCategory || !!finalSubCategory,
           currency: tx.currency || 'NGN',
-          balance: tx.balance,
+          balance: this.toNullableMinorCurrencyUnit(tx.balance),
           date: new Date(tx.date),
           metadata: tx.enrichment || tx.metadata || null,
         });
@@ -645,7 +645,10 @@ export class MonoService {
           data: transactions.map((transaction) => ({
             ...transaction,
             amount: this.toMajorCurrencyUnit(transaction.amount),
-            balance: this.toMajorCurrencyUnit(transaction.balance),
+            balance:
+              transaction.balance === null || transaction.balance === undefined
+                ? null
+                : this.toMajorCurrencyUnit(transaction.balance),
             currency: transaction.currency || acc.currency || 'NGN',
             financeTransactionId:
               financeIdByExternalId.get(
@@ -1339,6 +1342,15 @@ export class MonoService {
 
   private toMajorCurrencyUnit(amount: number | string): number {
     return Number(amount) / 100;
+  }
+
+  private toNullableMinorCurrencyUnit(amount: unknown): number | null {
+    if (amount === null || amount === undefined || amount === '') {
+      return null;
+    }
+
+    const numericAmount = Number(amount);
+    return Number.isFinite(numericAmount) ? numericAmount : null;
   }
 
   private async findFinanceTransactionId(

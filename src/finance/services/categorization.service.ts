@@ -65,8 +65,6 @@ type GeminiCategorizationResult = {
   confidence?: number;
 };
 
-export type RetroactiveAiProvider = 'gemini' | 'legacy';
-
 /**
  * Confidence threshold above which the AI prediction is auto-applied and the
  * transaction is marked as fully categorised without human review.
@@ -334,7 +332,6 @@ export class CategorizationService {
   async retroactiveAiSync(
     businessId: string | null,
     userId: string | null,
-    provider: RetroactiveAiProvider = 'gemini',
   ): Promise<number> {
     const query = this.transactionRepository
       .createQueryBuilder('tx')
@@ -363,7 +360,7 @@ export class CategorizationService {
     }
 
     this.logger.log(
-      `Retroactive AI sync: reprocessing ${transactions.length} transactions with ${provider}...`,
+      `Retroactive AI sync: reprocessing ${transactions.length} transactions with Gemini and local ML fallback...`,
     );
 
     const activeRules = await this.ruleRepository.find({
@@ -373,6 +370,9 @@ export class CategorizationService {
 
     let updatedCount = 0;
     for (const tx of transactions) {
+      if (!tx.name) {
+        tx.name = this.extractCounterpartyName(tx.description) as any;
+      }
       const description = this.getCategorizationText(tx);
       tx.category = null as any;
       tx.subCategory = null as any;
@@ -389,30 +389,20 @@ export class CategorizationService {
 
       const ruleMatched = await this.applyRules(tx, activeRules);
       if (!tx.isCategorised) {
-        if (provider === 'legacy') {
-          await this.applyAiPrediction(tx, description, userId ?? '');
-        } else {
-          await this.applyGeminiPrediction(
-            tx,
-            businessId || undefined,
-            userId ?? '',
-          );
+        const geminiMatched = await this.applyGeminiPrediction(
+          tx,
+          businessId || undefined,
+          userId ?? '',
+        );
+        if (geminiMatched) {
+          await this.learnFromCategorizedTransaction(tx, userId ?? '');
         }
       } else if (ruleMatched) {
         await this.learnFromCategorizedTransaction(tx, userId ?? '');
       }
 
       if (!tx.isCategorised) {
-        if (provider === 'legacy') {
-          const geminiMatched = await this.applyGeminiPrediction(
-            tx,
-            businessId || undefined,
-            userId ?? '',
-          );
-          if (geminiMatched) {
-            await this.learnFromCategorizedTransaction(tx, userId ?? '');
-          }
-        }
+        await this.applyAiPrediction(tx, description, userId ?? '');
       }
 
       // Fall back to direction heuristic
@@ -1088,6 +1078,43 @@ export class CategorizationService {
       .filter(Boolean)
       .filter((value, index, values) => values.indexOf(value) === index)
       .join(' - ');
+  }
+
+  private extractCounterpartyName(narration?: string | null): string | undefined {
+    if (!narration) {
+      return undefined;
+    }
+
+    const normalized = narration.replace(/\s+/g, ' ').trim();
+    const upper = normalized.toUpperCase();
+    const transferMatch = upper.match(
+      /(?:MOBILE\s+)?TRF\s+(?:TO|FROM)\s+(?:PAY\/\s*\/)?(.+?)(?:COMMISSION|VAT|CHARGE|FEE|$)/,
+    );
+
+    if (transferMatch?.[1]) {
+      const name = this.cleanCounterpartyName(transferMatch[1]);
+      if (name) return name;
+    }
+
+    const vatPrefixMatch = upper.match(
+      /^(.+?)VAT\s+(?:MOBILE\s+)?TRF\s+(?:TO|FROM)\s+(?:PAY\/\s*\/)?/,
+    );
+    if (vatPrefixMatch?.[1]) {
+      const name = this.cleanCounterpartyName(vatPrefixMatch[1]);
+      if (name) return name;
+    }
+
+    return undefined;
+  }
+
+  private cleanCounterpartyName(value: string): string | undefined {
+    const cleaned = value
+      .replace(/\/+/g, ' ')
+      .replace(/\b(PAY|MOBILE|TRF|TO|FROM|VAT|COMMISSION|CHARGE|FEE)\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    return cleaned.length >= 3 ? cleaned : undefined;
   }
 
   private extractJsonObject(outputText: string): string | null {

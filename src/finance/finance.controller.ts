@@ -46,7 +46,6 @@ import { AccountCategory } from './entities/account-category.entity';
 import { AccountSubCategory } from './entities/account-subcategory.entity';
 import { MonoTransaction } from '../mono/entities/transaction.entity';
 import { CategorizationService } from './services/categorization.service';
-import type { RetroactiveAiProvider } from './services/categorization.service';
 import { CsvUploadService } from './services/csv-upload.service';
 import { PdfUploadService } from './services/pdf-upload.service';
 import { PdfAiQueueService } from './services/pdf-ai-queue.service';
@@ -1281,35 +1280,21 @@ export class FinanceController {
     description:
       'Reprocesses all non-manual transactions for the current business using Gemini AI, preserving user manual overrides.',
   })
-  @ApiQuery({
-    name: 'provider',
-    required: false,
-    enum: ['gemini', 'legacy'],
-    description:
-      'AI provider for retroactive categorisation. Defaults to Gemini. Use legacy to test the old gRPC categorizer.',
-  })
   @ApiResponse({
     status: 200,
     description: 'Number of transactions updated',
   })
-  async retroactiveAiSync(
-    @Req() req: any,
-    @Query('provider') provider?: RetroactiveAiProvider,
-  ) {
-    const selectedProvider =
-      provider === 'legacy' || provider === 'gemini' ? provider : 'gemini';
+  async retroactiveAiSync(@Req() req: any) {
     const businessId = await this.businessService.getBusinessIdForUser(
       req.user.id,
     );
     const updated = await this.categorizationService.retroactiveAiSync(
       businessId,
       req.user.id,
-      selectedProvider,
     );
     return {
       updated,
-      provider: selectedProvider,
-      message: `${updated} transactions categorised with ${selectedProvider}.`,
+      message: `${updated} transactions categorised.`,
     };
   }
 

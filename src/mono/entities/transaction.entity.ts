@@ -81,8 +81,8 @@ export class MonoTransaction {
   @Column({ default: 'NGN' })
   currency: string;
 
-  @Column({ type: 'bigint' })
-  balance: number;
+  @Column({ type: 'bigint', nullable: true })
+  balance: number | null;
 
   @Column({ type: 'timestamptz' })
   date: Date;

@@ -15,7 +15,7 @@ export class PaystackService implements IPaymentGateway {
   private readonly baseUrl = 'https://api.paystack.co';
   private readonly defaultCallbackUrl =
     'https://mytrackr-frontend.vercel.app/dashboard';
-  private readonly defaultCheckoutChannels: string[];
+  private readonly configuredCheckoutChannels?: string[];
 
   constructor(private configService: ConfigService) {
     const key = this.configService.get<string>('PAYSTACK_SECRET_KEY');
@@ -25,7 +25,7 @@ export class PaystackService implements IPaymentGateway {
       );
     }
     this.secretKey = key.trim();
-    this.defaultCheckoutChannels = this.parseCheckoutChannels(
+    this.configuredCheckoutChannels = this.parseCheckoutChannels(
       this.configService.get<string>('PAYSTACK_CHECKOUT_CHANNELS'),
     );
   }
@@ -38,6 +38,21 @@ export class PaystackService implements IPaymentGateway {
     const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
 
     try {
+      const requestBody: Record<string, any> = {
+        amount: Math.round(payload.amount), // Paystack expects integer in kobo
+        email: payload.email,
+        reference: payload.reference,
+        plan: payload.plan,
+        metadata: payload.metadata,
+        callback_url:
+          this.configService.get<string>('PAYSTACK_CALLBACK_URL') ||
+          this.defaultCallbackUrl,
+      };
+      const channels = payload.channels || this.configuredCheckoutChannels;
+      if (channels?.length) {
+        requestBody.channels = channels;
+      }
+
       const response = await fetch(`${this.baseUrl}/transaction/initialize`, {
         method: 'POST',
         headers: {
@@ -45,17 +60,7 @@ export class PaystackService implements IPaymentGateway {
           'Content-Type': 'application/json',
         },
         signal: controller.signal,
-        body: JSON.stringify({
-          amount: Math.round(payload.amount), // Paystack expects integer in kobo
-          email: payload.email,
-          reference: payload.reference,
-          plan: payload.plan,
-          metadata: payload.metadata,
-          channels: payload.channels || this.defaultCheckoutChannels,
-          callback_url:
-            this.configService.get<string>('PAYSTACK_CALLBACK_URL') ||
-            this.defaultCallbackUrl,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       const data = await response.json();
@@ -84,23 +89,13 @@ export class PaystackService implements IPaymentGateway {
     }
   }
 
-  private parseCheckoutChannels(rawChannels?: string): string[] {
+  private parseCheckoutChannels(rawChannels?: string): string[] | undefined {
     const configuredChannels = rawChannels
       ?.split(',')
       .map((channel) => channel.trim())
       .filter(Boolean);
 
-    return configuredChannels?.length
-      ? configuredChannels
-      : [
-          'card',
-          'bank',
-          'bank_transfer',
-          'ussd',
-          'qr',
-          'mobile_money',
-          'payattitude',
-        ];
+    return configuredChannels?.length ? configuredChannels : undefined;
   }
 
   async createPlan(payload: {

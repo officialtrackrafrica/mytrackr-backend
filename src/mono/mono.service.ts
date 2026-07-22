@@ -229,9 +229,11 @@ export class MonoService {
   }
 
   async getUserLinkedAccounts(userId: string) {
-    return this.monoAccountRepository.find({
+    const accounts = await this.monoAccountRepository.find({
       where: { user: { id: userId } },
     });
+
+    return accounts.map((account) => this.toMonoAccountResponse(account));
   }
 
   async getAllPlatformAccounts() {
@@ -1317,7 +1319,17 @@ export class MonoService {
         ),
       );
 
-    return saved;
+    return this.toMonoAccountResponse(saved);
+  }
+
+  private toMonoAccountResponse(account: MonoAccount) {
+    return {
+      ...account,
+      balance:
+        account.balance === null || account.balance === undefined
+          ? account.balance
+          : Number(account.balance) / 100,
+    };
   }
 
   private async findFinanceTransactionId(

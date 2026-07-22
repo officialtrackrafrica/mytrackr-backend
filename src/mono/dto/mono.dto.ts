@@ -44,7 +44,11 @@ export class MonoAccountResponseDto {
   @ApiProperty() currency: string;
   @ApiProperty() type: string;
   @ApiProperty() accountNumber: string;
-  @ApiProperty() balance: number;
+  @ApiProperty({
+    description: 'Account balance in major currency units, e.g. naira for NGN',
+    example: 456110.51,
+  })
+  balance: number;
   @ApiProperty() bvn: string;
   @ApiProperty() institutionName: string;
   @ApiProperty() isSynced: boolean;

@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 interface SimplePdfReportInput {
   title: string;
   subtitle?: string;
+  companyName?: string;
   lines: string[];
 }
 
@@ -64,7 +65,7 @@ export class SimplePdfReportService {
     rows.forEach((row) => {
       const height = this.getRowHeight(row);
       if (y - height < this.contentBottom) {
-        this.drawFooter(current, pages.length + 1, 0);
+        this.drawFooter(current, pages.length + 1, 0, input.companyName);
         pages.push(current);
         startPage(pages.length);
       }
@@ -77,7 +78,7 @@ export class SimplePdfReportService {
       this.drawEmptyState(current, y);
     }
 
-    this.drawFooter(current, pages.length + 1, 0);
+    this.drawFooter(current, pages.length + 1, 0, input.companyName);
     pages.push(current);
 
     return pages.map((page, index) =>
@@ -99,10 +100,20 @@ export class SimplePdfReportService {
     this.rect(commands, 0, 755, this.pageWidth, 87, 'F7FAFC');
     this.rect(commands, 0, 752, this.pageWidth, 3, '16A34A');
 
-    this.text(commands, 'MyTrackr', this.marginX, 794, 'F2', 20, '15803D');
+    this.fitText(
+      commands,
+      input.companyName || 'Business',
+      this.marginX,
+      794,
+      88,
+      'F2',
+      20,
+      10,
+      '15803D',
+    );
 
     const cleanTitle = input.title.replace(/^MyTrackr\s+/i, '');
-    const titleX = 136;
+    const titleX = 142;
     this.text(commands, cleanTitle, titleX, 804, 'F2', 18, '0F172A');
     this.text(
       commands,
@@ -282,6 +293,7 @@ export class SimplePdfReportService {
     commands: string[],
     page: number,
     totalPages: number,
+    companyName?: string,
   ): void {
     this.line(
       commands,
@@ -291,7 +303,17 @@ export class SimplePdfReportService {
       43,
       'E2E8F0',
     );
-    this.text(commands, 'MyTrackr', this.marginX, 26, 'F2', 8, '15803D');
+    this.fitText(
+      commands,
+      companyName || 'Business',
+      this.marginX,
+      26,
+      180,
+      'F2',
+      8,
+      8,
+      '15803D',
+    );
     this.text(
       commands,
       `Page ${page || '__PAGE_NUMBER__'} of ${totalPages || '__TOTAL_PAGES__'}`,
@@ -546,6 +568,63 @@ export class SimplePdfReportService {
         x,
       )} ${this.num(y)} Td (${this.escapePdfText(value)}) Tj ET`,
     );
+  }
+
+  private fitText(
+    commands: string[],
+    value: string,
+    x: number,
+    y: number,
+    maxWidth: number,
+    font: 'F1' | 'F2',
+    maxSize: number,
+    minSize: number,
+    fill: string,
+  ): void {
+    const safeValue = this.toAscii(value).trim() || 'Business';
+    let size = maxSize;
+
+    while (
+      size > minSize &&
+      this.estimateTextWidth(safeValue, size) > maxWidth
+    ) {
+      size -= 1;
+    }
+
+    this.text(
+      commands,
+      this.truncateToWidth(safeValue, maxWidth, size),
+      x,
+      y,
+      font,
+      size,
+      fill,
+    );
+  }
+
+  private truncateToWidth(
+    value: string,
+    maxWidth: number,
+    fontSize: number,
+  ): string {
+    const safeValue = this.toAscii(value);
+    if (this.estimateTextWidth(safeValue, fontSize) <= maxWidth) {
+      return safeValue;
+    }
+
+    let truncated = safeValue;
+    while (
+      truncated.length > 1 &&
+      this.estimateTextWidth(`${truncated}.`, fontSize) > maxWidth
+    ) {
+      truncated = truncated.slice(0, -1);
+    }
+
+    return `${truncated}.`;
+  }
+
+  private estimateTextWidth(value: string, fontSize: number): number {
+    return this.toAscii(value).length * fontSize * 0.54;
   }
 
   private addObject(objects: string[], content: string): number {

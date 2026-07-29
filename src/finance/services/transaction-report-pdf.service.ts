@@ -67,13 +67,23 @@ export class TransactionReportPdfService {
     this.rect(commands, 0, 755, this.pageWidth, 87, 'F7FAFC');
     this.rect(commands, 0, 752, this.pageWidth, 3, '16A34A');
 
-    this.text(commands, 'MyTrackr', this.marginX, 794, 'F2', 20, '15803D');
+    this.fitText(
+      commands,
+      input.businessName || 'Business',
+      this.marginX,
+      794,
+      88,
+      'F2',
+      20,
+      10,
+      '15803D',
+    );
 
-    const titleX = 136;
+    const titleX = 142;
     this.text(commands, 'Transaction Report', titleX, 804, 'F2', 18, '0F172A');
     this.text(
       commands,
-      input.businessName || 'Business',
+      'Transaction activity export',
       titleX,
       784,
       'F1',
@@ -300,7 +310,17 @@ export class TransactionReportPdfService {
       43,
       'E2E8F0',
     );
-    this.text(commands, 'MyTrackr', this.marginX, 26, 'F2', 8, '15803D');
+    this.fitText(
+      commands,
+      input.businessName || 'Business',
+      this.marginX,
+      26,
+      180,
+      'F2',
+      8,
+      8,
+      '15803D',
+    );
     this.text(
       commands,
       `Page ${page} of ${totalPages}`,
@@ -430,6 +450,63 @@ export class TransactionReportPdfService {
         x,
       )} ${this.num(y)} Td (${this.escapePdfText(value)}) Tj ET`,
     );
+  }
+
+  private fitText(
+    commands: string[],
+    value: string,
+    x: number,
+    y: number,
+    maxWidth: number,
+    font: 'F1' | 'F2',
+    maxSize: number,
+    minSize: number,
+    fill: string,
+  ): void {
+    const safeValue = this.toAscii(value).trim() || 'Business';
+    let size = maxSize;
+
+    while (
+      size > minSize &&
+      this.estimateTextWidth(safeValue, size) > maxWidth
+    ) {
+      size -= 1;
+    }
+
+    this.text(
+      commands,
+      this.truncateToWidth(safeValue, maxWidth, size),
+      x,
+      y,
+      font,
+      size,
+      fill,
+    );
+  }
+
+  private truncateToWidth(
+    value: string,
+    maxWidth: number,
+    fontSize: number,
+  ): string {
+    const safeValue = this.toAscii(value);
+    if (this.estimateTextWidth(safeValue, fontSize) <= maxWidth) {
+      return safeValue;
+    }
+
+    let truncated = safeValue;
+    while (
+      truncated.length > 1 &&
+      this.estimateTextWidth(`${truncated}.`, fontSize) > maxWidth
+    ) {
+      truncated = truncated.slice(0, -1);
+    }
+
+    return `${truncated}.`;
+  }
+
+  private estimateTextWidth(value: string, fontSize: number): number {
+    return this.toAscii(value).length * fontSize * 0.54;
   }
 
   private addObject(objects: string[], content: string): number {

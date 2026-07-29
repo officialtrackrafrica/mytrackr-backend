@@ -24,6 +24,7 @@ import { CashFlowService } from './services/cash-flow.service';
 import { BalanceSheetService } from './services/balance-sheet.service';
 import { AnalyticsService } from './services/analytics.service';
 import { SimplePdfReportService } from '../common/reports/simple-pdf-report.service';
+import { BusinessService } from '../business/services/business.service';
 
 import { SWAGGER_TAGS } from '../common/docs';
 
@@ -39,6 +40,7 @@ export class ReportsController {
     private readonly balanceSheetService: BalanceSheetService,
     private readonly analyticsService: AnalyticsService,
     private readonly simplePdfReportService: SimplePdfReportService,
+    private readonly businessService: BusinessService,
   ) {}
 
   @Get('pnl')
@@ -226,6 +228,7 @@ export class ReportsController {
     @Query('endDate') endDate: string,
   ) {
     const { start, end } = this.parseRequiredDateRange(startDate, endDate);
+    const business = await this.businessService.getBusinessForUser(req.user.id);
     const report = await this.pnlService.calculatePnl(req.user.id, start, end);
     const lines = [
       `Period: ${this.formatDate(start)} to ${this.formatDate(end)}`,
@@ -271,7 +274,8 @@ export class ReportsController {
     return this.sendPdf(
       res,
       this.simplePdfReportService.generate({
-        title: 'MyTrackr Profit & Loss Report',
+        title: 'Profit & Loss Report',
+        companyName: business.name,
         lines,
       }),
       'mytrackr-profit-loss-report',
@@ -295,6 +299,7 @@ export class ReportsController {
     @Query('endDate') endDate: string,
   ) {
     const { start, end } = this.parseRequiredDateRange(startDate, endDate);
+    const business = await this.businessService.getBusinessForUser(req.user.id);
     const report = await this.cashFlowService.calculateCashFlow(
       req.user.id,
       start,
@@ -325,7 +330,8 @@ export class ReportsController {
     return this.sendPdf(
       res,
       this.simplePdfReportService.generate({
-        title: 'MyTrackr Cash Flow & Burn Rate Report',
+        title: 'Cash Flow & Burn Rate Report',
+        companyName: business.name,
         lines,
       }),
       'mytrackr-cash-flow-burn-rate-report',

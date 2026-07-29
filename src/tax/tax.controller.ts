@@ -17,6 +17,7 @@ import { TaxEstimateResponseDto } from './dto/tax.dto';
 import { SWAGGER_TAGS } from '../common/docs';
 import { AppException, ErrorResponseDto } from '../common/errors';
 import { SimplePdfReportService } from '../common/reports/simple-pdf-report.service';
+import { BusinessService } from '../business/services/business.service';
 
 @ApiTags(SWAGGER_TAGS[6].name)
 @Controller('tax')
@@ -27,6 +28,7 @@ export class TaxController {
   constructor(
     private readonly taxService: TaxService,
     private readonly simplePdfReportService: SimplePdfReportService,
+    private readonly businessService: BusinessService,
   ) {}
 
   @Get('estimate')
@@ -118,6 +120,7 @@ export class TaxController {
       );
     }
 
+    const business = await this.businessService.getBusinessForUser(req.user.id);
     const report = await this.taxService.calculateTaxEstimate(
       req.user.id,
       yearNumber,
@@ -187,7 +190,8 @@ export class TaxController {
     ];
 
     const pdf = this.simplePdfReportService.generate({
-      title: 'MyTrackr Tax Estimate Report',
+      title: 'Tax Estimate Report',
+      companyName: business.name,
       lines,
     });
 

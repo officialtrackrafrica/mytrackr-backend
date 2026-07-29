@@ -52,7 +52,7 @@ export class TransactionReportPdfService {
         this.drawSummary(commands, input);
       }
       this.drawTable(commands, chunk, input.currency);
-      this.drawFooter(commands, pageIndex + 1, safeChunks.length);
+      this.drawFooter(commands, input, pageIndex + 1, safeChunks.length);
 
       return { commands };
     });
@@ -299,6 +299,7 @@ export class TransactionReportPdfService {
 
   private drawFooter(
     commands: string[],
+    input: TransactionReportPdfInput,
     page: number,
     totalPages: number,
   ): void {

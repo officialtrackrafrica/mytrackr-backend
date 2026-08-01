@@ -203,12 +203,7 @@ export class StatementAiParserService {
             role: 'user',
             parts: [
               {
-                text: [
-                  systemPrompt,
-                  '',
-                  'Statement text:',
-                  text,
-                ].join('\n'),
+                text: [systemPrompt, '', 'Statement text:', text].join('\n'),
               },
             ],
           },
@@ -300,6 +295,8 @@ export class StatementAiParserService {
       'If the source is ambiguous or incomplete, omit that row.',
       'If no clearly supported transactions exist, return {"transactions":[]}.',
       'Every returned row must be directly grounded in the provided source.',
+      'Bank PDF columns may be concatenated without spaces. A value such as "02-JAN-2650.00" at the end of a narration is the date "02-JAN-26" immediately followed by the amount "50.00"; it is not an amount of 2,650.00. Apply the same rule to any DD-MMM-YY date immediately followed by a monetary amount.',
+      'Bank fees, SMS charges, VAT, commissions, and stamp duties are DEBIT transactions unless the statement explicitly identifies the row as a reversal or credit.',
       'If a field is unknown, omit it.',
       'Do not include markdown fences.',
     ].join('\n');
@@ -403,9 +400,7 @@ export class StatementAiParserService {
   }
 
   private isGoogleAiStudioBaseUrl(): boolean {
-    return /generativelanguage\.googleapis\.com/i.test(
-      this.statementAiBaseUrl,
-    );
+    return /generativelanguage\.googleapis\.com/i.test(this.statementAiBaseUrl);
   }
 
   private getGoogleTransactionSchema() {
@@ -507,9 +502,7 @@ export class StatementAiParserService {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
   }
 
-  private normalizeDirection(
-    value: unknown,
-  ): TransactionDirection | null {
+  private normalizeDirection(value: unknown): TransactionDirection | null {
     if (typeof value !== 'string') {
       return null;
     }

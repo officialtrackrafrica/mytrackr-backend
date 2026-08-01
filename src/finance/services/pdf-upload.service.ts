@@ -30,15 +30,21 @@ export class PdfUploadService {
    */
   private async extractPdfText(buffer: Buffer): Promise<{ text: string }> {
     const TIMEOUT_MS = 30_000;
-    return Promise.race([
-      pdf(buffer),
-      new Promise<{ text: string }>((_, reject) =>
-        setTimeout(
-          () => reject(new Error('PDF parsing timed out after 30 seconds')),
-          TIMEOUT_MS,
-        ),
-      ),
-    ]);
+    let timeoutId: NodeJS.Timeout | undefined;
+
+    try {
+      return await Promise.race([
+        pdf(buffer),
+        new Promise<{ text: string }>((_, reject) => {
+          timeoutId = setTimeout(
+            () => reject(new Error('PDF parsing timed out after 30 seconds')),
+            TIMEOUT_MS,
+          );
+        }),
+      ]);
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
   }
 
   private async tryDirectPdfAiFallback(
@@ -66,6 +72,53 @@ export class PdfUploadService {
     }
   }
 
+  private async ingestParsedRows(
+    parsedRows: ParsedRow[],
+    businessId: string,
+    userId: string,
+    autoCategorize: boolean,
+  ): Promise<{ imported: number; skipped: number; errors: string[] }> {
+    const externalIds = buildPdfTransactionExternalIds(parsedRows, businessId);
+    const imported = await this.categorizationService.ingestTransactions(
+      businessId,
+      userId,
+      parsedRows.map((row, index) => ({
+        businessId,
+        userId,
+        externalId: externalIds[index],
+        date: new Date(row.date),
+        name: row.name,
+        amount: row.amount,
+        direction: row.direction,
+        description: row.description,
+      })),
+      { autoCategorize },
+    );
+
+    return {
+      imported,
+      skipped: parsedRows.length - imported,
+      errors: [],
+    };
+  }
+
+  /**
+   * Repair layout artefacts produced when statement table columns have no
+   * whitespace between them. For example, `02-JAN-2650.00` at the end of a
+   * narration means `02-JAN-26 50.00`, not an amount of 2,650.00.
+   */
+  private normalizeExtractedStatementText(text: string): string {
+    return text
+      .replace(
+        /(\b\d{1,2}-[A-Za-z]{3})-\s*\r?\n\s*((?:19|20)\d{2})\b/g,
+        '$1-$2',
+      )
+      .replace(
+        /(\b\d{1,2}-[A-Za-z]{3}-\d{2})(?=(?:\d{1,3}(?:,\d{3})*|\d+)\.\d{2})/gi,
+        '$1 ',
+      );
+  }
+
   /**
    * Parse a PDF buffer and create Transaction entities.
    * Falls back to OCR if standard text extraction fails.
@@ -79,6 +132,22 @@ export class PdfUploadService {
     this.logger.log(
       `Starting PDF parse — buffer size: ${fileBuffer.length} bytes`,
     );
+
+    const directRows = await this.tryDirectPdfAiFallback(
+      fileBuffer,
+      'Gemini direct PDF extraction is the primary parser',
+    );
+    if (directRows.length > 0) {
+      this.logger.log(
+        `Gemini direct PDF extraction detected ${directRows.length} transaction rows`,
+      );
+      return this.ingestParsedRows(
+        directRows,
+        businessId,
+        userId,
+        autoCategorize,
+      );
+    }
 
     let text: string | null = null;
     let usedOcr = false;
@@ -116,28 +185,34 @@ export class PdfUploadService {
     }
 
     if (text && text.trim().length > 0) {
+      text = this.normalizeExtractedStatementText(text);
 
-    this.logger.log(
-      `Success: PDF text retrieved (${usedOcr ? 'via OCR Service' : 'via pdf-parse'}) — ${text.length} characters found.`,
-    );
+      this.logger.log(
+        `Success: PDF text retrieved (${usedOcr ? 'via OCR Service' : 'via pdf-parse'}) — ${text.length} characters found.`,
+      );
 
-    this.logger.log(
-      `Extracted PDF text preview (${usedOcr ? 'ocr' : 'pdf-parse'}, first ${EXTRACTED_TEXT_LOG_LIMIT} chars): ${text.slice(0, EXTRACTED_TEXT_LOG_LIMIT)}`,
-    );
+      this.logger.log(
+        `Extracted PDF text preview (${usedOcr ? 'ocr' : 'pdf-parse'}, first ${EXTRACTED_TEXT_LOG_LIMIT} chars): ${text.slice(0, EXTRACTED_TEXT_LOG_LIMIT)}`,
+      );
 
       const lines = text
-      .split('\n')
-      .map((l: string) => l.trim())
-      .filter((l: string) => l.length > 0);
+        .split('\n')
+        .map((l: string) => l.trim())
+        .filter((l: string) => l.length > 0);
       parsedRows = this.extractTransactions(lines);
 
-      if (parsedRows.length === 0 && this.statementAiParserService.isEnabled()) {
+      if (
+        parsedRows.length === 0 &&
+        this.statementAiParserService.isEnabled()
+      ) {
         this.logger.warn(
           'Deterministic PDF parser found 0 rows. Falling back to the local AI parser.',
         );
         try {
           parsedRows =
-            await this.statementAiParserService.extractTransactionsFromText(text);
+            await this.statementAiParserService.extractTransactionsFromText(
+              text,
+            );
         } catch (error: any) {
           this.logger.warn(
             `AI fallback parser failed and will be skipped: ${error?.message || String(error)}`,
@@ -192,15 +267,15 @@ export class PdfUploadService {
     userId: string,
     autoCategorize = false,
   ): Promise<
-    { imported: number; skipped: number; errors: string[] } | PdfUploadQueuedResult
+    | { imported: number; skipped: number; errors: string[] }
+    | PdfUploadQueuedResult
   > {
     const fingerprint = this.getPdfFingerprint(fileBuffer);
-    const existing =
-      await this.pdfAiQueueService.getExistingFingerprintStatus(
-        businessId,
-        fingerprint,
-        userId,
-      );
+    const existing = await this.pdfAiQueueService.getExistingFingerprintStatus(
+      businessId,
+      fingerprint,
+      userId,
+    );
     if (existing) {
       if (existing.status === 'completed') {
         const priorTotal =
@@ -215,8 +290,7 @@ export class PdfUploadService {
       return {
         jobId: existing.jobId,
         queued: true,
-        status:
-          existing.status === 'processing' ? 'processing' : 'queued',
+        status: existing.status === 'processing' ? 'processing' : 'queued',
         message: 'This PDF is already queued for processing.',
       };
     }
@@ -228,6 +302,59 @@ export class PdfUploadService {
     let text: string | null = null;
     let usedOcr = false;
     let parsedRows: ParsedRow[] = [];
+
+    if (
+      this.statementAiParserService.isEnabled() &&
+      this.statementAiParserService.supportsDirectPdfInput()
+    ) {
+      const canRunInline =
+        await this.pdfAiQueueService.tryAcquireInlineCapacity();
+      if (!canRunInline) {
+        this.logger.warn(
+          'Gemini inline capacity is exhausted. Deferring direct PDF extraction to the queue.',
+        );
+        return this.pdfAiQueueService.enqueueAiTextJob({
+          text: '',
+          pdfBase64: fileBuffer.toString('base64'),
+          businessId,
+          userId,
+          fingerprint,
+          autoCategorize,
+        });
+      }
+
+      try {
+        parsedRows = await this.tryDirectPdfAiFallback(
+          fileBuffer,
+          'Gemini direct PDF extraction is the primary parser',
+        );
+      } finally {
+        await this.pdfAiQueueService.releaseInlineCapacity();
+      }
+
+      if (parsedRows.length > 0) {
+        this.logger.log(
+          `Gemini direct PDF extraction detected ${parsedRows.length} transaction rows`,
+        );
+        const result = await this.ingestParsedRows(
+          parsedRows,
+          businessId,
+          userId,
+          autoCategorize,
+        );
+        await this.pdfAiQueueService.recordImmediateCompletion({
+          businessId,
+          userId,
+          fingerprint,
+          result,
+        });
+        return result;
+      }
+
+      this.logger.warn(
+        'Gemini direct PDF extraction returned no rows. Falling back to local PDF/OCR parsing.',
+      );
+    }
 
     try {
       const data = await this.extractPdfText(fileBuffer);
@@ -272,6 +399,10 @@ export class PdfUploadService {
       usedOcr = true;
     }
 
+    if (text && text.trim().length > 0) {
+      text = this.normalizeExtractedStatementText(text);
+    }
+
     this.logger.log(
       `Success: PDF text retrieved (${usedOcr ? 'via OCR Service' : 'via pdf-parse'}) â€” ${text?.length || 0} characters found.`,
     );
@@ -299,14 +430,14 @@ export class PdfUploadService {
         this.logger.warn(
           'AI inline capacity is exhausted. Deferring PDF statement extraction to the queue.',
         );
-          return this.pdfAiQueueService.enqueueAiTextJob({
-            text: text || '',
-            pdfBase64: fileBuffer.toString('base64'),
-            businessId,
-            userId,
-            fingerprint,
-            autoCategorize,
-          });
+        return this.pdfAiQueueService.enqueueAiTextJob({
+          text: text || '',
+          pdfBase64: fileBuffer.toString('base64'),
+          businessId,
+          userId,
+          fingerprint,
+          autoCategorize,
+        });
       }
 
       try {
@@ -377,8 +508,7 @@ export class PdfUploadService {
     debitStr: string,
     creditStr: string,
   ) {
-    if (this.shouldSkipDescription(desc))
-      return;
+    if (this.shouldSkipDescription(desc)) return;
     const dVal = debitStr === '-' ? 0 : this.parseAmount(debitStr);
     const cVal = creditStr === '-' ? 0 : this.parseAmount(creditStr);
 
@@ -463,10 +593,9 @@ export class PdfUploadService {
     return {
       date: this.formatDate(transactionDate),
       amount: Math.abs(amount),
-      direction:
-        signedAmount.trim().startsWith('+')
-          ? TransactionDirection.CREDIT
-          : TransactionDirection.DEBIT,
+      direction: signedAmount.trim().startsWith('+')
+        ? TransactionDirection.CREDIT
+        : TransactionDirection.DEBIT,
       description: description.trim(),
       name: this.extractName(description),
       reference: reference?.trim() || undefined,
@@ -660,7 +789,9 @@ export class PdfUploadService {
       normalized.includes('OPENING BALANCE') ||
       normalized.includes('CLOSING BALANCE') ||
       normalized.includes('CLEARED BALANCE') ||
-      normalized.includes('POSTING DATEVALUE DATEDESCRIPTIONOUTFLOWINFLOWBALANCE') ||
+      normalized.includes(
+        'POSTING DATEVALUE DATEDESCRIPTIONOUTFLOWINFLOWBALANCE',
+      ) ||
       normalized === 'INFLOW VS OUTFLOW' ||
       normalized === 'CURRENT BALANCE' ||
       normalized === 'FROM' ||

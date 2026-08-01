@@ -15,11 +15,37 @@ import { PdfUploadService } from './pdf-upload.service';
 describe('PdfUploadService', () => {
   let service: PdfUploadService;
   let categorizationService: { ingestTransactions: jest.Mock };
+  let pdfAiQueueService: {
+    getExistingFingerprintStatus: jest.Mock;
+    recordImmediateCompletion: jest.Mock;
+    tryAcquireInlineCapacity: jest.Mock;
+    releaseInlineCapacity: jest.Mock;
+    enqueueAiTextJob: jest.Mock;
+  };
+  let statementAiParserService: {
+    isEnabled: jest.Mock;
+    supportsDirectPdfInput: jest.Mock;
+    extractTransactionsFromPdf: jest.Mock;
+    extractTransactionsFromText: jest.Mock;
+  };
 
   beforeEach(async () => {
     mockPdf.mockReset();
     categorizationService = {
       ingestTransactions: jest.fn().mockResolvedValue(2),
+    };
+    pdfAiQueueService = {
+      getExistingFingerprintStatus: jest.fn().mockResolvedValue(null),
+      recordImmediateCompletion: jest.fn().mockResolvedValue(undefined),
+      tryAcquireInlineCapacity: jest.fn().mockResolvedValue(true),
+      releaseInlineCapacity: jest.fn().mockResolvedValue(undefined),
+      enqueueAiTextJob: jest.fn(),
+    };
+    statementAiParserService = {
+      isEnabled: jest.fn().mockReturnValue(false),
+      supportsDirectPdfInput: jest.fn().mockReturnValue(false),
+      extractTransactionsFromPdf: jest.fn().mockResolvedValue([]),
+      extractTransactionsFromText: jest.fn().mockResolvedValue([]),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -37,19 +63,11 @@ describe('PdfUploadService', () => {
         },
         {
           provide: PdfAiQueueService,
-          useValue: {
-            getExistingFingerprintStatus: jest.fn().mockResolvedValue(null),
-            recordImmediateCompletion: jest.fn().mockResolvedValue(undefined),
-            tryAcquireInlineCapacity: jest.fn().mockResolvedValue(true),
-            releaseInlineCapacity: jest.fn().mockResolvedValue(undefined),
-          },
+          useValue: pdfAiQueueService,
         },
         {
           provide: StatementAiParserService,
-          useValue: {
-            isEnabled: jest.fn().mockReturnValue(false),
-            supportsDirectPdfInput: jest.fn().mockReturnValue(false),
-          },
+          useValue: statementAiParserService,
         },
       ],
     }).compile();
@@ -149,8 +167,7 @@ describe('PdfUploadService', () => {
         externalId: 'pdf:biz-1:2025-03-10:1000:DEBIT:POS PURCHASE',
       }),
       expect.objectContaining({
-        externalId:
-          'pdf:biz-1:2025-03-10:1000:DEBIT:POS PURCHASE:duplicate-2',
+        externalId: 'pdf:biz-1:2025-03-10:1000:DEBIT:POS PURCHASE:duplicate-2',
       }),
     ]);
   });
@@ -197,5 +214,46 @@ describe('PdfUploadService', () => {
       ]),
       { autoCategorize: true },
     );
+  });
+
+  it('should separate a two-digit narration year from an attached amount', () => {
+    const normalize = (service as any).normalizeExtractedStatementText.bind(
+      service,
+    );
+
+    expect(
+      normalize(
+        '02-Jan-\n2026\nM1281491STAMP DUTY ON: S30258929 02-JAN-2650.004,124.72',
+      ),
+    ).toBe(
+      '02-Jan-2026\nM1281491STAMP DUTY ON: S30258929 02-JAN-26 50.004,124.72',
+    );
+  });
+
+  it('should use Gemini direct PDF extraction before local text parsing', async () => {
+    const pdfBuffer = Buffer.from('direct-pdf');
+    statementAiParserService.isEnabled.mockReturnValue(true);
+    statementAiParserService.supportsDirectPdfInput.mockReturnValue(true);
+    statementAiParserService.extractTransactionsFromPdf.mockResolvedValue([
+      {
+        date: '2026-01-02',
+        amount: 50,
+        direction: TransactionDirection.DEBIT,
+        description: 'STAMP DUTY ON: S30258929 02-JAN-26',
+      },
+    ]);
+    categorizationService.ingestTransactions.mockResolvedValue(1);
+
+    const result = await service.submitPdf(pdfBuffer, 'biz-1', 'user-1', true);
+
+    expect(result).toEqual({ imported: 1, skipped: 0, errors: [] });
+    expect(
+      statementAiParserService.extractTransactionsFromPdf,
+    ).toHaveBeenCalledWith(pdfBuffer);
+    expect(mockPdf).not.toHaveBeenCalled();
+    expect(
+      statementAiParserService.extractTransactionsFromText,
+    ).not.toHaveBeenCalled();
+    expect(pdfAiQueueService.recordImmediateCompletion).toHaveBeenCalled();
   });
 });

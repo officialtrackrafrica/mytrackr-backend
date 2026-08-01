@@ -12,6 +12,7 @@ import { REDIS_CLIENT } from '../../common/redis';
 import { CategorizationService } from './categorization.service';
 import { buildPdfTransactionExternalIds } from './pdf-transaction-external-id.util';
 import { StatementAiParserService } from './statement-ai-parser.service';
+import { ParsedRow } from './statement-parser.types';
 
 type PdfAiJobStatus = 'queued' | 'processing' | 'completed' | 'failed';
 
@@ -224,7 +225,9 @@ export class PdfAiQueueService implements OnModuleInit, OnModuleDestroy {
     fingerprint: string,
     userId: string,
   ): Promise<PdfUploadJobStatusResult | null> {
-    const jobId = await this.redis.get(this.getFingerprintKey(businessId, fingerprint));
+    const jobId = await this.redis.get(
+      this.getFingerprintKey(businessId, fingerprint),
+    );
     if (!jobId) {
       return null;
     }
@@ -332,20 +335,25 @@ export class PdfAiQueueService implements OnModuleInit, OnModuleDestroy {
       await this.writeJob(record);
 
       try {
-        const pdfBase64 = await this.redis.get(this.getPdfPayloadKey(record.id));
-        let parsedRows =
-          await this.statementAiParserService.extractTransactionsFromText(
-            record.text,
-          );
+        const pdfBase64 = await this.redis.get(
+          this.getPdfPayloadKey(record.id),
+        );
+        let parsedRows: ParsedRow[] = [];
 
         if (
-          parsedRows.length === 0 &&
           pdfBase64 &&
           this.statementAiParserService.supportsDirectPdfInput()
         ) {
           parsedRows =
             await this.statementAiParserService.extractTransactionsFromPdf(
               Buffer.from(pdfBase64, 'base64'),
+            );
+        }
+
+        if (parsedRows.length === 0 && record.text.trim()) {
+          parsedRows =
+            await this.statementAiParserService.extractTransactionsFromText(
+              record.text,
             );
         }
 
@@ -405,7 +413,9 @@ export class PdfAiQueueService implements OnModuleInit, OnModuleDestroy {
       if (capacityAcquired) {
         await this.releaseInlineCapacity();
       }
-      this.logger.warn(`PDF AI queue worker iteration failed: ${error.message}`);
+      this.logger.warn(
+        `PDF AI queue worker iteration failed: ${error.message}`,
+      );
     } finally {
       this.workerActive = false;
     }

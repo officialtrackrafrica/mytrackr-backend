@@ -81,6 +81,7 @@ export class FinancialCategoriesSeed {
           'Taxes & Levies',
           'Professional Services',
           'Insurance',
+          'Licenses and permits',
           'Miscellaneous',
         ],
       },
@@ -100,6 +101,7 @@ export class FinancialCategoriesSeed {
         subs: [
           'Transfer from other business account',
           'Transfer to other business account',
+          'Refund and Reversal',
         ],
       },
     ];

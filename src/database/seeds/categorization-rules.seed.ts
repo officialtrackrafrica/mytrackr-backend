@@ -57,6 +57,13 @@ export const DEFAULT_CATEGORIZATION_RULES: Array<{
     priority: 24,
   },
   {
+    matchType: MatchType.REGEX,
+    matchValue: '\\bcomm\\b',
+    category: AccountCategoryType.EXPENSE,
+    subCategory: 'Bank Charges',
+    priority: 15,
+  },
+  {
     matchType: MatchType.CONTAINS,
     matchValue: 'commission',
     category: AccountCategoryType.EXPENSE,
@@ -81,14 +88,21 @@ export const DEFAULT_CATEGORIZATION_RULES: Array<{
     matchType: MatchType.CONTAINS,
     matchValue: 'stamp duty',
     category: AccountCategoryType.EXPENSE,
-    subCategory: 'Taxes & Levies',
+    subCategory: 'Bank Charges',
+    priority: 19,
+  },
+  {
+    matchType: MatchType.CONTAINS,
+    matchValue: 'stamp duties',
+    category: AccountCategoryType.EXPENSE,
+    subCategory: 'Bank Charges',
     priority: 19,
   },
   {
     matchType: MatchType.CONTAINS,
     matchValue: 'vat',
     category: AccountCategoryType.EXPENSE,
-    subCategory: 'Taxes & Levies',
+    subCategory: 'Bank Charges',
     priority: 20,
   },
   {
@@ -632,7 +646,13 @@ export class CategorizationRulesSeed {
 
     await this.ruleRepo.delete({
       isSystem: true,
-      matchValue: In(['transfer from', 'transfer to']),
+      matchValue: In([
+        'transfer from',
+        'transfer to',
+        'stamp duty',
+        'stamp duties',
+        'vat',
+      ]),
     });
 
     for (const ruleData of DEFAULT_CATEGORIZATION_RULES) {

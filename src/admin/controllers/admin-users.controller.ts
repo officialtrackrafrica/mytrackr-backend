@@ -25,6 +25,7 @@ import { AdminUsersService } from '../services/admin-users.service';
 import { AdminAuditService } from '../services/admin-audit.service';
 import {
   UpdateUserStatusDto,
+  AdminChangeUserPlanDto,
   AdminQueryDto,
   AuditLogQueryDto,
   AdminUpdateUserDto,
@@ -58,6 +59,15 @@ export class AdminUsersController {
   @ApiResponse({ status: 200, description: 'Paginated matching users' })
   async searchUsers(@Query() query: AdminQueryDto) {
     return this.adminUsersService.findAllUsers(query);
+  }
+
+  @Get(':id')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({ summary: 'Get a specific user' })
+  @ApiResponse({ status: 200, description: 'User details' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async getUser(@Param('id') userId: string) {
+    return this.adminUsersService.getUserManagementDetail(userId);
   }
 
   @Patch(':id')
@@ -105,6 +115,32 @@ export class AdminUsersController {
       userId,
       req.user.id,
       { newStatus: dto.status },
+      req.ip,
+    );
+    return result;
+  }
+
+  @Patch(':id/plan')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({ summary: 'Change a user active subscription plan' })
+  @ApiResponse({ status: 200, description: 'User plan changed' })
+  @ApiResponse({ status: 400, description: 'User has no active subscription' })
+  @ApiResponse({ status: 404, description: 'User or plan not found' })
+  async changePlan(
+    @Param('id') userId: string,
+    @Body() dto: AdminChangeUserPlanDto,
+    @Req() req: any,
+  ) {
+    const result = await this.adminUsersService.changeUserPlan(
+      userId,
+      dto.planId,
+    );
+    await this.auditService.log(
+      'USER_PLAN_CHANGED_BY_ADMIN',
+      'User',
+      userId,
+      req.user.id,
+      { planId: dto.planId },
       req.ip,
     );
     return result;

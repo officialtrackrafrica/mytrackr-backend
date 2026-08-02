@@ -21,6 +21,8 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards';
+import { PlanGuard } from '../../common/access-control/guards/plan.guard';
+import { RequireCapability } from '../../common/access-control/decorators/require-capability.decorator';
 import { SWAGGER_TAGS } from '../../common/docs';
 import { PlanResponseDto } from '../../payments/dto/subscription.dto';
 import {
@@ -70,7 +72,8 @@ export class IntegrationsController {
     return this.integrationsService.list(req.user.id);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PlanGuard)
+  @RequireCapability('website_linking')
   @ApiCookieAuth('accessToken')
   @Post()
   @ApiOperation({
@@ -82,7 +85,8 @@ export class IntegrationsController {
     return this.integrationsService.create(req.user.id, dto);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PlanGuard)
+  @RequireCapability('website_linking')
   @ApiCookieAuth('accessToken')
   @Patch(':id')
   @ApiParam({ name: 'id', description: 'Integration ID' })
@@ -97,7 +101,8 @@ export class IntegrationsController {
     return this.integrationsService.update(req.user.id, id, dto);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PlanGuard)
+  @RequireCapability('website_linking')
   @ApiCookieAuth('accessToken')
   @Post(':id/checkout')
   @ApiParam({ name: 'id', description: 'Integration ID' })
@@ -110,7 +115,8 @@ export class IntegrationsController {
     return this.integrationsService.initializeCheckout(req.user.id, id);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PlanGuard)
+  @RequireCapability('website_linking')
   @ApiCookieAuth('accessToken')
   @Post(':id/rotate-key')
   @ApiParam({ name: 'id', description: 'Integration ID' })
@@ -190,7 +196,8 @@ export class IntegrationsController {
     return this.integrationsService.getMetrics(req.integration, query);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PlanGuard)
+  @RequireCapability('paystack_linking')
   @ApiCookieAuth('accessToken')
   @Post('paystack/connect')
   @ApiOperation({
@@ -211,7 +218,8 @@ export class IntegrationsController {
     return this.integrationsService.getPaystackConnection(req.user.id);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PlanGuard)
+  @RequireCapability('paystack_linking')
   @ApiCookieAuth('accessToken')
   @Post('paystack/sync')
   @ApiOperation({

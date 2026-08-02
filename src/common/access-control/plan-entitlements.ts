@@ -53,6 +53,37 @@ export const BANK_ACCOUNT_LIMIT_BY_PLAN: Record<PlanSlug, number> = {
   unlimited: Number.MAX_SAFE_INTEGER,
 };
 
+export const PLAN_CAPABILITY_KEYS = [
+  'all_financial_reports',
+  'website_linking',
+  'upload_bank_statement',
+  'automatic_categorization',
+  'tax_estimator',
+  'paystack_linking',
+] as const;
+
+export type PlanCapabilityKey = (typeof PLAN_CAPABILITY_KEYS)[number];
+
+export function planHasCapability(
+  activePlan:
+    | (Pick<Plan, 'slug' | 'name'> & {
+        features?: string[] | null;
+        capabilities?: Record<string, any> | null;
+      })
+    | null
+    | undefined,
+  capability: string,
+) {
+  if (!activePlan) return false;
+
+  const capabilities = activePlan.capabilities || {};
+  if (Object.prototype.hasOwnProperty.call(capabilities, capability)) {
+    return capabilities[capability] === true;
+  }
+
+  return (activePlan.features || []).includes(capability);
+}
+
 export function normalizePlanSlug(plan?: Pick<Plan, 'slug' | 'name'> | null) {
   const rawSlug = plan?.slug?.toLowerCase();
   const rawName = plan?.name?.toLowerCase();
@@ -88,6 +119,9 @@ export function getPlanBankAccountLimit(
     | undefined,
 ) {
   const configuredLimit = Number(activePlan?.capabilities?.bankAccountLimit);
+  if (configuredLimit === -1) {
+    return Number.MAX_SAFE_INTEGER;
+  }
   if (Number.isFinite(configuredLimit) && configuredLimit >= 0) {
     return configuredLimit;
   }

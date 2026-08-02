@@ -19,6 +19,7 @@ import {
 import { JwtAuthGuard } from '../auth/guards';
 import { PlanGuard } from '../common/access-control/guards/plan.guard';
 import { RequirePlan } from '../common/access-control/decorators/require-plan.decorator';
+import { RequireCapability } from '../common/access-control/decorators/require-capability.decorator';
 import { PnlService } from './services/pnl.service';
 import { CashFlowService } from './services/cash-flow.service';
 import { BalanceSheetService } from './services/balance-sheet.service';
@@ -32,6 +33,7 @@ import { SWAGGER_TAGS } from '../common/docs';
 @Controller('reports')
 @UseGuards(JwtAuthGuard, PlanGuard)
 @RequirePlan()
+@RequireCapability('all_financial_reports')
 @ApiCookieAuth('accessToken')
 export class ReportsController {
   constructor(

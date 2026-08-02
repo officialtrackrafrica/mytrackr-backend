@@ -1170,6 +1170,7 @@ export class MonoService {
 
       const account = await this.monoAccountRepository.findOne({
         where: { monoAccountId },
+        relations: ['user'],
       });
       if (account && !account.lastSyncedAt) {
         this.logger.log(
@@ -1187,14 +1188,25 @@ export class MonoService {
               monoAccountId,
             );
 
-            await Promise.allSettled([
-              this.categoriseTransactions(monoAccountId),
+            const canAutoCategorize = account.user
+              ? await this.subscriptionService.userHasCapability(
+                  account.user.id,
+                  'automatic_categorization',
+                )
+              : false;
+            const enrichmentTasks = [
               this.enrichTransactionMetadata(monoAccountId),
-            ]);
-            await this.monoAccountRepository.update(
-              { id: account.id },
-              { lastCategorisedAt: new Date() },
-            );
+            ];
+            if (canAutoCategorize) {
+              enrichmentTasks.push(this.categoriseTransactions(monoAccountId));
+            }
+            await Promise.allSettled(enrichmentTasks);
+            if (canAutoCategorize) {
+              await this.monoAccountRepository.update(
+                { id: account.id },
+                { lastCategorisedAt: new Date() },
+              );
+            }
             this.logger.log(`Enrichment triggered for ${monoAccountId}`);
           })
           .catch((e) =>

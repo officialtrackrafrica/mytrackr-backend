@@ -51,6 +51,14 @@ export class AdminMessagingController {
     return this.messagingService.listMessages(query);
   }
 
+  @Get('recipient-groups')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({ summary: 'List available recipient groups with live counts' })
+  @ApiResponse({ status: 200, description: 'Recipient group list' })
+  async listRecipientGroups() {
+    return this.messagingService.listRecipientGroups();
+  }
+
   @Post('compose')
   @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
   @ApiOperation({

@@ -30,6 +30,8 @@ import { SWAGGER_TAGS } from '../common/docs';
 import { JwtAuthGuard } from '../auth/guards';
 import { PlanGuard } from '../common/access-control/guards/plan.guard';
 import { RequirePlan } from '../common/access-control/decorators/require-plan.decorator';
+import { RequireCapability } from '../common/access-control/decorators/require-capability.decorator';
+import { SubscriptionService } from '../payments/services/subscription.service';
 
 @ApiTags(SWAGGER_TAGS[5].name) // 'Finance' tag
 @Controller('finance')
@@ -37,7 +39,10 @@ import { RequirePlan } from '../common/access-control/decorators/require-plan.de
 @RequirePlan()
 @ApiCookieAuth('accessToken')
 export class MonoFinanceController {
-  constructor(private readonly monoService: MonoService) {}
+  constructor(
+    private readonly monoService: MonoService,
+    private readonly subscriptionService: SubscriptionService,
+  ) {}
 
   @Get('linked-accounts/transactions')
   @ApiOperation({
@@ -83,6 +88,12 @@ export class MonoFinanceController {
     @Query('autoCategorize') autoCategorize?: string,
     @Headers('x-force-sync') forceSync?: string,
   ) {
+    if (autoCategorize === 'true') {
+      await this.subscriptionService.assertUserHasCapability(
+        req.user.id,
+        'automatic_categorization',
+      );
+    }
     return this.monoService.getAllUserTransactions(
       req.user.id,
       start,
@@ -93,6 +104,7 @@ export class MonoFinanceController {
   }
 
   @Post('linked-accounts/transactions/categorise')
+  @RequireCapability('automatic_categorization')
   @ApiOperation({
     summary: 'Categorise all user transactions across linked accounts',
   })

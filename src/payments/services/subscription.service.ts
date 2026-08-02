@@ -3,6 +3,7 @@ import {
   NotFoundException,
   Logger,
   BadRequestException,
+  ForbiddenException,
   OnModuleDestroy,
   OnModuleInit,
   Inject,
@@ -26,6 +27,8 @@ import { MonoAccount } from '../../mono/entities/mono-account.entity';
 import { PaystackService } from '../providers/paystack.service';
 import {
   getPlanBankAccountLimit,
+  PLAN_CAPABILITY_KEYS,
+  planHasCapability,
   normalizePlanSlug,
   PLAN_SLUGS,
   PlanSlug,
@@ -108,12 +111,14 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
 
     const featureKeys = Array.from(
       new Set(
-        plans.flatMap((plan) => [
-          ...(plan.features || []),
-          ...Object.keys(plan.capabilities || {}).filter(
-            (key) => key !== 'bankAccountLimit',
-          ),
-        ]),
+        [
+          ...PLAN_CAPABILITY_KEYS,
+          ...plans.flatMap((plan) => [
+            ...Object.keys(plan.capabilities || {}).filter(
+              (key) => key !== 'bankAccountLimit',
+            ),
+          ]),
+        ],
       ),
     ).sort((a, b) => a.localeCompare(b));
 
@@ -122,28 +127,33 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
         key,
         label: this.formatCapabilityLabel(key),
       })),
-      plans: plans.map((plan) => ({
-        id: plan.id,
-        name: plan.name,
-        slug: plan.slug,
-        price: Number(plan.price),
-        currency: plan.currency,
-        interval: plan.interval,
-        isActive: plan.isActive,
-        features: plan.features || [],
-        capabilities: plan.capabilities || {},
-        bankAccountLimit: getPlanBankAccountLimit(plan),
-      })),
+      plans: plans.map((plan) => {
+        const bankAccountLimit = getPlanBankAccountLimit(plan);
+        return {
+          id: plan.id,
+          name: plan.name,
+          slug: plan.slug,
+          price: Number(plan.price),
+          currency: plan.currency,
+          interval: plan.interval,
+          isActive: plan.isActive,
+          features: plan.features || [],
+          capabilities: plan.capabilities || {},
+          bankAccountLimit:
+            bankAccountLimit === Number.MAX_SAFE_INTEGER
+              ? -1
+              : bankAccountLimit,
+          bankAccountUnlimited:
+            bankAccountLimit === Number.MAX_SAFE_INTEGER,
+        };
+      }),
       matrix: featureKeys.map((featureKey) => ({
         key: featureKey,
         label: this.formatCapabilityLabel(featureKey),
         plans: Object.fromEntries(
           plans.map((plan) => [
             plan.slug,
-            Boolean(
-              (plan.capabilities || {})[featureKey] ||
-              (plan.features || []).includes(featureKey),
-            ),
+            planHasCapability(plan, featureKey),
           ]),
         ),
       })),
@@ -179,6 +189,24 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       expiresAt: sub.currentPeriodEnd,
       cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
     };
+  }
+
+  async assertUserHasCapability(userId: string, capability: string) {
+    if (!(await this.userHasCapability(userId, capability))) {
+      throw new ForbiddenException(
+        `Your subscription plan does not include: ${capability}`,
+      );
+    }
+  }
+
+  async userHasCapability(userId: string, capability: string) {
+    const { hasActiveSubscription, activePlan } =
+      await this.getUserSubscriptionStatus(userId);
+    return Boolean(
+      hasActiveSubscription &&
+        activePlan &&
+        planHasCapability(activePlan, capability),
+    );
   }
 
   async getBillingHistory(userId: string) {
@@ -1386,10 +1414,13 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     }
 
     const saved = await this.planRepository.save(plan);
+    const bankAccountLimit = getPlanBankAccountLimit(saved);
     return {
       ...saved,
       price: Number(saved.price),
-      bankAccountLimit: getPlanBankAccountLimit(saved),
+      bankAccountLimit:
+        bankAccountLimit === Number.MAX_SAFE_INTEGER ? -1 : bankAccountLimit,
+      bankAccountUnlimited: bankAccountLimit === Number.MAX_SAFE_INTEGER,
     };
   }
 
@@ -1408,9 +1439,13 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async getLinkedBankAccountCount(userId: string): Promise<number> {
-    return this.monoAccountRepository.count({
-      where: { user: { id: userId } },
-    });
+    return this.monoAccountRepository
+      .createQueryBuilder('account')
+      .where('account."userId" = :userId', { userId })
+      .andWhere(
+        `COALESCE(account."dataStatus", 'CONNECTED') != 'DISCONNECTED'`,
+      )
+      .getCount();
   }
 
   private async getIncludedBankAccountLimit(userId: string): Promise<number> {

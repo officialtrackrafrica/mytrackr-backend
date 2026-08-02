@@ -11,6 +11,7 @@ import {
   IsEmail,
   MinLength,
   IsIn,
+  IsUUID,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -23,6 +24,12 @@ export class UpdateUserStatusDto {
   })
   @IsEnum(['active', 'inactive', 'suspended'])
   status: 'active' | 'inactive' | 'suspended';
+}
+
+export class AdminChangeUserPlanDto {
+  @ApiProperty({ description: 'ID of the active subscription plan to assign' })
+  @IsUUID()
+  planId: string;
 }
 
 export class AdminQueryDto {
@@ -340,6 +347,21 @@ export class AdminMessageQueryDto {
   limit?: number = 20;
 }
 
+export const ADMIN_RECIPIENT_GROUPS = [
+  'all_users',
+  'active_users',
+  'inactive_users',
+  'subscribers',
+  'starter_subscribers',
+  'web_subscribers',
+  'solo_subscribers',
+  'duo_subscribers',
+  'unlimited_subscribers',
+  'custom',
+] as const;
+
+export type AdminRecipientGroup = (typeof ADMIN_RECIPIENT_GROUPS)[number];
+
 export class ComposeAdminMessageDto {
   @ApiPropertyOptional({ enum: ['email', 'push'], default: 'email' })
   @IsOptional()
@@ -347,12 +369,12 @@ export class ComposeAdminMessageDto {
   channel?: 'email' | 'push' = 'email';
 
   @ApiPropertyOptional({
-    enum: ['all_users', 'active_users', 'inactive_users', 'subscribers', 'custom'],
+    enum: ADMIN_RECIPIENT_GROUPS,
     default: 'all_users',
   })
   @IsOptional()
-  @IsString()
-  recipientGroup?: string = 'all_users';
+  @IsIn(ADMIN_RECIPIENT_GROUPS)
+  recipientGroup?: AdminRecipientGroup = 'all_users';
 
   @ApiPropertyOptional({
     type: [String],

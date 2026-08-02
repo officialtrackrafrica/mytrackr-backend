@@ -7,7 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
-import { In, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { User } from '../../auth/entities/user.entity';
 import { BusinessService } from '../../business/services/business.service';
 import { EncryptionService } from '../../security/encryption.service';
@@ -21,7 +21,7 @@ import { Plan } from '../../payments/entities/plan.entity';
 import { Subscription } from '../../payments/entities/subscription.entity';
 import { PaymentFactoryService } from '../../payments/services/payment-factory.service';
 import { SubscriptionService } from '../../payments/services/subscription.service';
-import { normalizePlanSlug } from '../../common/access-control/plan-entitlements';
+import { planHasCapability } from '../../common/access-control/plan-entitlements';
 import { IntegrationWebhookService } from './integration-webhook.service';
 import {
   CreateIntegrationEventDto,
@@ -46,13 +46,6 @@ import {
   Integration,
   IntegrationBillingStatus,
 } from '../entities/integration.entity';
-
-const WEBSITE_INTEGRATION_ALLOWED_PLAN_SLUGS = new Set([
-  'web',
-  'solo',
-  'duo',
-  'unlimited',
-]);
 
 @Injectable()
 export class IntegrationsService {
@@ -84,13 +77,13 @@ export class IntegrationsService {
   ) {}
 
   async getWebsiteIntegrationPlans() {
-    return this.planRepository.find({
-      where: {
-        isActive: true,
-        slug: In([...WEBSITE_INTEGRATION_ALLOWED_PLAN_SLUGS]),
-      },
+    const plans = await this.planRepository.find({
+      where: { isActive: true },
       order: { price: 'ASC' },
     });
+    return plans.filter((plan) =>
+      planHasCapability(plan, 'website_linking'),
+    );
   }
 
   async create(userId: string, dto: CreateIntegrationDto) {
@@ -223,13 +216,11 @@ export class IntegrationsService {
       relations: ['plan'],
       order: { createdAt: 'DESC' },
     });
-    const normalizedPlanSlug = normalizePlanSlug(subscription?.plan);
     const hasEligibleSubscription = Boolean(
       subscription?.plan &&
         (!subscription.currentPeriodEnd ||
           subscription.currentPeriodEnd >= new Date()) &&
-        normalizedPlanSlug &&
-        WEBSITE_INTEGRATION_ALLOWED_PLAN_SLUGS.has(normalizedPlanSlug),
+        planHasCapability(subscription.plan, 'website_linking'),
     );
 
     if (hasEligibleSubscription) {
@@ -285,6 +276,11 @@ export class IntegrationsService {
       await this.integrationRepository.save(integration);
       throw new ForbiddenException('This integration API-key plan is past due');
     }
+
+    await this.subscriptionService.assertUserHasCapability(
+      integration.user.id,
+      'website_linking',
+    );
 
     integration.lastUsedAt = new Date();
     await this.integrationRepository.save(integration);
@@ -1113,13 +1109,9 @@ export class IntegrationsService {
       );
     }
 
-    const normalizedPlanSlug = normalizePlanSlug(subscription.plan);
-    if (
-      !normalizedPlanSlug ||
-      !WEBSITE_INTEGRATION_ALLOWED_PLAN_SLUGS.has(normalizedPlanSlug)
-    ) {
+    if (!planHasCapability(subscription.plan, 'website_linking')) {
       throw new ForbiddenException(
-        'Website integrations require a Web, Solo, Duo, or Unlimited subscription plan.',
+        'Your subscription plan does not include website linking.',
       );
     }
 

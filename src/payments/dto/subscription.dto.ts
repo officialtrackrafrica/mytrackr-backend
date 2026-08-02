@@ -9,6 +9,7 @@ import {
   IsString,
   ValidateNested,
   IsArray,
+  Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -62,6 +63,7 @@ export class UpdatePlanCapabilitiesDto {
   })
   @IsOptional()
   @IsNumber()
+  @Min(-1)
   bankAccountLimit?: number;
 
   @ApiPropertyOptional({ description: 'Whether the plan is active' })

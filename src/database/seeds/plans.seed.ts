@@ -61,6 +61,7 @@ export class PlansSeed {
         ],
         capabilities: {
           website_linking: true,
+          paystack_linking: true,
           upload_bank_statement: true,
           all_financial_reports: true,
           tax_estimator: true,
@@ -92,6 +93,7 @@ export class PlansSeed {
         capabilities: {
           sync_1_bank_account: true,
           website_linking: true,
+          paystack_linking: true,
           upload_bank_statement: true,
           all_financial_reports: true,
           tax_estimator: true,
@@ -124,6 +126,7 @@ export class PlansSeed {
           sync_1_bank_account: true,
           sync_2_bank_accounts: true,
           website_linking: true,
+          paystack_linking: true,
           upload_bank_statement: true,
           all_financial_reports: true,
           tax_estimator: true,
@@ -157,6 +160,7 @@ export class PlansSeed {
           sync_2_bank_accounts: true,
           sync_unlimited_bank_accounts: true,
           website_linking: true,
+          paystack_linking: true,
           upload_bank_statement: true,
           all_financial_reports: true,
           tax_estimator: true,
@@ -204,8 +208,16 @@ export class PlansSeed {
       });
 
       if (existing) {
-        this.logger.debug(`Plan ${planData.slug} already exists, updating...`);
-        Object.assign(existing, planData);
+        this.logger.debug(
+          `Plan ${planData.slug} already exists, preserving admin configuration...`,
+        );
+        existing.capabilities = {
+          ...(planData.capabilities || {}),
+          ...(existing.capabilities || {}),
+        };
+        if (!existing.features?.length) {
+          existing.features = planData.features;
+        }
         await this.planRepository.save(existing);
       } else {
         this.logger.log(`Creating Plan ${planData.slug}...`);

@@ -33,7 +33,8 @@ import { Repository, SelectQueryBuilder } from 'typeorm';
 import { JwtAuthGuard } from '../auth/guards';
 import { Public } from '../auth/decorators/public.decorator';
 import { PlanGuard } from '../common/access-control/guards/plan.guard';
-import { RequirePlan } from '../common/access-control/decorators/require-plan.decorator';
+import { RequireCapability } from '../common/access-control/decorators/require-capability.decorator';
+import { SubscriptionService } from '../payments/services/subscription.service';
 import { BusinessService } from '../business/services/business.service';
 import { Asset, AssetCategory } from './entities/asset.entity';
 import {
@@ -188,6 +189,7 @@ export class FinanceController {
     private readonly bankAccountService: BankAccountService,
     private readonly categorySuggestionService: CategorySuggestionService,
     private readonly transactionReportPdfService: TransactionReportPdfService,
+    private readonly subscriptionService: SubscriptionService,
   ) {}
 
   @Get('assets/categories')
@@ -694,6 +696,8 @@ export class FinanceController {
   }
 
   @Post('transactions/:id/category-suggestions')
+  @UseGuards(PlanGuard)
+  @RequireCapability('automatic_categorization')
   @ApiOperation({
     summary: 'Generate constrained category suggestions for a transaction',
     description:
@@ -879,6 +883,8 @@ export class FinanceController {
   }
 
   @Get('transactions/report.pdf')
+  @UseGuards(PlanGuard)
+  @RequireCapability('all_financial_reports')
   @ApiOperation({
     summary: 'Download transaction report as PDF',
     description:
@@ -936,6 +942,8 @@ export class FinanceController {
   }
 
   @Get('transactions/report.csv')
+  @UseGuards(PlanGuard)
+  @RequireCapability('all_financial_reports')
   @ApiOperation({
     summary: 'Download transaction report as CSV',
     description:
@@ -1275,6 +1283,8 @@ export class FinanceController {
   }
 
   @Post('transactions/retroactive-ai-sync')
+  @UseGuards(PlanGuard)
+  @RequireCapability('automatic_categorization')
   @ApiOperation({
     summary: 'Initialize AI categorisation sync',
     description:
@@ -1299,6 +1309,8 @@ export class FinanceController {
   }
 
   @Post('transactions/upload-csv')
+  @UseGuards(PlanGuard)
+  @RequireCapability('upload_bank_statement')
   @UseInterceptors(FileInterceptor('file'))
   @ApiOperation({
     summary: 'Upload bank transactions via CSV',
@@ -1368,7 +1380,7 @@ export class FinanceController {
 
   @Post('transactions/upload-pdf')
   @UseGuards(PlanGuard)
-  @RequirePlan('basic')
+  @RequireCapability('upload_bank_statement')
   @UseInterceptors(
     FileInterceptor('file', { limits: { fileSize: 10_000_000 } }),
   )
@@ -1416,6 +1428,13 @@ export class FinanceController {
     @UploadedFile() file: Express.Multer.File,
     @Query('autoCategorize') autoCategorize?: string,
   ) {
+    if (autoCategorize === 'true') {
+      await this.subscriptionService.assertUserHasCapability(
+        req.user.id,
+        'automatic_categorization',
+      );
+    }
+
     if (!file) {
       throw AppException.badRequest(
         'No file uploaded. Please attach a PDF file.',

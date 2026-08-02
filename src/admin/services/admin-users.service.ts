@@ -16,6 +16,7 @@ import {
 } from '../../finance/entities/bank-account.entity';
 import { MonoAccount } from '../../mono/entities/mono-account.entity';
 import { Subscription } from '../../payments/entities/subscription.entity';
+import { Plan } from '../../payments/entities/plan.entity';
 import { PaymentTransaction } from '../../payments/entities/payment-transaction.entity';
 import { EncryptionService } from '../../security/encryption.service';
 import {
@@ -45,6 +46,8 @@ export class AdminUsersService {
     private readonly monoAccountsRepository: Repository<MonoAccount>,
     @InjectRepository(Subscription)
     private readonly subscriptionsRepository: Repository<Subscription>,
+    @InjectRepository(Plan)
+    private readonly plansRepository: Repository<Plan>,
     @InjectRepository(PaymentTransaction)
     private readonly paymentTransactionsRepository: Repository<PaymentTransaction>,
     private readonly encryptionService: EncryptionService,
@@ -91,6 +94,54 @@ export class AdminUsersService {
       email: user.email,
       isActive: user.isActive,
       status,
+    };
+  }
+
+  async changeUserPlan(userId: string, planId: string) {
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const plan = await this.plansRepository.findOne({
+      where: { id: planId, isActive: true },
+    });
+    if (!plan) throw new NotFoundException('Active subscription plan not found');
+
+    const subscription = await this.subscriptionsRepository.findOne({
+      where: { user: { id: userId }, status: 'active' },
+      relations: ['plan'],
+      order: { createdAt: 'DESC' },
+    });
+    if (!subscription) {
+      throw new BadRequestException('User has no active subscription to change');
+    }
+
+    const previousPlan = subscription.plan
+      ? {
+          id: subscription.plan.id,
+          name: subscription.plan.name,
+          slug: subscription.plan.slug,
+        }
+      : null;
+
+    subscription.plan = plan;
+    await this.subscriptionsRepository.save(subscription);
+
+    this.logger.log(`User ${userId} plan changed to ${plan.slug}`);
+
+    return {
+      message: 'User plan changed successfully',
+      userId,
+      subscriptionId: subscription.id,
+      previousPlan,
+      plan: {
+        id: plan.id,
+        name: plan.name,
+        slug: plan.slug,
+        price: Number(plan.price),
+        currency: plan.currency,
+        interval: plan.interval,
+      },
+      billingGatewayUpdated: false,
     };
   }
 
@@ -166,8 +217,32 @@ export class AdminUsersService {
         'banksLinked',
       )
       .addSelect(
+        `ARRAY(
+          SELECT DISTINCT connected_bank."bankName"
+          FROM (
+            SELECT ma."institutionName" AS "bankName"
+            FROM mono_accounts ma
+            WHERE ma."userId" = user.id
+              AND COALESCE(ma."dataStatus", 'CONNECTED') != 'DISCONNECTED'
+            UNION
+            SELECT ba."bankName" AS "bankName"
+            FROM bank_accounts ba
+            WHERE ba."userId" = user.id
+              AND ba."syncStatus" != 'DISCONNECTED'
+          ) connected_bank
+          WHERE connected_bank."bankName" IS NOT NULL
+            AND TRIM(connected_bank."bankName") != ''
+          ORDER BY connected_bank."bankName"
+        )`,
+        'connectedBanks',
+      )
+      .addSelect(
         `(SELECT MAX(s."lastActiveAt") FROM sessions s WHERE s."userId" = user.id)`,
         'lastActive',
+      )
+      .addSelect(
+        `(SELECT MAX(s."createdAt") FROM sessions s WHERE s."userId" = user.id)`,
+        'lastLoginAt',
       )
       .addSelect(
         `(SELECT p.name
@@ -292,7 +367,9 @@ export class AdminUsersService {
           },
           businessType: raw.businessType || null,
           banksLinked,
+          connectedBanks: raw.connectedBanks || [],
           bankConnectionStatus: banksLinked > 0 ? 'connected' : 'not_connected',
+          lastLoginAt: raw.lastLoginAt || null,
           lastActive: raw.lastActive || null,
           accountStatus: accountStatusValue,
           isVerified: user.isVerified,
@@ -555,7 +632,7 @@ export class AdminUsersService {
     };
   }
 
-  private async getUserManagementDetail(userId: string) {
+  async getUserManagementDetail(userId: string) {
     const result = await this.findAllUsers({
       search: userId,
       page: 1,

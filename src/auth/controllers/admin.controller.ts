@@ -1,6 +1,5 @@
 import {
   Controller,
-  Get,
   Post,
   Patch,
   Delete,
@@ -81,62 +80,6 @@ export class AdminController {
       roles: userWithRoles!.roles.map((r) => r.name),
       isActive: userWithRoles!.isActive,
       createdAt: userWithRoles!.createdAt,
-    };
-  }
-
-  @Get('users')
-  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
-  @ApiOperation({
-    summary: 'List all users with their roles (Super Admin only)',
-  })
-  @ApiResponse({ status: 200, description: 'List of all users' })
-  async listUsers() {
-    const users = await this.usersRepository.find({
-      relations: ['roles'],
-      order: { createdAt: 'DESC' },
-    });
-
-    return users.map((user) => ({
-      id: user.id,
-      email: user.email,
-      phone: user.phone,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      isVerified: user.isVerified,
-      isActive: user.isActive,
-      roles: user.roles.map((r) => r.name),
-      createdAt: user.createdAt,
-    }));
-  }
-
-  @Get('users/:id')
-  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
-  @ApiOperation({
-    summary: 'Get a specific user with roles (Super Admin only)',
-  })
-  @ApiResponse({ status: 200, description: 'User details' })
-  @ApiResponse({ status: 404, description: 'User not found' })
-  async getUser(@Param('id') id: string) {
-    const user = await this.usersRepository.findOne({
-      where: { id },
-      relations: ['roles'],
-    });
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    return {
-      id: user.id,
-      email: user.email,
-      phone: user.phone,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      isVerified: user.isVerified,
-      isActive: user.isActive,
-      roles: user.roles.map((r) => r.name),
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt,
     };
   }
 

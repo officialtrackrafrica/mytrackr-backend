@@ -9,6 +9,8 @@ import { AdminMessageTemplate } from '../entities/admin-message-template.entity'
 import {
   AdminMessageQueryDto,
   AdminMessageTemplateQueryDto,
+  ADMIN_RECIPIENT_GROUPS,
+  AdminRecipientGroup,
   ComposeAdminMessageDto,
   CreateAdminMessageTemplateDto,
   SaveAdminMessageDraftDto,
@@ -55,6 +57,34 @@ export class AdminMessagingService {
         limit,
         totalPages: Math.ceil(total / limit),
       },
+    };
+  }
+
+  async listRecipientGroups() {
+    const labels: Record<AdminRecipientGroup, string> = {
+      all_users: 'All users',
+      active_users: 'Active users',
+      inactive_users: 'Inactive users',
+      subscribers: 'All subscribers',
+      starter_subscribers: 'Starter subscribers',
+      web_subscribers: 'Web subscribers',
+      solo_subscribers: 'Solo subscribers',
+      duo_subscribers: 'Duo subscribers',
+      unlimited_subscribers: 'Unlimited subscribers',
+      custom: 'Custom recipients',
+    };
+
+    return {
+      groups: await Promise.all(
+        ADMIN_RECIPIENT_GROUPS.map(async (key) => ({
+          key,
+          label: labels[key],
+          recipientCount:
+            key === 'custom'
+              ? null
+              : await this.buildRecipientQuery(key).getCount(),
+        })),
+      ),
     };
   }
 
@@ -260,30 +290,51 @@ export class AdminMessagingService {
     }
 
     const group = dto.recipientGroup || 'all_users';
+    const users = await this.buildRecipientQuery(group).getMany();
+    return users
+      .map((user) => user.email)
+      .filter((email): email is string => Boolean(email));
+  }
+
+  private buildRecipientQuery(group: AdminRecipientGroup) {
     const userQb = this.usersRepository
       .createQueryBuilder('user')
-      .where('user.email IS NOT NULL');
+      .where('user.email IS NOT NULL')
+      .andWhere(
+        `(user."securitySettings" IS NULL OR NOT (user."securitySettings" ? 'deletedAt'))`,
+      );
 
     if (group === 'active_users') {
       userQb.andWhere('user.isActive = true');
     } else if (group === 'inactive_users') {
       userQb.andWhere('user.isActive = false');
-    } else if (group === 'subscribers') {
+    } else if (group === 'subscribers' || group.endsWith('_subscribers')) {
+      const planSlug =
+        group === 'subscribers'
+          ? null
+          : group.slice(0, -'_subscribers'.length);
       userQb.andWhere((qb) => {
         const subQuery = qb
           .subQuery()
           .select('sub."userId"')
           .from(Subscription, 'sub')
+          .innerJoin('sub.plan', 'plan')
           .where('sub.status = :activeStatus')
-          .getQuery();
-        return `user.id IN ${subQuery}`;
+          .andWhere(
+            '(sub."currentPeriodEnd" IS NULL OR sub."currentPeriodEnd" >= :now)',
+          );
+        if (planSlug) {
+          subQuery.andWhere('plan.slug = :recipientPlanSlug');
+        }
+        return `user.id IN ${subQuery.getQuery()}`;
       });
-      userQb.setParameter('activeStatus', 'active');
+      userQb.setParameters({
+        activeStatus: 'active',
+        now: new Date(),
+        ...(planSlug ? { recipientPlanSlug: planSlug } : {}),
+      });
     }
 
-    const users = await userQb.getMany();
-    return users
-      .map((user) => user.email)
-      .filter((email): email is string => Boolean(email));
+    return userQb;
   }
 }

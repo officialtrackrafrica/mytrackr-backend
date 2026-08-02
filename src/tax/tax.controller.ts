@@ -11,6 +11,7 @@ import {
 import { JwtAuthGuard } from '../auth/guards';
 import { PlanGuard } from '../common/access-control/guards/plan.guard';
 import { RequirePlan } from '../common/access-control/decorators/require-plan.decorator';
+import { RequireCapability } from '../common/access-control/decorators/require-capability.decorator';
 import { TaxService } from './services/tax.service';
 import { UserTaxDeductions } from './services/tax.service';
 import { TaxEstimateResponseDto } from './dto/tax.dto';
@@ -23,6 +24,7 @@ import { BusinessService } from '../business/services/business.service';
 @Controller('tax')
 @UseGuards(JwtAuthGuard, PlanGuard)
 @RequirePlan()
+@RequireCapability('tax_estimator')
 @ApiCookieAuth('accessToken')
 export class TaxController {
   constructor(

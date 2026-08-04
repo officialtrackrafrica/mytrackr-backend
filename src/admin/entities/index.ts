@@ -7,3 +7,6 @@ export { WebhookLog } from './webhook-log.entity';
 export { AdminMessage } from './admin-message.entity';
 export { AdminMessageTemplate } from './admin-message-template.entity';
 export { Faq } from './faq.entity';
+export { TermsDocument } from './terms-document.entity';
+export { PrivacyPolicyDocument } from './privacy-policy-document.entity';
+export { LearningHubArticle } from './learning-hub-article.entity';

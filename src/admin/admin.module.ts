@@ -12,6 +12,9 @@ import {
   AdminMessage,
   AdminMessageTemplate,
   Faq,
+  TermsDocument,
+  PrivacyPolicyDocument,
+  LearningHubArticle,
 } from './entities';
 
 import { User } from '../auth/entities/user.entity';
@@ -36,6 +39,9 @@ import {
   AdminMessagingService,
   AdminFaqService,
   AdminCategorizationRulesService,
+  AdminTermsService,
+  AdminPrivacyPolicyService,
+  LearningHubService,
 } from './services';
 
 import {
@@ -48,6 +54,12 @@ import {
   AdminMessagingController,
   AdminFaqController,
   AdminCategorizationRulesController,
+  TermsController,
+  AdminTermsController,
+  PrivacyPolicyController,
+  AdminPrivacyPolicyController,
+  LearningHubController,
+  AdminLearningHubController,
 } from './controllers';
 
 import { CaslModule } from '../casl/casl.module';
@@ -68,6 +80,9 @@ import { PaymentsModule } from '../payments/payments.module';
       AdminMessage,
       AdminMessageTemplate,
       Faq,
+      TermsDocument,
+      PrivacyPolicyDocument,
+      LearningHubArticle,
       User,
       Session,
       Role,
@@ -98,6 +113,12 @@ import { PaymentsModule } from '../payments/payments.module';
     AdminMessagingController,
     AdminFaqController,
     AdminCategorizationRulesController,
+    TermsController,
+    AdminTermsController,
+    PrivacyPolicyController,
+    AdminPrivacyPolicyController,
+    LearningHubController,
+    AdminLearningHubController,
   ],
   providers: [
     AdminUsersService,
@@ -108,6 +129,9 @@ import { PaymentsModule } from '../payments/payments.module';
     AdminMessagingService,
     AdminFaqService,
     AdminCategorizationRulesService,
+    AdminTermsService,
+    AdminPrivacyPolicyService,
+    LearningHubService,
   ],
   exports: [AdminAuditService, AdminSystemService],
 })

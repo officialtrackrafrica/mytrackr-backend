@@ -7,3 +7,12 @@ export { SupportController } from './support.controller';
 export { AdminMessagingController } from './admin-messaging.controller';
 export { AdminFaqController } from './admin-faq.controller';
 export { AdminCategorizationRulesController } from './admin-categorization-rules.controller';
+export { TermsController, AdminTermsController } from './terms.controller';
+export {
+  PrivacyPolicyController,
+  AdminPrivacyPolicyController,
+} from './privacy-policy.controller';
+export {
+  LearningHubController,
+  AdminLearningHubController,
+} from './learning-hub.controller';

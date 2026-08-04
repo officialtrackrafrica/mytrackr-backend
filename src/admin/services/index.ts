@@ -6,3 +6,6 @@ export { AdminSystemService } from './admin-system.service';
 export { AdminMessagingService } from './admin-messaging.service';
 export { AdminFaqService } from './admin-faq.service';
 export { AdminCategorizationRulesService } from './admin-categorization-rules.service';
+export { AdminTermsService } from './admin-terms.service';
+export { AdminPrivacyPolicyService } from './admin-privacy-policy.service';
+export { LearningHubService } from './learning-hub.service';

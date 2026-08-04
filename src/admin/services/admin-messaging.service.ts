@@ -1,6 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { isUUID } from 'class-validator';
 import { User } from '../../auth/entities/user.entity';
 import { Subscription } from '../../payments/entities/subscription.entity';
 import { EmailService } from '../../email/email.service';
@@ -90,6 +95,11 @@ export class AdminMessagingService {
 
   async composeMessage(adminId: string, dto: ComposeAdminMessageDto) {
     const channel = dto.channel || 'email';
+    if (dto.templateId && !isUUID(dto.templateId)) {
+      throw new BadRequestException(
+        'templateId must be a valid message template UUID',
+      );
+    }
     const template = dto.templateId
       ? await this.templatesRepository.findOne({ where: { id: dto.templateId } })
       : null;

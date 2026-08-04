@@ -1,5 +1,6 @@
 import {
   IsString,
+  IsUUID,
   IsOptional,
   IsEnum,
   IsNumber,
@@ -11,7 +12,6 @@ import {
   IsEmail,
   MinLength,
   IsIn,
-  IsUUID,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -395,7 +395,7 @@ export class ComposeAdminMessageDto {
 
   @ApiPropertyOptional({ description: 'Reusable template ID to prefill/send from' })
   @IsOptional()
-  @IsString()
+  @IsUUID()
   templateId?: string;
 
   @ApiPropertyOptional({

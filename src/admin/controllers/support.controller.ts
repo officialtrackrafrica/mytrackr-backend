@@ -28,7 +28,7 @@ import {
   UserSupportTicketQueryDto,
 } from '../dto';
 
-@ApiTags('Support')
+@ApiTags('User - Support')
 @ApiCookieAuth('accessToken')
 @Controller('support')
 @UseGuards(JwtAuthGuard)

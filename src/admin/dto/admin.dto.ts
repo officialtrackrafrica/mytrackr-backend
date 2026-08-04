@@ -12,6 +12,9 @@ import {
   IsEmail,
   MinLength,
   IsIn,
+  ArrayMaxSize,
+  ArrayNotEmpty,
+  ArrayUnique,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -479,6 +482,19 @@ export class UpdateAdminMessageDto {
   @IsOptional()
   @IsObject()
   metadata?: Record<string, any>;
+}
+
+export class BulkAdminMessageActionDto {
+  @ApiProperty({
+    type: [String],
+    description: 'Message IDs to move to trash or permanently delete',
+  })
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(100)
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  ids: string[];
 }
 
 export class AdminMessageTemplateQueryDto {

@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { User } from '../../auth/entities/user.entity';
 import { Subscription } from '../../payments/entities/subscription.entity';
 import { EmailService } from '../../email/email.service';
@@ -105,6 +105,48 @@ export class AdminMessagingService {
     const message = await this.getMessage(id);
     await this.messagesRepository.remove(message);
     return { message: 'Message deleted successfully', id };
+  }
+
+  async bulkMoveToTrash(ids: string[]) {
+    const messages = await this.messagesRepository.findBy({ id: In(ids) });
+    const trashedAt = new Date();
+
+    messages.forEach((message) => {
+      message.status = 'trash';
+      message.trashedAt = trashedAt;
+    });
+
+    if (messages.length > 0) {
+      await this.messagesRepository.save(messages);
+    }
+
+    const affectedIds = messages.map((message) => message.id);
+    const affectedIdSet = new Set(affectedIds);
+    return {
+      message: 'Messages moved to trash successfully',
+      requested: ids.length,
+      affected: affectedIds.length,
+      ids: affectedIds,
+      notFoundIds: ids.filter((id) => !affectedIdSet.has(id)),
+    };
+  }
+
+  async bulkDeleteMessages(ids: string[]) {
+    const messages = await this.messagesRepository.findBy({ id: In(ids) });
+
+    if (messages.length > 0) {
+      await this.messagesRepository.remove(messages);
+    }
+
+    const affectedIds = messages.map((message) => message.id);
+    const affectedIdSet = new Set(affectedIds);
+    return {
+      message: 'Messages deleted successfully',
+      requested: ids.length,
+      affected: affectedIds.length,
+      ids: affectedIds,
+      notFoundIds: ids.filter((id) => !affectedIdSet.has(id)),
+    };
   }
 
   async composeMessage(adminId: string, dto: ComposeAdminMessageDto) {

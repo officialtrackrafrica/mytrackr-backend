@@ -27,6 +27,7 @@ import { AdminAuditService } from '../services/admin-audit.service';
 import {
   AdminMessageQueryDto,
   AdminMessageTemplateQueryDto,
+  BulkAdminMessageActionDto,
   ComposeAdminMessageDto,
   CreateAdminMessageTemplateDto,
   SaveAdminMessageDraftDto,
@@ -125,6 +126,27 @@ export class AdminMessagingController {
     return result;
   }
 
+  @Patch('bulk/trash')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({ summary: 'Move multiple admin messages to trash' })
+  @ApiBody({ type: BulkAdminMessageActionDto })
+  @ApiResponse({ status: 200, description: 'Messages moved to trash' })
+  async bulkMoveToTrash(
+    @Body() dto: BulkAdminMessageActionDto,
+    @Req() req: any,
+  ) {
+    const result = await this.messagingService.bulkMoveToTrash(dto.ids);
+    await this.auditService.log(
+      'ADMIN_MESSAGES_BULK_TRASHED',
+      'AdminMessage',
+      null,
+      req.user.id,
+      result,
+      req.ip,
+    );
+    return result;
+  }
+
   @Patch(':id/trash')
   @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
   @ApiOperation({ summary: 'Move an admin message to trash' })
@@ -190,6 +212,27 @@ export class AdminMessagingController {
   @ApiResponse({ status: 200, description: 'Template archived' })
   async deleteTemplate(@Param('id') id: string) {
     return this.messagingService.deleteTemplate(id);
+  }
+
+  @Delete('bulk')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({ summary: 'Permanently delete multiple admin messages' })
+  @ApiBody({ type: BulkAdminMessageActionDto })
+  @ApiResponse({ status: 200, description: 'Messages deleted' })
+  async bulkDeleteMessages(
+    @Body() dto: BulkAdminMessageActionDto,
+    @Req() req: any,
+  ) {
+    const result = await this.messagingService.bulkDeleteMessages(dto.ids);
+    await this.auditService.log(
+      'ADMIN_MESSAGES_BULK_DELETED',
+      'AdminMessage',
+      null,
+      req.user.id,
+      result,
+      req.ip,
+    );
+    return result;
   }
 
   @Get(':id')

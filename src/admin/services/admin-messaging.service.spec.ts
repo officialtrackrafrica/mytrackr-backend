@@ -134,4 +134,76 @@ describe('AdminMessagingService', () => {
     });
     expect(messagesRepository.remove).toHaveBeenCalledWith(message);
   });
+
+  it('moves multiple messages to trash and reports missing IDs', async () => {
+    const messages = [
+      { id: '0d79e02c-90fd-4de8-b858-786995862852', status: 'sent' },
+      { id: '315c2305-0adc-4986-894f-d5e58b18feb0', status: 'draft' },
+    ];
+    const messagesRepository = {
+      findBy: jest.fn().mockResolvedValue(messages),
+      save: jest.fn().mockImplementation(async (value) => value),
+    };
+    const service = new AdminMessagingService(
+      messagesRepository as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    const missingId = 'db91f934-58dc-4767-a309-e79871193e03';
+
+    const result = await service.bulkMoveToTrash([
+      messages[0].id,
+      messages[1].id,
+      missingId,
+    ]);
+
+    expect(messages).toEqual([
+      expect.objectContaining({ status: 'trash', trashedAt: expect.any(Date) }),
+      expect.objectContaining({ status: 'trash', trashedAt: expect.any(Date) }),
+    ]);
+    expect(messagesRepository.save).toHaveBeenCalledWith(messages);
+    expect(result).toEqual(
+      expect.objectContaining({
+        requested: 3,
+        affected: 2,
+        notFoundIds: [missingId],
+      }),
+    );
+  });
+
+  it('permanently deletes multiple messages and reports missing IDs', async () => {
+    const messages = [
+      { id: '0d79e02c-90fd-4de8-b858-786995862852' },
+      { id: '315c2305-0adc-4986-894f-d5e58b18feb0' },
+    ];
+    const messagesRepository = {
+      findBy: jest.fn().mockResolvedValue(messages),
+      remove: jest.fn().mockResolvedValue(messages),
+    };
+    const service = new AdminMessagingService(
+      messagesRepository as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    const missingId = 'db91f934-58dc-4767-a309-e79871193e03';
+
+    const result = await service.bulkDeleteMessages([
+      messages[0].id,
+      messages[1].id,
+      missingId,
+    ]);
+
+    expect(messagesRepository.remove).toHaveBeenCalledWith(messages);
+    expect(result).toEqual({
+      message: 'Messages deleted successfully',
+      requested: 3,
+      affected: 2,
+      ids: messages.map((message) => message.id),
+      notFoundIds: [missingId],
+    });
+  });
 });

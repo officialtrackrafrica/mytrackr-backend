@@ -7,6 +7,7 @@ import { SystemSetting } from '../../admin/entities/system-setting.entity';
 import { AccountCategory } from '../../finance/entities/account-category.entity';
 import { AccountSubCategory } from '../../finance/entities/account-subcategory.entity';
 import { CategorizationRule } from '../../finance/entities/categorization-rule.entity';
+import { Transaction } from '../../finance/entities/transaction.entity';
 import { AuthModule } from '../../auth/auth.module';
 import { SecurityModule } from '../../security/security.module';
 import { SeedingService } from './seeding.service';
@@ -32,6 +33,7 @@ import { SubscriptionPlanMigrationSeed } from './subscription-plan-migration.see
       AccountCategory,
       AccountSubCategory,
       CategorizationRule,
+      Transaction,
     ]),
     AuthModule,
     SecurityModule,

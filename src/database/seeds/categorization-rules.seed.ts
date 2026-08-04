@@ -6,6 +6,8 @@ import {
   MatchType,
 } from '../../finance/entities/categorization-rule.entity';
 import { AccountCategoryType } from '../../finance/entities/account-category.entity';
+import { normalizeCategorizationSubCategory } from '../../finance/categorization-subcategories';
+import { Transaction } from '../../finance/entities/transaction.entity';
 
 export const DEFAULT_CATEGORIZATION_RULES: Array<{
   matchType: MatchType;
@@ -639,6 +641,8 @@ export class CategorizationRulesSeed {
   constructor(
     @InjectRepository(CategorizationRule)
     private readonly ruleRepo: Repository<CategorizationRule>,
+    @InjectRepository(Transaction)
+    private readonly transactionRepo: Repository<Transaction>,
   ) {}
 
   async run() {
@@ -654,6 +658,8 @@ export class CategorizationRulesSeed {
         'vat',
       ]),
     });
+
+    await this.reconcileLegacyRuleGroups();
 
     for (const ruleData of DEFAULT_CATEGORIZATION_RULES) {
       const existing = await this.ruleRepo.findOne({
@@ -675,6 +681,66 @@ export class CategorizationRulesSeed {
           isActive: true,
           businessId: null,
         }),
+      );
+    }
+  }
+
+  private async reconcileLegacyRuleGroups() {
+    const rules = await this.ruleRepo.find({
+      where: { isSystem: true },
+      order: { createdAt: 'ASC' },
+    });
+    const survivors = new Map<string, CategorizationRule>();
+    const changed: CategorizationRule[] = [];
+    const duplicates: CategorizationRule[] = [];
+    const duplicateReplacements: Array<{
+      duplicate: CategorizationRule;
+      survivor: CategorizationRule;
+    }> = [];
+
+    for (const rule of rules) {
+      const canonicalSubCategory = normalizeCategorizationSubCategory(
+        rule.subCategory,
+      );
+      const key = [
+        rule.category.toLowerCase(),
+        canonicalSubCategory.toLowerCase(),
+        rule.matchType,
+        rule.matchValue.trim().toLowerCase(),
+        rule.businessId || 'system',
+      ].join(':');
+      const survivor = survivors.get(key);
+
+      if (!survivor) {
+        survivors.set(key, rule);
+        if (rule.subCategory !== canonicalSubCategory) {
+          rule.subCategory = canonicalSubCategory;
+          changed.push(rule);
+        }
+        continue;
+      }
+
+      survivor.isActive = survivor.isActive || rule.isActive;
+      survivor.priority = Math.min(survivor.priority, rule.priority);
+      if (!changed.includes(survivor)) changed.push(survivor);
+      duplicates.push(rule);
+      duplicateReplacements.push({ duplicate: rule, survivor });
+    }
+
+    if (changed.length > 0) await this.ruleRepo.save(changed);
+    if (duplicates.length > 0) {
+      for (const { duplicate, survivor } of duplicateReplacements) {
+        await this.transactionRepo.update(
+          { ruleId: duplicate.id },
+          { ruleId: survivor.id },
+        );
+      }
+      await this.ruleRepo.remove(duplicates);
+    }
+
+    if (changed.length > 0 || duplicates.length > 0) {
+      this.logger.log(
+        `Reconciled ${changed.length} categorization rules and removed ${duplicates.length} duplicates.`,
       );
     }
   }

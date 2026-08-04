@@ -5,6 +5,7 @@ import {
   CategorizationRule,
   MatchType,
 } from '../../finance/entities/categorization-rule.entity';
+import { normalizeCategorizationSubCategory } from '../../finance/categorization-subcategories';
 import {
   CategorizationRuleQueryDto,
   CreateAdminCategorizationRuleDto,
@@ -61,7 +62,9 @@ export class AdminCategorizationRulesService {
 
   async createRule(dto: CreateAdminCategorizationRuleDto) {
     const keywords = this.normalizeKeywords(dto.keywords);
-    const subCategory = dto.subCategory || dto.category;
+    const subCategory = normalizeCategorizationSubCategory(
+      dto.subCategory || dto.category,
+    );
 
     const rules = keywords.map((keyword) =>
       this.rulesRepository.create({
@@ -85,7 +88,9 @@ export class AdminCategorizationRulesService {
     if (!anchor) throw new NotFoundException('Categorization rule not found');
 
     const targetCategory = dto.category || anchor.category;
-    const targetSubCategory = dto.subCategory || anchor.subCategory;
+    const targetSubCategory = normalizeCategorizationSubCategory(
+      dto.subCategory || anchor.subCategory,
+    );
     const related = await this.findRelatedRules(anchor);
 
     if (dto.keywords) {
@@ -157,7 +162,8 @@ export class AdminCategorizationRulesService {
     const groups = new Map<string, CategorizationRule[]>();
 
     for (const rule of rules) {
-      const key = `${rule.category}:${rule.subCategory}:${rule.businessId || 'system'}`;
+      const subCategory = normalizeCategorizationSubCategory(rule.subCategory);
+      const key = `${rule.category}:${subCategory}:${rule.businessId || 'system'}`;
       groups.set(key, [...(groups.get(key) || []), rule]);
     }
 
@@ -166,15 +172,14 @@ export class AdminCategorizationRulesService {
       return {
         id: first.id,
         category: first.category,
-        subCategory: first.subCategory,
-        keywords: group.map((rule) => rule.matchValue),
+        subCategory: normalizeCategorizationSubCategory(first.subCategory),
+        keywords: Array.from(new Set(group.map((rule) => rule.matchValue))),
         priority: first.priority,
         isActive: group.some((rule) => rule.isActive),
         ruleIds: group.map((rule) => rule.id),
         createdAt: first.createdAt,
         updatedAt: group.reduce(
-          (latest, rule) =>
-            rule.updatedAt > latest ? rule.updatedAt : latest,
+          (latest, rule) => (rule.updatedAt > latest ? rule.updatedAt : latest),
           first.updatedAt,
         ),
       };

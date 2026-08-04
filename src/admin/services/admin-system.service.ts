@@ -160,7 +160,7 @@ export class AdminSystemService {
 
     const qb = this.ticketsRepository
       .createQueryBuilder('ticket')
-      .leftJoin(User, 'user', 'user.id = ticket.userId')
+      .leftJoin(User, 'user', 'user.id::text = ticket.userId')
       .addSelect('user.email', 'userEmail')
       .addSelect('user.firstName', 'userFirstName')
       .addSelect('user.lastName', 'userLastName')

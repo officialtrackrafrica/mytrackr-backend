@@ -14,6 +14,7 @@ import {
   ComposeAdminMessageDto,
   CreateAdminMessageTemplateDto,
   SaveAdminMessageDraftDto,
+  UpdateAdminMessageDto,
   UpdateAdminMessageTemplateDto,
 } from '../dto';
 
@@ -86,6 +87,24 @@ export class AdminMessagingService {
         })),
       ),
     };
+  }
+
+  async getMessage(id: string) {
+    const message = await this.messagesRepository.findOne({ where: { id } });
+    if (!message) throw new NotFoundException('Message not found');
+    return message;
+  }
+
+  async updateMessage(id: string, dto: UpdateAdminMessageDto) {
+    const message = await this.getMessage(id);
+    Object.assign(message, dto);
+    return this.messagesRepository.save(message);
+  }
+
+  async deleteMessage(id: string) {
+    const message = await this.getMessage(id);
+    await this.messagesRepository.remove(message);
+    return { message: 'Message deleted successfully', id };
   }
 
   async composeMessage(adminId: string, dto: ComposeAdminMessageDto) {
@@ -276,8 +295,9 @@ export class AdminMessagingService {
 
   private async resolveRecipients(dto: ComposeAdminMessageDto) {
     if (dto.recipients?.length) {
-      return Array.from(new Set(dto.recipients.map((value) => value.trim())))
-        .filter(Boolean);
+      return Array.from(
+        new Set(dto.recipients.map((value) => value.trim())),
+      ).filter(Boolean);
     }
 
     const group = dto.recipientGroup || 'all_users';
@@ -301,9 +321,7 @@ export class AdminMessagingService {
       userQb.andWhere('user.isActive = false');
     } else if (group === 'subscribers' || group.endsWith('_subscribers')) {
       const planSlug =
-        group === 'subscribers'
-          ? null
-          : group.slice(0, -'_subscribers'.length);
+        group === 'subscribers' ? null : group.slice(0, -'_subscribers'.length);
       userQb.andWhere((qb) => {
         const subQuery = qb
           .subQuery()

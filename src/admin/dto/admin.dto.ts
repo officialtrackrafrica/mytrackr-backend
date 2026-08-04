@@ -56,7 +56,9 @@ export class AdminQueryDto {
   @IsString()
   businessType?: string;
 
-  @ApiPropertyOptional({ description: 'Filter by active subscription plan slug/name' })
+  @ApiPropertyOptional({
+    description: 'Filter by active subscription plan slug/name',
+  })
   @IsOptional()
   @IsString()
   planType?: string;
@@ -78,14 +80,25 @@ export class AdminQueryDto {
   accountStatus?: string;
 
   @ApiPropertyOptional({
-    enum: ['name', 'createdAt', 'plan', 'banksLinked', 'lastActive', 'businessType', 'accountStatus'],
+    enum: [
+      'name',
+      'createdAt',
+      'plan',
+      'banksLinked',
+      'lastActive',
+      'businessType',
+      'accountStatus',
+    ],
     default: 'createdAt',
   })
   @IsOptional()
   @IsString()
   sortBy?: string = 'createdAt';
 
-  @ApiPropertyOptional({ enum: ['ASC', 'DESC', 'asc', 'desc'], default: 'DESC' })
+  @ApiPropertyOptional({
+    enum: ['ASC', 'DESC', 'asc', 'desc'],
+    default: 'DESC',
+  })
   @IsOptional()
   @IsString()
   sortOrder?: string = 'DESC';
@@ -108,7 +121,15 @@ export class AdminQueryDto {
 
 export class AdminUserSubscriptionHistoryQueryDto {
   @ApiPropertyOptional({
-    enum: ['pending', 'active', 'scheduled', 'past_due', 'canceled', 'cancelled', 'failed'],
+    enum: [
+      'pending',
+      'active',
+      'scheduled',
+      'past_due',
+      'canceled',
+      'cancelled',
+      'failed',
+    ],
     description: 'Filter subscription records by status',
   })
   @IsOptional()
@@ -154,18 +175,23 @@ export class DashboardQueryDto {
 
 export class AdminStatsQueryDto {
   @ApiPropertyOptional({
-    description: 'Single date filter (YYYY-MM-DD). Applies to created/status dates where relevant.',
+    description:
+      'Single date filter (YYYY-MM-DD). Applies to created/status dates where relevant.',
   })
   @IsOptional()
   @IsString()
   date?: string;
 
-  @ApiPropertyOptional({ description: 'Start date for range filter (YYYY-MM-DD or ISO)' })
+  @ApiPropertyOptional({
+    description: 'Start date for range filter (YYYY-MM-DD or ISO)',
+  })
   @IsOptional()
   @IsString()
   dateFrom?: string;
 
-  @ApiPropertyOptional({ description: 'End date for range filter (YYYY-MM-DD or ISO)' })
+  @ApiPropertyOptional({
+    description: 'End date for range filter (YYYY-MM-DD or ISO)',
+  })
   @IsOptional()
   @IsString()
   dateTo?: string;
@@ -378,7 +404,8 @@ export class ComposeAdminMessageDto {
 
   @ApiPropertyOptional({
     type: [String],
-    description: 'Explicit recipient emails/user IDs. Used with custom group or as an override.',
+    description:
+      'Explicit recipient emails/user IDs. Used with custom group or as an override.',
   })
   @IsOptional()
   @IsArray()
@@ -406,7 +433,9 @@ export class ComposeAdminMessageDto {
   @IsString()
   templateName?: string;
 
-  @ApiPropertyOptional({ description: 'Additional metadata for UI/push providers' })
+  @ApiPropertyOptional({
+    description: 'Additional metadata for UI/push providers',
+  })
   @IsOptional()
   @IsObject()
   metadata?: Record<string, any>;
@@ -414,13 +443,53 @@ export class ComposeAdminMessageDto {
 
 export class SaveAdminMessageDraftDto extends ComposeAdminMessageDto {}
 
+export class UpdateAdminMessageDto {
+  @ApiPropertyOptional({ enum: ['email', 'push'] })
+  @IsOptional()
+  @IsIn(['email', 'push'])
+  channel?: 'email' | 'push';
+
+  @ApiPropertyOptional({ enum: ADMIN_RECIPIENT_GROUPS })
+  @IsOptional()
+  @IsIn(ADMIN_RECIPIENT_GROUPS)
+  recipientGroup?: AdminRecipientGroup;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Explicit recipient emails/user IDs',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  recipients?: string[];
+
+  @ApiPropertyOptional({ description: 'Email subject or push title' })
+  @IsOptional()
+  @IsString()
+  subject?: string;
+
+  @ApiPropertyOptional({ description: 'Email body or push message body' })
+  @IsOptional()
+  @IsString()
+  body?: string;
+
+  @ApiPropertyOptional({
+    description: 'Additional metadata for UI/push providers',
+  })
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
+}
+
 export class AdminMessageTemplateQueryDto {
   @ApiPropertyOptional({ enum: ['email', 'push'] })
   @IsOptional()
   @IsIn(['email', 'push'])
   channel?: 'email' | 'push';
 
-  @ApiPropertyOptional({ description: 'Search by template name, subject, or body' })
+  @ApiPropertyOptional({
+    description: 'Search by template name, subject, or body',
+  })
   @IsOptional()
   @IsString()
   search?: string;
@@ -537,7 +606,9 @@ export class UpdateFaqDto {
 }
 
 export class CategorizationRuleQueryDto {
-  @ApiPropertyOptional({ description: 'Search by category, sub-category, or keyword' })
+  @ApiPropertyOptional({
+    description: 'Search by category, sub-category, or keyword',
+  })
   @IsOptional()
   @IsString()
   search?: string;
@@ -575,7 +646,8 @@ export class CreateAdminCategorizationRuleDto {
   category: string;
 
   @ApiPropertyOptional({
-    description: 'Optional sub-category label. Defaults to category when omitted.',
+    description:
+      'Optional sub-category label. Defaults to category when omitted.',
   })
   @IsOptional()
   @IsString()
@@ -635,7 +707,8 @@ export class UpdateAdminCategorizationRuleDto {
 
 export class SendUncategorizedTransactionReminderDto {
   @ApiPropertyOptional({
-    description: 'When true, only returns the target users without sending emails',
+    description:
+      'When true, only returns the target users without sending emails',
     default: false,
   })
   @IsOptional()
@@ -811,7 +884,8 @@ export class AuditLogCleanupDto {
   days?: number = 90;
 
   @ApiPropertyOptional({
-    description: 'When true, only returns the number of logs that would be deleted',
+    description:
+      'When true, only returns the number of logs that would be deleted',
     default: false,
   })
   @IsOptional()
@@ -886,7 +960,10 @@ export class TicketQueryDto {
   @IsString()
   category?: string;
 
-  @ApiPropertyOptional({ description: 'Search by ticket title, description, category, user name, or email' })
+  @ApiPropertyOptional({
+    description:
+      'Search by ticket title, description, category, user name, or email',
+  })
   @IsOptional()
   @IsString()
   search?: string;

@@ -30,6 +30,7 @@ import {
   ComposeAdminMessageDto,
   CreateAdminMessageTemplateDto,
   SaveAdminMessageDraftDto,
+  UpdateAdminMessageDto,
   UpdateAdminMessageTemplateDto,
 } from '../dto';
 
@@ -45,7 +46,9 @@ export class AdminMessagingController {
 
   @Get()
   @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
-  @ApiOperation({ summary: 'List admin emails, push notifications, drafts, or trash' })
+  @ApiOperation({
+    summary: 'List admin emails, push notifications, drafts, or trash',
+  })
   @ApiResponse({ status: 200, description: 'Paginated message list' })
   async listMessages(@Query() query: AdminMessageQueryDto) {
     return this.messagingService.listMessages(query);
@@ -65,12 +68,12 @@ export class AdminMessagingController {
     summary: 'Compose and send an admin email or push notification',
   })
   @ApiBody({ type: ComposeAdminMessageDto })
-  @ApiResponse({ status: 201, description: 'Message sent and optionally saved as template' })
+  @ApiResponse({
+    status: 201,
+    description: 'Message sent and optionally saved as template',
+  })
   async compose(@Body() dto: ComposeAdminMessageDto, @Req() req: any) {
-    const result = await this.messagingService.composeMessage(
-      req.user.id,
-      dto,
-    );
+    const result = await this.messagingService.composeMessage(req.user.id, dto);
     await this.auditService.log(
       'ADMIN_MESSAGE_SENT',
       'AdminMessage',
@@ -149,7 +152,9 @@ export class AdminMessagingController {
 
   @Get('templates')
   @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
-  @ApiOperation({ summary: 'List reusable email and push notification templates' })
+  @ApiOperation({
+    summary: 'List reusable email and push notification templates',
+  })
   @ApiResponse({ status: 200, description: 'Paginated template list' })
   async listTemplates(@Query() query: AdminMessageTemplateQueryDto) {
     return this.messagingService.listTemplates(query);
@@ -185,5 +190,57 @@ export class AdminMessagingController {
   @ApiResponse({ status: 200, description: 'Template archived' })
   async deleteTemplate(@Param('id') id: string) {
     return this.messagingService.deleteTemplate(id);
+  }
+
+  @Get(':id')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({ summary: 'Get an admin email or push notification' })
+  @ApiResponse({ status: 200, description: 'Message details' })
+  @ApiResponse({ status: 404, description: 'Message not found' })
+  async getMessage(@Param('id') id: string) {
+    return this.messagingService.getMessage(id);
+  }
+
+  @Patch(':id')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({ summary: 'Update an admin email or push notification' })
+  @ApiBody({ type: UpdateAdminMessageDto })
+  @ApiResponse({ status: 200, description: 'Message updated' })
+  @ApiResponse({ status: 404, description: 'Message not found' })
+  async updateMessage(
+    @Param('id') id: string,
+    @Body() dto: UpdateAdminMessageDto,
+    @Req() req: any,
+  ) {
+    const result = await this.messagingService.updateMessage(id, dto);
+    await this.auditService.log(
+      'ADMIN_MESSAGE_UPDATED',
+      'AdminMessage',
+      id,
+      req.user.id,
+      dto,
+      req.ip,
+    );
+    return result;
+  }
+
+  @Delete(':id')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({
+    summary: 'Permanently delete an admin email or push notification',
+  })
+  @ApiResponse({ status: 200, description: 'Message deleted' })
+  @ApiResponse({ status: 404, description: 'Message not found' })
+  async deleteMessage(@Param('id') id: string, @Req() req: any) {
+    const result = await this.messagingService.deleteMessage(id);
+    await this.auditService.log(
+      'ADMIN_MESSAGE_DELETED',
+      'AdminMessage',
+      id,
+      req.user.id,
+      {},
+      req.ip,
+    );
+    return result;
   }
 }

@@ -55,12 +55,12 @@ export class AdminFinanceService {
         id: tx.id,
         monoTransactionId: tx.monoTransactionId,
         narration: tx.narration,
-        amount: tx.amount,
+        amount: this.toMajorCurrencyUnit(tx.amount),
         type: tx.type,
         category: tx.manualCategory || tx.category,
         categorySource: tx.categorySource,
         currency: tx.currency,
-        balance: tx.balance,
+        balance: this.toNullableMajorCurrencyUnit(tx.balance),
         date: tx.date,
         metadata: tx.metadata,
         account: tx.monoAccount
@@ -102,12 +102,12 @@ export class AdminFinanceService {
       id: tx.id,
       monoTransactionId: tx.monoTransactionId,
       narration: tx.narration,
-      amount: tx.amount,
+      amount: this.toMajorCurrencyUnit(tx.amount),
       type: tx.type,
       category: tx.manualCategory || tx.category,
       categorySource: tx.categorySource,
       currency: tx.currency,
-      balance: tx.balance,
+      balance: this.toNullableMajorCurrencyUnit(tx.balance),
       date: tx.date,
       metadata: tx.metadata,
       createdAt: tx.createdAt,
@@ -134,7 +134,7 @@ export class AdminFinanceService {
       accountNumber: acc.accountNumber,
       type: acc.type,
       currency: acc.currency,
-      balance: acc.balance,
+      balance: this.toNullableMajorCurrencyUnit(acc.balance),
       institutionName: acc.institutionName,
       dataStatus: acc.dataStatus,
       lastSyncedAt: acc.lastSyncedAt,
@@ -170,6 +170,7 @@ export class AdminFinanceService {
       .addSelect('tx.type', 'type')
       .addSelect('COUNT(*)', 'count')
       .addSelect('SUM(CAST(tx.amount AS BIGINT))', 'totalAmount')
+      .where('tx.currency = :currency', { currency: 'NGN' })
       .groupBy(`TO_CHAR(tx.date, '${dateFormat}')`)
       .addGroupBy('tx.type')
       .orderBy('period', 'DESC')
@@ -188,17 +189,34 @@ export class AdminFinanceService {
         };
       }
       if (r.type === 'credit') {
-        periodMap[r.period].credits = r.totalAmount || 0;
+        periodMap[r.period].credits = this.toMajorCurrencyUnit(
+          r.totalAmount || 0,
+        );
         periodMap[r.period].creditCount = parseInt(r.count, 10);
       } else {
-        periodMap[r.period].debits = r.totalAmount || 0;
+        periodMap[r.period].debits = this.toMajorCurrencyUnit(
+          r.totalAmount || 0,
+        );
         periodMap[r.period].debitCount = parseInt(r.count, 10);
       }
     });
 
     return {
       period,
+      currency: 'NGN',
       data: Object.values(periodMap),
     };
+  }
+
+  private toMajorCurrencyUnit(amount: number | string): number {
+    return Math.round(Number(amount)) / 100;
+  }
+
+  private toNullableMajorCurrencyUnit(
+    amount: number | string | null | undefined,
+  ): number | null {
+    return amount === null || amount === undefined
+      ? null
+      : this.toMajorCurrencyUnit(amount);
   }
 }

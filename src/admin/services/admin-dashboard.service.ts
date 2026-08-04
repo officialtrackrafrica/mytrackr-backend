@@ -43,11 +43,8 @@ export class AdminDashboardService {
       inactiveUsers,
       deletedAccounts,
       totalSyncedBankAccounts,
-      monoTransactionCount,
       financeTransactionCount,
-      monoVolumeResult,
       financeVolumeResult,
-      monoUncategorized,
       financeUncategorized,
       activeSubscriptions,
       failedSubscriptions,
@@ -62,11 +59,8 @@ export class AdminDashboardService {
       this.countUsers(range, { isActive: false }),
       this.countDeletedAccounts(range),
       this.countSyncedBankAccounts(range),
-      this.countMonoTransactions(range),
       this.countFinanceTransactions(range),
-      this.sumMonoTransactionVolume(range),
       this.sumFinanceTransactionVolume(range),
-      this.countUncategorizedMonoTransactions(range),
       this.countUncategorizedFinanceTransactions(range),
       this.countSubscriptions(range, 'active'),
       this.countFailedSubscriptions(range),
@@ -77,12 +71,15 @@ export class AdminDashboardService {
       this.getPlanSubscriptionStats(range),
     ]);
 
-    const totalTransactions = monoTransactionCount + financeTransactionCount;
     const recurringRevenue = Number(subscriptionRevenueResult?.total || 0);
-    const realizedSubscriptionRevenue = Number(paymentRevenueResult?.total || 0);
+    const realizedSubscriptionRevenue = Number(
+      paymentRevenueResult?.total || 0,
+    );
     const churnRate =
       churnBaseSubscriptions > 0
-        ? Number(((churnedSubscriptions / churnBaseSubscriptions) * 100).toFixed(2))
+        ? Number(
+            ((churnedSubscriptions / churnBaseSubscriptions) * 100).toFixed(2),
+          )
         : 0;
 
     return {
@@ -96,18 +93,17 @@ export class AdminDashboardService {
       activeUsers,
       inactiveUsers,
       deletedAccounts,
-      uncategorizedTransactions: monoUncategorized + financeUncategorized,
+      uncategorizedTransactions: financeUncategorized,
       activeSubscriptions,
       failedSubscriptions,
+      currency: 'NGN',
       recurringRevenue,
       realizedSubscriptionRevenue,
       churnRate,
       planSubscriptionStats,
       totalLinkedAccounts: totalSyncedBankAccounts,
-      totalTransactions,
-      totalTransactionVolume:
-        Number(monoVolumeResult?.totalVolume || 0) +
-        Number(financeVolumeResult?.totalVolume || 0),
+      totalTransactions: financeTransactionCount,
+      totalTransactionVolume: Number(financeVolumeResult?.totalVolume || 0),
     };
   }
 
@@ -152,6 +148,7 @@ export class AdminDashboardService {
         .addSelect('COUNT(*)', 'count')
         .addSelect('SUM(CAST(tx.amount AS BIGINT))', 'totalAmount')
         .addSelect('AVG(CAST(tx.amount AS BIGINT))', 'avgAmount')
+        .where('tx.currency = :currency', { currency: 'NGN' })
         .groupBy('tx.type')
         .getRawMany(),
 
@@ -163,6 +160,7 @@ export class AdminDashboardService {
         )
         .addSelect('COUNT(*)', 'count')
         .addSelect('SUM(CAST(tx.amount AS BIGINT))', 'totalAmount')
+        .where('tx.currency = :currency', { currency: 'NGN' })
         .groupBy("COALESCE(tx.manualCategory, tx.category, 'uncategorized')")
         .orderBy('"count"', 'DESC')
         .limit(20)
@@ -170,16 +168,17 @@ export class AdminDashboardService {
     ]);
 
     return {
+      currency: 'NGN',
       byType: summary.map((s) => ({
         type: s.type,
         count: parseInt(s.count, 10),
-        totalAmount: s.totalAmount || 0,
-        avgAmount: Math.round(parseFloat(s.avgAmount || '0')),
+        totalAmount: this.toMajorCurrencyUnit(s.totalAmount || 0),
+        avgAmount: this.toMajorCurrencyUnit(s.avgAmount || 0),
       })),
       byCategory: categoryBreakdown.map((c) => ({
         category: c.category,
         count: parseInt(c.count, 10),
-        totalAmount: c.totalAmount || 0,
+        totalAmount: this.toMajorCurrencyUnit(c.totalAmount || 0),
       })),
     };
   }
@@ -246,6 +245,10 @@ export class AdminDashboardService {
     return qb;
   }
 
+  private toMajorCurrencyUnit(amount: number | string): number {
+    return Math.round(Number(amount)) / 100;
+  }
+
   private async countUsers(
     range?: { start?: Date; end?: Date },
     filters: { isActive?: boolean } = {},
@@ -274,24 +277,10 @@ export class AdminDashboardService {
     return qb.getCount();
   }
 
-  private async countMonoTransactions(range?: { start?: Date; end?: Date }) {
-    const qb = this.transactionsRepository.createQueryBuilder('tx');
-    this.applyDateRange(qb, 'tx', 'createdAt', range);
-    return qb.getCount();
-  }
-
   private async countFinanceTransactions(range?: { start?: Date; end?: Date }) {
     const qb = this.financeTransactionsRepository.createQueryBuilder('tx');
     this.applyDateRange(qb, 'tx', 'createdAt', range);
     return qb.getCount();
-  }
-
-  private async sumMonoTransactionVolume(range?: { start?: Date; end?: Date }) {
-    const qb = this.transactionsRepository
-      .createQueryBuilder('tx')
-      .select('COALESCE(SUM(CAST(tx.amount AS BIGINT)), 0)', 'totalVolume');
-    this.applyDateRange(qb, 'tx', 'createdAt', range);
-    return qb.getRawOne();
   }
 
   private async sumFinanceTransactionVolume(range?: {
@@ -303,17 +292,6 @@ export class AdminDashboardService {
       .select('COALESCE(SUM(CAST(tx.amount AS NUMERIC)), 0)', 'totalVolume');
     this.applyDateRange(qb, 'tx', 'createdAt', range);
     return qb.getRawOne();
-  }
-
-  private async countUncategorizedMonoTransactions(range?: {
-    start?: Date;
-    end?: Date;
-  }) {
-    const qb = this.transactionsRepository
-      .createQueryBuilder('tx')
-      .where('tx.isCategorised = false');
-    this.applyDateRange(qb, 'tx', 'createdAt', range);
-    return qb.getCount();
   }
 
   private async countUncategorizedFinanceTransactions(range?: {
@@ -376,7 +354,10 @@ export class AdminDashboardService {
     return qb.getRawOne();
   }
 
-  private async countChurnedSubscriptions(range?: { start?: Date; end?: Date }) {
+  private async countChurnedSubscriptions(range?: {
+    start?: Date;
+    end?: Date;
+  }) {
     const qb = this.subscriptionsRepository
       .createQueryBuilder('sub')
       .where('sub.status IN (:...statuses)', {
@@ -458,7 +439,9 @@ export class AdminDashboardService {
       ]),
     );
 
-    const planRows = await this.plansRepository.find({ order: { price: 'ASC' } });
+    const planRows = await this.plansRepository.find({
+      order: { price: 'ASC' },
+    });
     const statsByPlan = new Map(
       subscriptionRows.map((row) => [row.planId, row]),
     );
@@ -484,7 +467,10 @@ export class AdminDashboardService {
         price: Number(plan.price),
         totalSubscriptions: Number.parseInt(row?.totalSubscriptions || '0', 10),
         activeSubscriptions,
-        pendingSubscriptions: Number.parseInt(row?.pendingSubscriptions || '0', 10),
+        pendingSubscriptions: Number.parseInt(
+          row?.pendingSubscriptions || '0',
+          10,
+        ),
         canceledSubscriptions,
         failedSubscriptions: failedByPlan.get(plan.id) || 0,
         recurringRevenue: Number(row?.recurringRevenue || 0),

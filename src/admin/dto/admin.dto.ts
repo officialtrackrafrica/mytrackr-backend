@@ -393,11 +393,6 @@ export class ComposeAdminMessageDto {
   @IsString()
   body: string;
 
-  @ApiPropertyOptional({ description: 'Reusable template ID to prefill/send from' })
-  @IsOptional()
-  @IsUUID()
-  templateId?: string;
-
   @ApiPropertyOptional({
     default: true,
     description: 'Automatically save composed message as a reusable template',

@@ -1,11 +1,6 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { isUUID } from 'class-validator';
 import { User } from '../../auth/entities/user.entity';
 import { Subscription } from '../../payments/entities/subscription.entity';
 import { EmailService } from '../../email/email.service';
@@ -95,22 +90,20 @@ export class AdminMessagingService {
 
   async composeMessage(adminId: string, dto: ComposeAdminMessageDto) {
     const channel = dto.channel || 'email';
-    if (dto.templateId && !isUUID(dto.templateId)) {
-      throw new BadRequestException(
-        'templateId must be a valid message template UUID',
-      );
-    }
-    const template = dto.templateId
-      ? await this.templatesRepository.findOne({ where: { id: dto.templateId } })
-      : null;
-
-    if (dto.templateId && !template) {
-      throw new NotFoundException('Message template not found');
-    }
-
-    const subject = dto.subject || template?.subject || '';
-    const body = dto.body || template?.body || '';
+    const subject = dto.subject;
+    const body = dto.body;
     const recipients = await this.resolveRecipients(dto);
+
+    const savedTemplate =
+      dto.saveAsTemplate !== false
+        ? await this.createTemplate(adminId, {
+            channel,
+            name: dto.templateName || subject,
+            subject,
+            body,
+            metadata: dto.metadata,
+          })
+        : null;
 
     const message = this.messagesRepository.create({
       channel,
@@ -119,8 +112,8 @@ export class AdminMessagingService {
       recipients,
       subject,
       body,
-      metadata: dto.metadata || template?.metadata || null,
-      templateId: template?.id || null,
+      metadata: dto.metadata || null,
+      templateId: savedTemplate?.id || null,
       createdBy: adminId,
       sentAt: new Date(),
     });
@@ -158,17 +151,6 @@ export class AdminMessagingService {
       await this.messagesRepository.save(saved);
     }
 
-    let savedTemplate: AdminMessageTemplate | null = null;
-    if (dto.saveAsTemplate !== false) {
-      savedTemplate = await this.createTemplate(adminId, {
-        channel,
-        name: dto.templateName || subject,
-        subject,
-        body,
-        metadata: dto.metadata,
-      });
-    }
-
     return {
       message: saved,
       template: savedTemplate,
@@ -190,7 +172,7 @@ export class AdminMessagingService {
       subject: dto.subject,
       body: dto.body,
       metadata: dto.metadata || null,
-      templateId: dto.templateId || null,
+      templateId: null,
       createdBy: adminId,
     });
 
@@ -211,7 +193,6 @@ export class AdminMessagingService {
       subject: dto.subject ?? message.subject,
       body: dto.body ?? message.body,
       metadata: dto.metadata ?? message.metadata,
-      templateId: dto.templateId ?? message.templateId,
     });
 
     return this.messagesRepository.save(message);

@@ -9,7 +9,10 @@ import { Repository } from 'typeorm';
 import { User } from '../../auth/entities/user.entity';
 import { Session } from '../../auth/entities/session.entity';
 import { Role } from '../../auth/entities/role.entity';
-import { Business, BusinessType } from '../../business/entities/business.entity';
+import {
+  Business,
+  BusinessType,
+} from '../../business/entities/business.entity';
 import {
   BankAccount,
   SyncStatus,
@@ -104,7 +107,8 @@ export class AdminUsersService {
     const plan = await this.plansRepository.findOne({
       where: { id: planId, isActive: true },
     });
-    if (!plan) throw new NotFoundException('Active subscription plan not found');
+    if (!plan)
+      throw new NotFoundException('Active subscription plan not found');
 
     const subscription = await this.subscriptionsRepository.findOne({
       where: { user: { id: userId }, status: 'active' },
@@ -112,7 +116,9 @@ export class AdminUsersService {
       order: { createdAt: 'DESC' },
     });
     if (!subscription) {
-      throw new BadRequestException('User has no active subscription to change');
+      throw new BadRequestException(
+        'User has no active subscription to change',
+      );
     }
 
     const previousPlan = subscription.plan
@@ -205,15 +211,15 @@ export class AdminUsersService {
       String(sortOrder).toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
     const qb = this.usersRepository
-      .createQueryBuilder('user')
-      .leftJoin('user.roles', 'role')
-      .leftJoin('user.business', 'business')
+      .createQueryBuilder('appUser')
+      .leftJoin('appUser.roles', 'role')
+      .leftJoin('appUser.business', 'business')
       .addSelect('business.id', 'businessId')
       .addSelect('business.name', 'businessName')
       .addSelect('business.businessType', 'businessType')
       .addSelect(
-        `(SELECT COUNT(*)::int FROM mono_accounts ma WHERE ma."userId" = user.id AND COALESCE(ma."dataStatus", 'CONNECTED') != 'DISCONNECTED') +
-         (SELECT COUNT(*)::int FROM bank_accounts ba WHERE ba."userId" = user.id AND ba."syncStatus" != 'DISCONNECTED')`,
+        `(SELECT COUNT(*)::int FROM mono_accounts ma WHERE ma."userId" = appUser.id AND COALESCE(ma."dataStatus", 'CONNECTED') != 'DISCONNECTED') +
+         (SELECT COUNT(*)::int FROM bank_accounts ba WHERE ba."userId" = appUser.id AND ba."syncStatus" != 'DISCONNECTED')`,
         'banksLinked',
       )
       .addSelect(
@@ -222,12 +228,12 @@ export class AdminUsersService {
           FROM (
             SELECT ma."institutionName" AS "bankName"
             FROM mono_accounts ma
-            WHERE ma."userId" = user.id
+            WHERE ma."userId" = appUser.id
               AND COALESCE(ma."dataStatus", 'CONNECTED') != 'DISCONNECTED'
             UNION
             SELECT ba."bankName" AS "bankName"
             FROM bank_accounts ba
-            WHERE ba."userId" = user.id
+            WHERE ba."userId" = appUser.id
               AND ba."syncStatus" != 'DISCONNECTED'
           ) connected_bank
           WHERE connected_bank."bankName" IS NOT NULL
@@ -237,18 +243,18 @@ export class AdminUsersService {
         'connectedBanks',
       )
       .addSelect(
-        `(SELECT MAX(s."lastActiveAt") FROM sessions s WHERE s."userId" = user.id)`,
+        `(SELECT MAX(s."lastActiveAt") FROM sessions s WHERE s."userId" = appUser.id)`,
         'lastActive',
       )
       .addSelect(
-        `(SELECT MAX(s."createdAt") FROM sessions s WHERE s."userId" = user.id)`,
+        `(SELECT MAX(s."createdAt") FROM sessions s WHERE s."userId" = appUser.id)`,
         'lastLoginAt',
       )
       .addSelect(
         `(SELECT p.name
           FROM subscriptions sub
           INNER JOIN plans p ON p.id = sub."planId"
-          WHERE sub."userId" = user.id AND sub.status = 'active'
+          WHERE sub."userId" = appUser.id AND sub.status = 'active'
           ORDER BY sub."createdAt" DESC
           LIMIT 1)`,
         'planName',
@@ -257,7 +263,7 @@ export class AdminUsersService {
         `(SELECT p.slug
           FROM subscriptions sub
           INNER JOIN plans p ON p.id = sub."planId"
-          WHERE sub."userId" = user.id AND sub.status = 'active'
+          WHERE sub."userId" = appUser.id AND sub.status = 'active'
           ORDER BY sub."createdAt" DESC
           LIMIT 1)`,
         'planSlug',
@@ -267,7 +273,7 @@ export class AdminUsersService {
 
     if (search) {
       qb.andWhere(
-        '(CAST(user.id AS TEXT) ILIKE :search OR user.email ILIKE :search OR user.firstName ILIKE :search OR user.lastName ILIKE :search OR CONCAT(user.firstName, \' \', user.lastName) ILIKE :search OR business.name ILIKE :search)',
+        "(CAST(appUser.id AS TEXT) ILIKE :search OR appUser.email ILIKE :search OR appUser.firstName ILIKE :search OR appUser.lastName ILIKE :search OR CONCAT(appUser.firstName, ' ', appUser.lastName) ILIKE :search OR business.name ILIKE :search)",
         { search: `%${search}%` },
       );
     }
@@ -276,16 +282,16 @@ export class AdminUsersService {
     if (resolvedStatus) {
       switch (resolvedStatus) {
         case 'active':
-          qb.andWhere('user.isActive = :isActive', { isActive: true });
+          qb.andWhere('appUser.isActive = :isActive', { isActive: true });
           break;
         case 'inactive':
-          qb.andWhere('user.isActive = :isActive', { isActive: false });
+          qb.andWhere('appUser.isActive = :isActive', { isActive: false });
           break;
         case 'suspended':
-          qb.andWhere('user.isActive = :isActive', { isActive: false });
+          qb.andWhere('appUser.isActive = :isActive', { isActive: false });
           break;
         case 'deleted':
-          qb.andWhere("user.securitySettings ? 'deletedAt'");
+          qb.andWhere("appUser.securitySettings ? 'deletedAt'");
           break;
       }
     }
@@ -303,7 +309,7 @@ export class AdminUsersService {
         `EXISTS (
           SELECT 1 FROM subscriptions sub
           INNER JOIN plans p ON p.id = sub."planId"
-          WHERE sub."userId" = user.id
+          WHERE sub."userId" = appUser.id
             AND sub.status = 'active'
             AND (p.slug ILIKE :planType OR p.name ILIKE :planType)
         )`,
@@ -313,8 +319,8 @@ export class AdminUsersService {
 
     if (bankConnectionStatus) {
       const linkedBankCountSql = `(
-        (SELECT COUNT(*)::int FROM mono_accounts ma WHERE ma."userId" = user.id AND COALESCE(ma."dataStatus", 'CONNECTED') != 'DISCONNECTED') +
-        (SELECT COUNT(*)::int FROM bank_accounts ba WHERE ba."userId" = user.id AND ba."syncStatus" != 'DISCONNECTED')
+        (SELECT COUNT(*)::int FROM mono_accounts ma WHERE ma."userId" = appUser.id AND COALESCE(ma."dataStatus", 'CONNECTED') != 'DISCONNECTED') +
+        (SELECT COUNT(*)::int FROM bank_accounts ba WHERE ba."userId" = appUser.id AND ba."syncStatus" != 'DISCONNECTED')
       )`;
 
       if (bankConnectionStatus === 'connected') {
@@ -328,19 +334,19 @@ export class AdminUsersService {
     }
 
     const sortMap: Record<string, string> = {
-      name: 'user.firstName',
-      createdAt: 'user.createdAt',
+      name: 'appUser.firstName',
+      createdAt: 'appUser.createdAt',
       plan: '"planName"',
       banksLinked: '"banksLinked"',
       lastActive: '"lastActive"',
       businessType: 'business.businessType',
-      accountStatus: 'user.isActive',
+      accountStatus: 'appUser.isActive',
     };
-    qb.orderBy(sortMap[sortBy] || 'user.createdAt', normalizedSortOrder);
+    qb.orderBy(sortMap[sortBy] || 'appUser.createdAt', normalizedSortOrder);
 
     const [users, total] = await qb.getManyAndCount();
     const rawRows = await qb.getRawMany();
-    const rawByUserId = new Map(rawRows.map((row) => [row.user_id, row]));
+    const rawByUserId = new Map(rawRows.map((row) => [row.appUser_id, row]));
 
     return {
       users: users.map((user) => {
@@ -427,12 +433,12 @@ export class AdminUsersService {
           name:
             dto.businessName?.trim() ||
             `${user.firstName || user.email || 'User'}'s Business`,
-          businessType:
-            dto.businessType || BusinessType.SOLE_PROPRIETORSHIP,
+          businessType: dto.businessType || BusinessType.SOLE_PROPRIETORSHIP,
         });
       } else {
         if (dto.businessName !== undefined) business.name = dto.businessName;
-        if (dto.businessType !== undefined) business.businessType = dto.businessType;
+        if (dto.businessType !== undefined)
+          business.businessType = dto.businessType;
       }
 
       await this.businessRepository.save(business);

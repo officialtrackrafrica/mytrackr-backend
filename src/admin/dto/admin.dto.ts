@@ -674,6 +674,7 @@ export class CreateAdminCategorizationRuleDto {
     description: 'Keywords that should map to this category',
   })
   @IsArray()
+  @ArrayNotEmpty()
   @IsString({ each: true })
   keywords: string[];
 

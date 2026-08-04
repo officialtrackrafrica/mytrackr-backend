@@ -65,8 +65,19 @@ export class AdminCategorizationRulesService {
     const subCategory = normalizeCategorizationSubCategory(
       dto.subCategory || dto.category,
     );
+    const existing = await this.findExistingKeywordRules(
+      dto.category,
+      subCategory,
+      keywords,
+    );
+    const existingKeywords = new Set(
+      existing.map((rule) => rule.matchValue.trim().toLowerCase()),
+    );
+    const missingKeywords = keywords.filter(
+      (keyword) => !existingKeywords.has(keyword.toLowerCase()),
+    );
 
-    const rules = keywords.map((keyword) =>
+    const rules = missingKeywords.map((keyword) =>
       this.rulesRepository.create({
         isSystem: true,
         matchType: MatchType.CONTAINS,
@@ -79,8 +90,9 @@ export class AdminCategorizationRulesService {
       }),
     );
 
-    const saved = await this.rulesRepository.save(rules);
-    return this.groupRules(saved)[0];
+    const saved =
+      rules.length > 0 ? await this.rulesRepository.save(rules) : [];
+    return this.groupRules([...existing, ...saved])[0];
   }
 
   async updateRuleGroup(id: string, dto: UpdateAdminCategorizationRuleDto) {
@@ -126,14 +138,43 @@ export class AdminCategorizationRulesService {
   }
 
   private normalizeKeywords(keywords: string[]) {
-    return Array.from(
-      new Set(
-        keywords
-          .flatMap((keyword) => keyword.split(','))
-          .map((keyword) => keyword.trim())
-          .filter(Boolean),
-      ),
-    );
+    const normalized = new Map<string, string>();
+
+    keywords
+      .flatMap((keyword) => keyword.split(','))
+      .map((keyword) => keyword.trim())
+      .filter(Boolean)
+      .forEach((keyword) => {
+        const key = keyword.toLowerCase();
+        if (!normalized.has(key)) normalized.set(key, keyword);
+      });
+
+    return Array.from(normalized.values());
+  }
+
+  private findExistingKeywordRules(
+    category: string,
+    subCategory: string,
+    keywords: string[],
+  ) {
+    if (keywords.length === 0) return Promise.resolve([]);
+
+    return this.rulesRepository
+      .createQueryBuilder('rule')
+      .where('rule.isSystem = true')
+      .andWhere('rule.businessId IS NULL')
+      .andWhere('rule.matchType = :matchType', {
+        matchType: MatchType.CONTAINS,
+      })
+      .andWhere('LOWER(rule.category) = LOWER(:category)', { category })
+      .andWhere('LOWER(rule.subCategory) = LOWER(:subCategory)', {
+        subCategory,
+      })
+      .andWhere('LOWER(rule.matchValue) IN (:...keywords)', {
+        keywords: keywords.map((keyword) => keyword.toLowerCase()),
+      })
+      .orderBy('rule.createdAt', 'ASC')
+      .getMany();
   }
 
   private findRelatedRules(anchor: CategorizationRule) {

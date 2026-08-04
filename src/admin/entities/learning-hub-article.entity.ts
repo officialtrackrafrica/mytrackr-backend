@@ -25,10 +25,10 @@ export class LearningHubArticle {
   @Column()
   category: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   createdBy: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   updatedBy: string | null;
 
   @CreateDateColumn()

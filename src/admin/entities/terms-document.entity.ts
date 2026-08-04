@@ -33,10 +33,10 @@ export class TermsDocument {
   @Column({ type: 'timestamptz', nullable: true })
   publishedAt: Date | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   createdBy: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   updatedBy: string | null;
 
   @CreateDateColumn()

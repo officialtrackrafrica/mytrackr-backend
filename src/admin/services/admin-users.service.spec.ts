@@ -29,15 +29,16 @@ describe('AdminUsersService', () => {
 
     await service.findAllUsers({});
 
-    expect(usersRepository.createQueryBuilder).toHaveBeenCalledWith('appUser');
+    expect(usersRepository.createQueryBuilder).toHaveBeenCalledWith('app_user');
     const rawSelections = queryBuilder.addSelect.mock.calls
       .map(([selection]) => selection)
       .filter((selection) => typeof selection === 'string')
       .join('\n');
-    expect(rawSelections).toContain('appUser.id');
+    expect(rawSelections).toContain('app_user.id');
     expect(rawSelections).not.toMatch(/\buser\.id\b/);
+    expect(rawSelections).not.toMatch(/\bappUser\./);
     expect(queryBuilder.orderBy).toHaveBeenCalledWith(
-      'appUser.createdAt',
+      'app_user.createdAt',
       'DESC',
     );
   });

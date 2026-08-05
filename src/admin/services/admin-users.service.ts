@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   Logger,
@@ -395,9 +396,18 @@ export class AdminUsersService {
   async updateUser(userId: string, dto: AdminUpdateUserDto) {
     const user = await this.usersRepository.findOne({
       where: { id: userId },
-      relations: ['business'],
+      relations: ['business', 'roles'],
     });
     if (!user) throw new NotFoundException('User not found');
+
+    const isAdminAccount = user.roles?.some((role) =>
+      ['Admin', 'Super Admin'].includes(role.name),
+    );
+    if (isAdminAccount) {
+      throw new ForbiddenException(
+        'Admin accounts cannot be updated through user management',
+      );
+    }
 
     if (dto.email) {
       const normalizedEmail = dto.email.trim().toLowerCase();

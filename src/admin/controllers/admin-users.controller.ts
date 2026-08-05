@@ -77,6 +77,10 @@ export class AdminUsersController {
       'Update user profile, email, business name, and business type as admin',
   })
   @ApiResponse({ status: 200, description: 'User updated' })
+  @ApiResponse({
+    status: 403,
+    description: 'Admin accounts cannot be updated through user management',
+  })
   @ApiResponse({ status: 404, description: 'User not found' })
   async updateUser(
     @Param('id') userId: string,

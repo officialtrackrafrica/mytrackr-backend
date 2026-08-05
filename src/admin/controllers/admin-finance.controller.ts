@@ -23,7 +23,11 @@ import { AppAbility } from '../../casl/casl-ability.factory';
 import { Action } from '../../casl/action.enum';
 import { AdminFinanceService } from '../services/admin-finance.service';
 import { AdminAuditService } from '../services/admin-audit.service';
-import { TransactionQueryDto, DashboardQueryDto } from '../dto';
+import {
+  AdminSubscriptionHistoryQueryDto,
+  TransactionQueryDto,
+  DashboardQueryDto,
+} from '../dto';
 import {
   PlanResponseDto,
   UpdatePlanCapabilitiesDto,
@@ -67,6 +71,18 @@ export class AdminFinanceController {
   })
   async getFinancialSummary(@Query() query: DashboardQueryDto) {
     return this.financeService.getFinancialSummary(query.period);
+  }
+
+  @Get('subscriptions/history')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({
+    summary: 'List all subscription history across users with filters',
+  })
+  @ApiResponse({ status: 200, description: 'Paginated subscription history' })
+  async getAllSubscriptionHistory(
+    @Query() query: AdminSubscriptionHistoryQueryDto,
+  ) {
+    return this.financeService.getAllSubscriptionHistory(query);
   }
 
   @Patch('subscription-plans/:id/price')

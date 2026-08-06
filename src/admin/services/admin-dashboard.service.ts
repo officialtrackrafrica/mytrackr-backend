@@ -36,7 +36,126 @@ export class AdminDashboardService {
 
   async getStats(query: AdminStatsQueryDto = {}) {
     const range = this.resolveDateRange(query);
+    const previousRange = this.getPreviousDateRange(range);
+    const [currentStats, previousStats] = await Promise.all([
+      this.getStatsSnapshot(range),
+      previousRange ? this.getStatsSnapshot(previousRange) : undefined,
+    ]);
 
+    const planSubscriptionStats = currentStats.planSubscriptionStats.map(
+      (plan) => {
+        const previousPlan = previousStats?.planSubscriptionStats.find(
+          (candidate) => candidate.planId === plan.planId,
+        );
+
+        return {
+          ...plan,
+          percentageChanges: {
+            totalSubscriptions: this.calculatePercentageChange(
+              plan.totalSubscriptions,
+              previousPlan?.totalSubscriptions,
+            ),
+            activeSubscriptions: this.calculatePercentageChange(
+              plan.activeSubscriptions,
+              previousPlan?.activeSubscriptions,
+            ),
+            pendingSubscriptions: this.calculatePercentageChange(
+              plan.pendingSubscriptions,
+              previousPlan?.pendingSubscriptions,
+            ),
+            canceledSubscriptions: this.calculatePercentageChange(
+              plan.canceledSubscriptions,
+              previousPlan?.canceledSubscriptions,
+            ),
+            failedSubscriptions: this.calculatePercentageChange(
+              plan.failedSubscriptions,
+              previousPlan?.failedSubscriptions,
+            ),
+            recurringRevenue: this.calculatePercentageChange(
+              plan.recurringRevenue,
+              previousPlan?.recurringRevenue,
+            ),
+            churnRate: this.calculatePercentageChange(
+              plan.churnRate,
+              previousPlan?.churnRate,
+            ),
+          },
+        };
+      },
+    );
+
+    return {
+      filters: {
+        date: query.date,
+        dateFrom: range?.start?.toISOString(),
+        dateTo: range?.end?.toISOString(),
+        previousDateFrom: previousRange?.start?.toISOString(),
+        previousDateTo: previousRange?.end?.toISOString(),
+      },
+      ...currentStats,
+      planSubscriptionStats,
+      percentageChanges: {
+        totalUsers: this.calculatePercentageChange(
+          currentStats.totalUsers,
+          previousStats?.totalUsers,
+        ),
+        totalSyncedBankAccounts: this.calculatePercentageChange(
+          currentStats.totalSyncedBankAccounts,
+          previousStats?.totalSyncedBankAccounts,
+        ),
+        activeUsers: this.calculatePercentageChange(
+          currentStats.activeUsers,
+          previousStats?.activeUsers,
+        ),
+        inactiveUsers: this.calculatePercentageChange(
+          currentStats.inactiveUsers,
+          previousStats?.inactiveUsers,
+        ),
+        deletedAccounts: this.calculatePercentageChange(
+          currentStats.deletedAccounts,
+          previousStats?.deletedAccounts,
+        ),
+        uncategorizedTransactions: this.calculatePercentageChange(
+          currentStats.uncategorizedTransactions,
+          previousStats?.uncategorizedTransactions,
+        ),
+        activeSubscriptions: this.calculatePercentageChange(
+          currentStats.activeSubscriptions,
+          previousStats?.activeSubscriptions,
+        ),
+        failedSubscriptions: this.calculatePercentageChange(
+          currentStats.failedSubscriptions,
+          previousStats?.failedSubscriptions,
+        ),
+        recurringRevenue: this.calculatePercentageChange(
+          currentStats.recurringRevenue,
+          previousStats?.recurringRevenue,
+        ),
+        realizedSubscriptionRevenue: this.calculatePercentageChange(
+          currentStats.realizedSubscriptionRevenue,
+          previousStats?.realizedSubscriptionRevenue,
+        ),
+        churnRate: this.calculatePercentageChange(
+          currentStats.churnRate,
+          previousStats?.churnRate,
+        ),
+        totalLinkedAccounts: this.calculatePercentageChange(
+          currentStats.totalLinkedAccounts,
+          previousStats?.totalLinkedAccounts,
+        ),
+        totalTransactions: this.calculatePercentageChange(
+          currentStats.totalTransactions,
+          previousStats?.totalTransactions,
+        ),
+        totalTransactionVolume: this.calculatePercentageChange(
+          currentStats.totalTransactionVolume,
+          previousStats?.totalTransactionVolume,
+        ),
+      },
+    };
+  }
+
+  private async getStatsSnapshot(range?: { start?: Date; end?: Date }) {
     const [
       totalUsers,
       activeUsers,
@@ -83,11 +202,6 @@ export class AdminDashboardService {
         : 0;
 
     return {
-      filters: {
-        date: query.date,
-        dateFrom: range?.start?.toISOString(),
-        dateTo: range?.end?.toISOString(),
-      },
       totalUsers,
       totalSyncedBankAccounts,
       activeUsers,
@@ -214,6 +328,39 @@ export class AdminDashboardService {
     }
 
     return { start, end };
+  }
+
+  private getPreviousDateRange(range?: { start?: Date; end?: Date }) {
+    if (!range?.start || !range.end) {
+      return undefined;
+    }
+
+    const duration = range.end.getTime() - range.start.getTime();
+    if (duration <= 0) {
+      return undefined;
+    }
+
+    return {
+      start: new Date(range.start.getTime() - duration),
+      end: new Date(range.start),
+    };
+  }
+
+  private calculatePercentageChange(
+    current: number,
+    previous: number | undefined,
+  ): number | null {
+    if (previous === undefined) {
+      return null;
+    }
+
+    if (previous === 0) {
+      return current === 0 ? 0 : null;
+    }
+
+    return Number(
+      (((current - previous) / Math.abs(previous)) * 100).toFixed(2),
+    );
   }
 
   private parseDate(value: string, field: string) {

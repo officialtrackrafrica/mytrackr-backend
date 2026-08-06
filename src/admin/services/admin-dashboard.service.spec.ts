@@ -1,6 +1,26 @@
 import { AdminDashboardService } from './admin-dashboard.service';
 
 describe('AdminDashboardService', () => {
+  const createStatsSnapshot = (overrides: Record<string, unknown> = {}) => ({
+    totalUsers: 0,
+    totalSyncedBankAccounts: 0,
+    activeUsers: 0,
+    inactiveUsers: 0,
+    deletedAccounts: 0,
+    uncategorizedTransactions: 0,
+    activeSubscriptions: 0,
+    failedSubscriptions: 0,
+    currency: 'NGN',
+    recurringRevenue: 0,
+    realizedSubscriptionRevenue: 0,
+    churnRate: 0,
+    planSubscriptionStats: [],
+    totalLinkedAccounts: 0,
+    totalTransactions: 0,
+    totalTransactionVolume: 0,
+    ...overrides,
+  });
+
   it('uses only normalized finance transactions for platform statistics', async () => {
     const monoTransactionsRepository = {
       createQueryBuilder: jest.fn(),
@@ -116,6 +136,87 @@ describe('AdminDashboardService', () => {
         { type: 'credit', count: 2, totalAmount: 123.45, avgAmount: 61.73 },
       ],
       byCategory: [{ category: 'income', count: 2, totalAmount: 123.45 }],
+    });
+  });
+
+  it('returns percentage changes against the preceding equal-length period', async () => {
+    const service = new AdminDashboardService(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    const current = createStatsSnapshot({
+      totalUsers: 15,
+      totalTransactions: 5,
+      recurringRevenue: 1000,
+      planSubscriptionStats: [
+        {
+          planId: 'solo',
+          totalSubscriptions: 6,
+          activeSubscriptions: 4,
+          pendingSubscriptions: 0,
+          canceledSubscriptions: 2,
+          failedSubscriptions: 0,
+          recurringRevenue: 400,
+          churnRate: 33.33,
+        },
+      ],
+    });
+    const previous = createStatsSnapshot({
+      totalUsers: 10,
+      totalTransactions: 0,
+      recurringRevenue: 800,
+      planSubscriptionStats: [
+        {
+          planId: 'solo',
+          totalSubscriptions: 4,
+          activeSubscriptions: 4,
+          pendingSubscriptions: 0,
+          canceledSubscriptions: 0,
+          failedSubscriptions: 0,
+          recurringRevenue: 200,
+          churnRate: 0,
+        },
+      ],
+    });
+    const snapshotSpy = jest
+      .spyOn(service as any, 'getStatsSnapshot')
+      .mockResolvedValueOnce(current)
+      .mockResolvedValueOnce(previous);
+
+    const result = await service.getStats({
+      dateFrom: '2026-08-01',
+      dateTo: '2026-08-06',
+    });
+
+    expect(snapshotSpy).toHaveBeenNthCalledWith(1, {
+      start: new Date('2026-08-01'),
+      end: new Date('2026-08-06'),
+    });
+    expect(snapshotSpy).toHaveBeenNthCalledWith(2, {
+      start: new Date('2026-07-27'),
+      end: new Date('2026-08-01'),
+    });
+    expect(result.filters).toEqual({
+      date: undefined,
+      dateFrom: '2026-08-01T00:00:00.000Z',
+      dateTo: '2026-08-06T00:00:00.000Z',
+      previousDateFrom: '2026-07-27T00:00:00.000Z',
+      previousDateTo: '2026-08-01T00:00:00.000Z',
+    });
+    expect(result.percentageChanges.totalUsers).toBe(50);
+    expect(result.percentageChanges.recurringRevenue).toBe(25);
+    expect(result.percentageChanges.totalTransactions).toBeNull();
+    expect(result.planSubscriptionStats[0].percentageChanges).toMatchObject({
+      totalSubscriptions: 50,
+      activeSubscriptions: 0,
+      recurringRevenue: 100,
+      churnRate: null,
     });
   });
 });

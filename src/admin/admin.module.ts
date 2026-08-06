@@ -67,6 +67,7 @@ import { SecurityModule } from '../security/security.module';
 import { StorageModule } from '../storage/storage.module';
 import { IntegrationsModule } from '../integrations/integrations.module';
 import { PaymentsModule } from '../payments/payments.module';
+import { ReportsModule } from '../reports/reports.module';
 
 @Module({
   imports: [
@@ -102,6 +103,7 @@ import { PaymentsModule } from '../payments/payments.module';
     StorageModule,
     IntegrationsModule,
     PaymentsModule,
+    ReportsModule,
   ],
   controllers: [
     AdminUsersController,

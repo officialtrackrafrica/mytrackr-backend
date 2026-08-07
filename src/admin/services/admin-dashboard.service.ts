@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull, SelectQueryBuilder, ObjectLiteral } from 'typeorm';
 import { User } from '../../auth/entities/user.entity';
@@ -9,7 +9,11 @@ import { Transaction as FinanceTransaction } from '../../finance/entities/transa
 import { Subscription } from '../../payments/entities/subscription.entity';
 import { Plan } from '../../payments/entities/plan.entity';
 import { PaymentTransaction } from '../../payments/entities/payment-transaction.entity';
-import { AdminStatsQueryDto } from '../dto';
+import { AdminStatsQueryDto, DashboardQueryDto } from '../dto';
+import {
+  resolveAdminDateRange,
+  serializeAdminDateRange,
+} from '../utils/admin-date-range';
 
 @Injectable()
 export class AdminDashboardService {
@@ -35,7 +39,7 @@ export class AdminDashboardService {
   ) {}
 
   async getStats(query: AdminStatsQueryDto = {}) {
-    const range = this.resolveDateRange(query);
+    const range = resolveAdminDateRange(query);
     const previousRange = this.getPreviousDateRange(range);
     const [currentStats, previousStats] = await Promise.all([
       this.getStatsSnapshot(range),
@@ -221,7 +225,9 @@ export class AdminDashboardService {
     };
   }
 
-  async getRegistrations(period: 'day' | 'week' | 'month' = 'month') {
+  async getRegistrations(query: DashboardQueryDto = {}) {
+    const period = query.period || 'month';
+    const range = resolveAdminDateRange(query);
     let dateFormat: string;
     switch (period) {
       case 'day':
@@ -236,17 +242,20 @@ export class AdminDashboardService {
         break;
     }
 
-    const result = await this.usersRepository
+    const qb = this.usersRepository
       .createQueryBuilder('user')
       .select(`TO_CHAR(user.createdAt, '${dateFormat}')`, 'period')
       .addSelect('COUNT(*)', 'count')
       .groupBy(`TO_CHAR(user.createdAt, '${dateFormat}')`)
       .orderBy('period', 'DESC')
-      .limit(30)
-      .getRawMany();
+      .limit(30);
+
+    this.applyDateRange(qb, 'user', 'createdAt', range);
+    const result = await qb.getRawMany();
 
     return {
       period,
+      filters: serializeAdminDateRange(query, range),
       data: result.map((r) => ({
         period: r.period,
         count: parseInt(r.count, 10),
@@ -305,31 +314,6 @@ export class AdminDashboardService {
     return { activeSessions: count };
   }
 
-  private resolveDateRange(query: AdminStatsQueryDto) {
-    const from = query.dateFrom || query.startDate;
-    const to = query.dateTo || query.endDate;
-
-    if (query.date) {
-      const start = this.parseDate(query.date, 'date');
-      const end = new Date(start);
-      end.setDate(end.getDate() + 1);
-      return { start, end };
-    }
-
-    if (!from && !to) {
-      return undefined;
-    }
-
-    const start = from ? this.parseDate(from, 'dateFrom') : undefined;
-    const end = to ? this.parseDate(to, 'dateTo') : undefined;
-
-    if (start && end && start > end) {
-      throw new BadRequestException('dateFrom must be before dateTo');
-    }
-
-    return { start, end };
-  }
-
   private getPreviousDateRange(range?: { start?: Date; end?: Date }) {
     if (!range?.start || !range.end) {
       return undefined;
@@ -361,14 +345,6 @@ export class AdminDashboardService {
     return Number(
       (((current - previous) / Math.abs(previous)) * 100).toFixed(2),
     );
-  }
-
-  private parseDate(value: string, field: string) {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
-      throw new BadRequestException(`${field} must be a valid date`);
-    }
-    return date;
   }
 
   private applyDateRange<T extends ObjectLiteral>(

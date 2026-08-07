@@ -82,7 +82,7 @@ export class AdminDashboardController {
     description: 'Registration data grouped by period',
   })
   async getRegistrations(@Query() query: DashboardQueryDto) {
-    return this.dashboardService.getRegistrations(query.period);
+    return this.dashboardService.getRegistrations(query);
   }
 
   @Get('transactions/summary')

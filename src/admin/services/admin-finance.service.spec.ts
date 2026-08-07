@@ -47,6 +47,7 @@ describe('AdminFinanceService', () => {
       addGroupBy: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
       getRawMany: jest.fn().mockResolvedValue([
         {
           period: '2026-08',
@@ -66,13 +67,32 @@ describe('AdminFinanceService', () => {
       {} as any,
     );
 
-    const result = await service.getFinancialSummary('month');
+    const result = await service.getFinancialSummary({
+      period: 'month',
+      dateFrom: '2026-02-07',
+      dateTo: '2026-08-07',
+    });
 
     expect(queryBuilder.where).toHaveBeenCalledWith('tx.currency = :currency', {
       currency: 'NGN',
     });
+    expect(queryBuilder.andWhere).toHaveBeenNthCalledWith(
+      1,
+      'tx.date >= :summaryDateFrom',
+      { summaryDateFrom: new Date('2026-02-07') },
+    );
+    expect(queryBuilder.andWhere).toHaveBeenNthCalledWith(
+      2,
+      'tx.date < :summaryDateTo',
+      { summaryDateTo: new Date('2026-08-07') },
+    );
     expect(result).toEqual({
       period: 'month',
+      filters: {
+        date: undefined,
+        dateFrom: '2026-02-07T00:00:00.000Z',
+        dateTo: '2026-08-07T00:00:00.000Z',
+      },
       currency: 'NGN',
       data: [
         {

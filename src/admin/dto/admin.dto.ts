@@ -227,6 +227,35 @@ export class DashboardQueryDto {
   @IsOptional()
   @IsEnum(['day', 'week', 'month'])
   period?: 'day' | 'week' | 'month' = 'month';
+
+  @ApiPropertyOptional({ description: 'Single date filter (YYYY-MM-DD)' })
+  @IsOptional()
+  @IsString()
+  date?: string;
+
+  @ApiPropertyOptional({
+    description: 'Start date for range filter (YYYY-MM-DD or ISO)',
+  })
+  @IsOptional()
+  @IsString()
+  dateFrom?: string;
+
+  @ApiPropertyOptional({
+    description: 'Exclusive end date for range filter (YYYY-MM-DD or ISO)',
+  })
+  @IsOptional()
+  @IsString()
+  dateTo?: string;
+
+  @ApiPropertyOptional({ description: 'Alias for dateFrom' })
+  @IsOptional()
+  @IsString()
+  startDate?: string;
+
+  @ApiPropertyOptional({ description: 'Alias for dateTo' })
+  @IsOptional()
+  @IsString()
+  endDate?: string;
 }
 
 export class AdminStatsQueryDto {

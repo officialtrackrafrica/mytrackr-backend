@@ -219,4 +219,53 @@ describe('AdminDashboardService', () => {
       churnRate: null,
     });
   });
+
+  it('filters registration trends by a single calendar date', async () => {
+    const queryBuilder = {
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getRawMany: jest
+        .fn()
+        .mockResolvedValue([{ period: '2026-08-06', count: '3' }]),
+    };
+    const service = new AdminDashboardService(
+      { createQueryBuilder: jest.fn().mockReturnValue(queryBuilder) } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+
+    const result = await service.getRegistrations({
+      period: 'day',
+      date: '2026-08-06',
+    });
+
+    expect(queryBuilder.andWhere).toHaveBeenNthCalledWith(
+      1,
+      'user.createdAt >= :user_createdAt_start',
+      { user_createdAt_start: new Date('2026-08-06') },
+    );
+    expect(queryBuilder.andWhere).toHaveBeenNthCalledWith(
+      2,
+      'user.createdAt < :user_createdAt_end',
+      { user_createdAt_end: new Date('2026-08-07') },
+    );
+    expect(result).toEqual({
+      period: 'day',
+      filters: {
+        date: '2026-08-06',
+        dateFrom: '2026-08-06T00:00:00.000Z',
+        dateTo: '2026-08-07T00:00:00.000Z',
+      },
+      data: [{ period: '2026-08-06', count: 3 }],
+    });
+  });
 });

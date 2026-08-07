@@ -70,7 +70,7 @@ export class AdminFinanceController {
     description: 'Financial summary grouped by period',
   })
   async getFinancialSummary(@Query() query: DashboardQueryDto) {
-    return this.financeService.getFinancialSummary(query.period);
+    return this.financeService.getFinancialSummary(query);
   }
 
   @Get('subscriptions/history')

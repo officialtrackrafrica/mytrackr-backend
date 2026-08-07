@@ -5,7 +5,15 @@ import { MonoTransaction as Transaction } from '../../mono/entities/transaction.
 import { MonoAccount } from '../../mono/entities/mono-account.entity';
 import { PaymentTransaction } from '../../payments/entities/payment-transaction.entity';
 import { Subscription } from '../../payments/entities/subscription.entity';
-import { AdminSubscriptionHistoryQueryDto, TransactionQueryDto } from '../dto';
+import {
+  AdminSubscriptionHistoryQueryDto,
+  DashboardQueryDto,
+  TransactionQueryDto,
+} from '../dto';
+import {
+  resolveAdminDateRange,
+  serializeAdminDateRange,
+} from '../utils/admin-date-range';
 
 @Injectable()
 export class AdminFinanceService {
@@ -155,7 +163,9 @@ export class AdminFinanceService {
     }));
   }
 
-  async getFinancialSummary(period: 'day' | 'week' | 'month' = 'month') {
+  async getFinancialSummary(query: DashboardQueryDto = {}) {
+    const period = query.period || 'month';
+    const range = resolveAdminDateRange(query);
     let dateFormat: string;
     switch (period) {
       case 'day':
@@ -170,7 +180,7 @@ export class AdminFinanceService {
         break;
     }
 
-    const result = await this.transactionsRepository
+    const qb = this.transactionsRepository
       .createQueryBuilder('tx')
       .select(`TO_CHAR(tx.date, '${dateFormat}')`, 'period')
       .addSelect('tx.type', 'type')
@@ -180,8 +190,18 @@ export class AdminFinanceService {
       .groupBy(`TO_CHAR(tx.date, '${dateFormat}')`)
       .addGroupBy('tx.type')
       .orderBy('period', 'DESC')
-      .limit(60)
-      .getRawMany();
+      .limit(60);
+
+    if (range?.start) {
+      qb.andWhere('tx.date >= :summaryDateFrom', {
+        summaryDateFrom: range.start,
+      });
+    }
+    if (range?.end) {
+      qb.andWhere('tx.date < :summaryDateTo', { summaryDateTo: range.end });
+    }
+
+    const result = await qb.getRawMany();
 
     const periodMap: Record<string, any> = {};
     result.forEach((r) => {
@@ -209,6 +229,7 @@ export class AdminFinanceService {
 
     return {
       period,
+      filters: serializeAdminDateRange(query, range),
       currency: 'NGN',
       data: Object.values(periodMap),
     };

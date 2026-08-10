@@ -152,8 +152,8 @@ export class AdminUsersController {
 
   @Post(':id/reset-password')
   @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
-  @ApiOperation({ summary: 'Force password reset for a user' })
-  @ApiResponse({ status: 200, description: 'Password reset initiated' })
+  @ApiOperation({ summary: 'Email a password reset OTP to a user' })
+  @ApiResponse({ status: 200, description: 'Password reset email sent' })
   @ApiResponse({ status: 404, description: 'User not found' })
   async forcePasswordReset(@Param('id') userId: string, @Req() req: any) {
     const result = await this.adminUsersService.forcePasswordReset(userId);

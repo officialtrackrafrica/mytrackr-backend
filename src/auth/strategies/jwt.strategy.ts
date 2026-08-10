@@ -77,6 +77,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('User not found');
     }
 
+    if (!user.isActive) {
+      throw new UnauthorizedException('Account is inactive or suspended');
+    }
+
     return {
       ...user,
       sessionId: payload.sessionId,

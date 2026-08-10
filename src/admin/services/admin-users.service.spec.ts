@@ -26,6 +26,7 @@ describe('AdminUsersService', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any,
     );
 
     await service.findAllUsers({});
@@ -66,6 +67,7 @@ describe('AdminUsersService', () => {
         {} as any,
         {} as any,
         {} as any,
+        {} as any,
       );
 
       await expect(
@@ -78,4 +80,43 @@ describe('AdminUsersService', () => {
       expect(usersRepository.save).not.toHaveBeenCalled();
     },
   );
+
+  it('emails the reset OTP without returning it to the admin', async () => {
+    const user = {
+      id: 'user-id',
+      email: 'user@example.com',
+      firstName: 'Ada',
+    };
+    const usersRepository = {
+      findOne: jest.fn().mockResolvedValue(user),
+      save: jest.fn().mockResolvedValue(user),
+    };
+    const emailService = {
+      sendPasswordResetOtpEmail: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new AdminUsersService(
+      usersRepository as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      emailService as any,
+    );
+
+    const result = await service.forcePasswordReset(user.id);
+
+    expect(emailService.sendPasswordResetOtpEmail).toHaveBeenCalledWith(
+      user.email,
+      user.firstName,
+      expect.stringMatching(/^\d{6}$/),
+      { expiresIn: '1 hour', throwOnError: true },
+    );
+    expect(result).not.toHaveProperty('resetToken');
+    expect(result.message).toBe('Password reset email sent');
+  });
 });

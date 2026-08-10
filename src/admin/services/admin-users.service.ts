@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { User } from '../../auth/entities/user.entity';
 import { Session } from '../../auth/entities/session.entity';
 import { Role } from '../../auth/entities/role.entity';
@@ -23,6 +23,7 @@ import { Subscription } from '../../payments/entities/subscription.entity';
 import { Plan } from '../../payments/entities/plan.entity';
 import { PaymentTransaction } from '../../payments/entities/payment-transaction.entity';
 import { EncryptionService } from '../../security/encryption.service';
+import { EmailService } from '../../email/email.service';
 import {
   AdminQueryDto,
   AdminResetUserPasswordDto,
@@ -55,10 +56,11 @@ export class AdminUsersService {
     @InjectRepository(PaymentTransaction)
     private readonly paymentTransactionsRepository: Repository<PaymentTransaction>,
     private readonly encryptionService: EncryptionService,
+    private readonly emailService: EmailService,
   ) {}
 
   private generateOtp(): string {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+    return crypto.randomInt(100000, 1000000).toString();
   }
 
   private hashResetCode(code: string): string {
@@ -84,7 +86,7 @@ export class AdminUsersService {
         user.isActive = false;
 
         await this.sessionsRepository.update(
-          { userId, revokedAt: undefined as any },
+          { userId, revokedAt: IsNull() },
           { revokedAt: new Date() },
         );
         break;
@@ -157,19 +159,25 @@ export class AdminUsersService {
     if (!user) throw new NotFoundException('User not found');
 
     const resetToken = this.generateOtp();
-    const resetExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const resetExpires = new Date(Date.now() + 60 * 60 * 1000);
 
     user.resetPasswordToken = this.hashResetCode(resetToken);
     user.resetPasswordExpires = resetExpires;
     await this.usersRepository.save(user);
 
-    this.logger.log(`Password reset forced for user ${userId}`);
+    await this.emailService.sendPasswordResetOtpEmail(
+      user.email,
+      user.firstName,
+      resetToken,
+      { expiresIn: '1 hour', throwOnError: true },
+    );
+
+    this.logger.log(`Password reset email sent for user ${userId}`);
 
     return {
-      message: 'Password reset initiated',
+      message: 'Password reset email sent',
       userId: user.id,
       email: user.email,
-      resetToken,
       expiresAt: resetExpires,
     };
   }

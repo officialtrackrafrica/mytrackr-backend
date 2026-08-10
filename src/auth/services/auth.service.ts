@@ -162,6 +162,14 @@ export class AuthService {
       );
     }
 
+    if (!user.isActive) {
+      throw new AuthError(
+        'ACCOUNT_INACTIVE',
+        'Account is inactive or suspended',
+        403,
+      );
+    }
+
     if (
       requiredRoles?.length &&
       !user.roles?.some((role) => requiredRoles.includes(role.name))
@@ -277,6 +285,14 @@ export class AuthService {
 
     if (!user) {
       throw new AuthError('USER_NOT_FOUND', 'User not found');
+    }
+
+    if (!user.isActive) {
+      throw new AuthError(
+        'ACCOUNT_INACTIVE',
+        'Account is inactive or suspended',
+        403,
+      );
     }
 
     const passwordChangedAt = user.securitySettings?.lastPasswordChange;
@@ -784,7 +800,15 @@ export class AuthService {
       throw new AuthError('GOOGLE_AUTH_FAILED', 'Google authentication failed');
     }
 
-    if (!user.isVerified || !user.isActive) {
+    if (!user.isActive && user.isVerified) {
+      throw new AuthError(
+        'ACCOUNT_INACTIVE',
+        'Account is inactive or suspended',
+        403,
+      );
+    }
+
+    if (!user.isVerified) {
       await this.usersRepository.update(user.id, {
         isVerified: true,
         isActive: true,

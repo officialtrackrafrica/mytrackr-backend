@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { Strategy, VerifyCallback, Profile } from 'passport-google-oauth20';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -50,6 +50,11 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     }
 
     if (user) {
+      if (!user.isActive && user.isVerified) {
+        done(new ForbiddenException('Account is inactive or suspended'), false);
+        return;
+      }
+
       const updates: Partial<User> = {};
       if (!user.googleId) {
         this.logger.warn(
@@ -59,8 +64,6 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
       }
       if (!user.isVerified) {
         updates.isVerified = true;
-      }
-      if (!user.isActive) {
         updates.isActive = true;
       }
       if (!user.signedUpWithGoogle && user.googleId && !user.passwordHash) {

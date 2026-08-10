@@ -1,11 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { MailerService } from '@nestjs-modules/mailer';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
 
-  constructor(private readonly mailerService: MailerService) {}
+  constructor(
+    private readonly mailerService: MailerService,
+    private readonly configService: ConfigService,
+  ) {}
 
   async sendCustomEmail(email: string, subject: string, body: string) {
     try {
@@ -62,15 +66,25 @@ export class EmailService {
     email: string,
     name: string | undefined,
     otp: string,
+    options: { expiresIn?: string; throwOnError?: boolean } = {},
   ) {
+    const frontendUrl = (
+      this.configService.get<string>('FRONTEND_URL') ||
+      this.configService.get<string>('APP_URL') ||
+      'http://localhost:3000'
+    ).replace(/\/$/, '');
+    const resetLink = `${frontendUrl}/verify-otp?email=${encodeURIComponent(email)}`;
+
     try {
       await this.mailerService.sendMail({
         to: email,
         subject: 'Your MyTrackr Password Reset Code',
-        template: './otp',
+        template: './password-reset',
         context: {
           name: name || 'User',
           otp,
+          resetLink,
+          expiresIn: options.expiresIn || '1 hour',
         },
       });
       this.logger.debug(`Password reset OTP email sent to ${email}`);
@@ -79,6 +93,7 @@ export class EmailService {
         `Failed to send password reset OTP email to ${email}`,
         error.stack,
       );
+      if (options.throwOnError) throw error;
     }
   }
 

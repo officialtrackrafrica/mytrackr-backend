@@ -29,6 +29,8 @@ import { PaymentTransaction } from '../payments/entities/payment-transaction.ent
 import { Business } from '../business/entities/business.entity';
 import { BankAccount } from '../finance/entities/bank-account.entity';
 import { CategorizationRule } from '../finance/entities/categorization-rule.entity';
+import { AccountCategory } from '../finance/entities/account-category.entity';
+import { AccountSubCategory } from '../finance/entities/account-subcategory.entity';
 
 import {
   AdminUsersService,
@@ -96,6 +98,8 @@ import { ReportsModule } from '../reports/reports.module';
       Business,
       BankAccount,
       CategorizationRule,
+      AccountCategory,
+      AccountSubCategory,
     ]),
     ConfigModule,
     CaslModule,

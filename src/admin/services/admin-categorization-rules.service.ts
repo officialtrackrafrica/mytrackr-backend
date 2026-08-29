@@ -7,6 +7,11 @@ import {
 } from '../../finance/entities/categorization-rule.entity';
 import { normalizeCategorizationSubCategory } from '../../finance/categorization-subcategories';
 import {
+  AccountCategory,
+  AccountCategoryType,
+} from '../../finance/entities/account-category.entity';
+import { AccountSubCategory } from '../../finance/entities/account-subcategory.entity';
+import {
   CategorizationRuleQueryDto,
   CreateAdminCategorizationRuleDto,
   UpdateAdminCategorizationRuleDto,
@@ -17,6 +22,10 @@ export class AdminCategorizationRulesService {
   constructor(
     @InjectRepository(CategorizationRule)
     private readonly rulesRepository: Repository<CategorizationRule>,
+    @InjectRepository(AccountCategory)
+    private readonly categoriesRepository: Repository<AccountCategory>,
+    @InjectRepository(AccountSubCategory)
+    private readonly subCategoriesRepository: Repository<AccountSubCategory>,
   ) {}
 
   async listRules(query: CategorizationRuleQueryDto) {
@@ -62,11 +71,15 @@ export class AdminCategorizationRulesService {
 
   async createRule(dto: CreateAdminCategorizationRuleDto) {
     const keywords = this.normalizeKeywords(dto.keywords);
-    const subCategory = normalizeCategorizationSubCategory(
-      dto.subCategory || dto.category,
-    );
-    const existing = await this.findExistingKeywordRules(
+    const catalog = await this.resolveCatalogNames(
       dto.category,
+      dto.subCategory || dto.category,
+      dto.categoryType,
+    );
+    const category = catalog.category.type;
+    const subCategory = catalog.subCategory.name;
+    const existing = await this.findExistingKeywordRules(
+      category,
       subCategory,
       keywords,
     );
@@ -82,7 +95,7 @@ export class AdminCategorizationRulesService {
         isSystem: true,
         matchType: MatchType.CONTAINS,
         matchValue: keyword,
-        category: dto.category,
+        category,
         subCategory,
         priority: dto.priority ?? 100,
         isActive: dto.isActive ?? true,
@@ -100,15 +113,19 @@ export class AdminCategorizationRulesService {
     if (!anchor) throw new NotFoundException('Categorization rule not found');
 
     const targetCategory = dto.category || anchor.category;
-    const targetSubCategory = normalizeCategorizationSubCategory(
+    const catalog = await this.resolveCatalogNames(
+      targetCategory,
       dto.subCategory || anchor.subCategory,
+      dto.categoryType,
     );
+    const normalizedCategory = catalog.category.type;
+    const targetSubCategory = catalog.subCategory.name;
     const related = await this.findRelatedRules(anchor);
 
     if (dto.keywords) {
       await this.rulesRepository.remove(related);
       return this.createRule({
-        category: targetCategory,
+        category: normalizedCategory,
         subCategory: targetSubCategory,
         keywords: dto.keywords,
         priority: dto.priority ?? anchor.priority,
@@ -117,7 +134,7 @@ export class AdminCategorizationRulesService {
     }
 
     for (const rule of related) {
-      rule.category = targetCategory;
+      rule.category = normalizedCategory;
       rule.subCategory = targetSubCategory;
       if (dto.priority !== undefined) rule.priority = dto.priority;
       if (dto.isActive !== undefined) rule.isActive = dto.isActive;
@@ -150,6 +167,132 @@ export class AdminCategorizationRulesService {
       });
 
     return Array.from(normalized.values());
+  }
+
+  private async resolveCatalogNames(
+    categoryValue: string,
+    subCategoryValue: string,
+    requestedType?: AccountCategoryType,
+  ) {
+    const categories = await this.categoriesRepository.find();
+    const normalizedCategoryValue = this.normalizeLabel(categoryValue);
+    const enumType = this.toCategoryType(normalizedCategoryValue);
+    const category =
+      this.findClosestLabel(
+        normalizedCategoryValue,
+        categories,
+        (item) => item.name,
+      ) ||
+      (enumType
+        ? categories.find((item) => item.isSystem && item.type === enumType) ||
+          categories.find((item) => item.type === enumType)
+        : undefined) ||
+      (await this.categoriesRepository.save(
+        this.categoriesRepository.create({
+          name: this.toDisplayLabel(normalizedCategoryValue),
+          type: requestedType || enumType || AccountCategoryType.EXPENSE,
+          isSystem: true,
+        }),
+      ));
+
+    const requestedSubCategory = normalizeCategorizationSubCategory(
+      this.normalizeLabel(subCategoryValue),
+    );
+    const existingSubCategories = await this.subCategoriesRepository.find({
+      where: { categoryId: category.id },
+    });
+    const subCategory =
+      this.findClosestLabel(
+        requestedSubCategory,
+        existingSubCategories,
+        (item) => item.name,
+      ) ||
+      (await this.subCategoriesRepository.save(
+        this.subCategoriesRepository.create({
+          name: this.toDisplayLabel(requestedSubCategory),
+          categoryId: category.id,
+          isSystem: true,
+        }),
+      ));
+
+    return { category, subCategory };
+  }
+
+  private normalizeLabel(value: string) {
+    return value.trim().replace(/\s+/g, ' ');
+  }
+
+  private toDisplayLabel(value: string) {
+    if (value !== value.toLowerCase() && value !== value.toUpperCase()) {
+      return value;
+    }
+    return value
+      .toLowerCase()
+      .replace(/\b\p{L}/gu, (character) => character.toUpperCase());
+  }
+
+  private toCategoryType(value: string): AccountCategoryType | undefined {
+    const normalized = this.comparisonKey(value);
+    return Object.values(AccountCategoryType).find(
+      (type) => this.comparisonKey(type) === normalized,
+    );
+  }
+
+  private findClosestLabel<T>(
+    requested: string,
+    candidates: T[],
+    getLabel: (candidate: T) => string,
+  ): T | undefined {
+    const requestedKey = this.comparisonKey(requested);
+    const exact = candidates.find(
+      (candidate) => this.comparisonKey(getLabel(candidate)) === requestedKey,
+    );
+    if (exact) return exact;
+    if (requestedKey.length < 5) return undefined;
+
+    const ranked = candidates
+      .map((candidate) => ({
+        candidate,
+        distance: this.levenshtein(
+          requestedKey,
+          this.comparisonKey(getLabel(candidate)),
+        ),
+      }))
+      .sort((a, b) => a.distance - b.distance);
+    const threshold = requestedKey.length <= 8 ? 1 : 2;
+    if (
+      !ranked[0] ||
+      ranked[0].distance > threshold ||
+      ranked[0].distance === ranked[1]?.distance
+    ) {
+      return undefined;
+    }
+    return ranked[0].candidate;
+  }
+
+  private comparisonKey(value: string) {
+    return value
+      .normalize('NFKD')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '');
+  }
+
+  private levenshtein(left: string, right: string) {
+    const previous = Array.from({ length: right.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= left.length; i++) {
+      let diagonal = previous[0];
+      previous[0] = i;
+      for (let j = 1; j <= right.length; j++) {
+        const above = previous[j];
+        previous[j] = Math.min(
+          previous[j] + 1,
+          previous[j - 1] + 1,
+          diagonal + (left[i - 1] === right[j - 1] ? 0 : 1),
+        );
+        diagonal = above;
+      }
+    }
+    return previous[right.length];
   }
 
   private findExistingKeywordRules(

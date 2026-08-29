@@ -19,6 +19,7 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { BusinessType } from '../../business/entities/business.entity';
+import { AccountCategoryType } from '../../finance/entities/account-category.entity';
 
 export class UpdateUserStatusDto {
   @ApiProperty({
@@ -739,9 +740,22 @@ export class CategorizationRuleQueryDto {
 }
 
 export class CreateAdminCategorizationRuleDto {
-  @ApiProperty({ description: 'Rule category label/type' })
+  @ApiProperty({
+    description:
+      'Existing category name/type, or a new category name to create',
+  })
   @IsString()
   category: string;
+
+  @ApiPropertyOptional({
+    enum: AccountCategoryType,
+    default: AccountCategoryType.EXPENSE,
+    description:
+      'Accounting type used when category is new. Defaults to EXPENSE.',
+  })
+  @IsOptional()
+  @IsEnum(AccountCategoryType)
+  categoryType?: AccountCategoryType;
 
   @ApiPropertyOptional({
     description:
@@ -777,6 +791,14 @@ export class UpdateAdminCategorizationRuleDto {
   @IsOptional()
   @IsString()
   category?: string;
+
+  @ApiPropertyOptional({
+    enum: AccountCategoryType,
+    description: 'Accounting type used when changing to a new category',
+  })
+  @IsOptional()
+  @IsEnum(AccountCategoryType)
+  categoryType?: AccountCategoryType;
 
   @ApiPropertyOptional({ description: 'Optional sub-category label' })
   @IsOptional()

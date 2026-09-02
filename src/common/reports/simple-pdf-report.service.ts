@@ -100,24 +100,12 @@ export class SimplePdfReportService {
     this.rect(commands, 0, 755, this.pageWidth, 87, 'F7FAFC');
     this.rect(commands, 0, 752, this.pageWidth, 3, '16A34A');
 
-    this.fitText(
-      commands,
-      input.companyName || 'Business',
-      this.marginX,
-      794,
-      88,
-      'F2',
-      20,
-      10,
-      '15803D',
-    );
-
     const cleanTitle = input.title.replace(/^MyTrackr\s+/i, '');
-    const titleX = 142;
+    const titleX = this.marginX;
     this.text(commands, cleanTitle, titleX, 804, 'F2', 18, '0F172A');
     this.text(
       commands,
-      input.subtitle || 'Financial report',
+      input.companyName || 'Business',
       titleX,
       784,
       'F1',

@@ -67,23 +67,11 @@ export class TransactionReportPdfService {
     this.rect(commands, 0, 755, this.pageWidth, 87, 'F7FAFC');
     this.rect(commands, 0, 752, this.pageWidth, 3, '16A34A');
 
-    this.fitText(
-      commands,
-      input.businessName || 'Business',
-      this.marginX,
-      794,
-      88,
-      'F2',
-      20,
-      10,
-      '15803D',
-    );
-
-    const titleX = 142;
+    const titleX = this.marginX;
     this.text(commands, 'Transaction Report', titleX, 804, 'F2', 18, '0F172A');
     this.text(
       commands,
-      'Transaction activity export',
+      input.businessName || 'Business',
       titleX,
       784,
       'F1',

@@ -351,16 +351,16 @@ export class AdminMessagingService {
 
   private buildRecipientQuery(group: AdminRecipientGroup) {
     const userQb = this.usersRepository
-      .createQueryBuilder('user')
-      .where('user.email IS NOT NULL')
+      .createQueryBuilder('recipientUser')
+      .where('recipientUser.email IS NOT NULL')
       .andWhere(
-        `(user."securitySettings" IS NULL OR NOT (user."securitySettings" ? 'deletedAt'))`,
+        `(recipientUser."securitySettings" IS NULL OR NOT (recipientUser."securitySettings" ? 'deletedAt'))`,
       );
 
     if (group === 'active_users') {
-      userQb.andWhere('user.isActive = true');
+      userQb.andWhere('recipientUser.isActive = true');
     } else if (group === 'inactive_users') {
-      userQb.andWhere('user.isActive = false');
+      userQb.andWhere('recipientUser.isActive = false');
     } else if (group === 'subscribers' || group.endsWith('_subscribers')) {
       const planSlug =
         group === 'subscribers' ? null : group.slice(0, -'_subscribers'.length);
@@ -377,7 +377,7 @@ export class AdminMessagingService {
         if (planSlug) {
           subQuery.andWhere('plan.slug = :recipientPlanSlug');
         }
-        return `user.id IN ${subQuery.getQuery()}`;
+        return `recipientUser.id IN ${subQuery.getQuery()}`;
       });
       userQb.setParameters({
         activeStatus: 'active',

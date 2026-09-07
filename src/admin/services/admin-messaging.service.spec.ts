@@ -48,6 +48,17 @@ describe('AdminMessagingService', () => {
     expect(result.message.templateId).toBe(
       '3e402fa8-d060-4a44-a240-a2ce65f69176',
     );
+    expect(usersRepository.createQueryBuilder).toHaveBeenCalledWith(
+      'recipientUser',
+    );
+    const recipientQuery = usersRepository.createQueryBuilder.mock.results[0]
+      .value;
+    expect(recipientQuery.where).toHaveBeenCalledWith(
+      'recipientUser.email IS NOT NULL',
+    );
+    expect(recipientQuery.andWhere).toHaveBeenCalledWith(
+      `(recipientUser."securitySettings" IS NULL OR NOT (recipientUser."securitySettings" ? 'deletedAt'))`,
+    );
   });
 
   it('gets an individual message', async () => {

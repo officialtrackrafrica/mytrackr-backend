@@ -66,6 +66,15 @@ export class AdminTermsController {
     return this.termsService.listTerms(query);
   }
 
+  @Get(':id')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({ summary: 'Get a Terms and Conditions version by ID' })
+  @ApiResponse({ status: 200, description: 'Terms and Conditions version' })
+  @ApiResponse({ status: 404, description: 'Terms version not found' })
+  getTermsById(@Param('id', ParseUUIDPipe) id: string) {
+    return this.termsService.getTermsById(id);
+  }
+
   @Post()
   @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
   @ApiOperation({ summary: 'Create a new terms draft version' })

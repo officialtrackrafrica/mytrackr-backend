@@ -56,6 +56,10 @@ export class AdminPrivacyPolicyService {
     };
   }
 
+  async getPolicyById(id: string) {
+    return this.findPolicy(id);
+  }
+
   async createPolicy(adminId: string, dto: CreatePrivacyPolicyDto) {
     const highestVersion = await this.policyRepository.maximum('version');
     const policy = this.policyRepository.create({

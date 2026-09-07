@@ -55,6 +55,10 @@ export class AdminTermsService {
     };
   }
 
+  async getTermsById(id: string) {
+    return this.findTerms(id);
+  }
+
   async createTerms(adminId: string, dto: CreateTermsDto) {
     const highestVersion = await this.termsRepository.maximum('version');
     const terms = this.termsRepository.create({

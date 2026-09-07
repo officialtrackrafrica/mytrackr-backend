@@ -66,6 +66,15 @@ export class AdminPrivacyPolicyController {
     return this.policyService.listPolicies(query);
   }
 
+  @Get(':id')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({ summary: 'Get a Privacy Policy version by ID' })
+  @ApiResponse({ status: 200, description: 'Privacy Policy version' })
+  @ApiResponse({ status: 404, description: 'Privacy policy version not found' })
+  getPolicyById(@Param('id', ParseUUIDPipe) id: string) {
+    return this.policyService.getPolicyById(id);
+  }
+
   @Post()
   @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
   @ApiOperation({ summary: 'Create a new privacy policy draft version' })

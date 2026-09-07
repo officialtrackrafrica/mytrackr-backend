@@ -49,15 +49,15 @@ describe('AdminMessagingService', () => {
       '3e402fa8-d060-4a44-a240-a2ce65f69176',
     );
     expect(usersRepository.createQueryBuilder).toHaveBeenCalledWith(
-      'recipientUser',
+      'recipient_user',
     );
     const recipientQuery = usersRepository.createQueryBuilder.mock.results[0]
       .value;
     expect(recipientQuery.where).toHaveBeenCalledWith(
-      'recipientUser.email IS NOT NULL',
+      'recipient_user.email IS NOT NULL',
     );
     expect(recipientQuery.andWhere).toHaveBeenCalledWith(
-      `(recipientUser."securitySettings" IS NULL OR NOT (recipientUser."securitySettings" ? 'deletedAt'))`,
+      `(recipient_user."securitySettings" IS NULL OR NOT (recipient_user."securitySettings" ? 'deletedAt'))`,
     );
   });
 

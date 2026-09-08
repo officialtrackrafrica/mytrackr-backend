@@ -13,7 +13,11 @@ import { CheckPolicies } from '../../casl/decorators/check-policies.decorator';
 import { AppAbility } from '../../casl/casl-ability.factory';
 import { Action } from '../../casl/action.enum';
 import { AdminDashboardService } from '../services/admin-dashboard.service';
-import { AdminStatsQueryDto, DashboardQueryDto } from '../dto';
+import {
+  AdminRevenueQueryDto,
+  AdminStatsQueryDto,
+  DashboardQueryDto,
+} from '../dto';
 import { SimplePdfReportService } from '../../common/reports/simple-pdf-report.service';
 
 @ApiTags('Admin - Dashboard')
@@ -74,6 +78,20 @@ export class AdminDashboardController {
     return this.dashboardService.getStats(query);
   }
 
+  @Get('platform-revenue')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({
+    summary: 'Get revenue generated from user subscriptions',
+    description:
+      'Returns successful subscription payment revenue grouped by day, week, month, or year. Supports date, dateFrom/dateTo, and startDate/endDate filters.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Grouped realized subscription revenue',
+  })
+  async getPlatformRevenue(@Query() query: AdminRevenueQueryDto) {
+    return this.dashboardService.getSubscriptionRevenue(query);
+  }
   @Get('registrations')
   @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
   @ApiOperation({ summary: 'Get user registration trends over time' })

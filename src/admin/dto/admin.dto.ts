@@ -221,13 +221,13 @@ export class AdminSubscriptionHistoryQueryDto {
 
 export class DashboardQueryDto {
   @ApiPropertyOptional({
-    enum: ['day', 'week', 'month'],
+    enum: ['day', 'week', 'month', 'year'],
     default: 'month',
     description: 'Time period grouping',
   })
   @IsOptional()
-  @IsEnum(['day', 'week', 'month'])
-  period?: 'day' | 'week' | 'month' = 'month';
+  @IsEnum(['day', 'week', 'month', 'year'])
+  period?: 'day' | 'week' | 'month' | 'year' = 'month';
 
   @ApiPropertyOptional({ description: 'Single date filter (YYYY-MM-DD)' })
   @IsOptional()
@@ -259,6 +259,16 @@ export class DashboardQueryDto {
   endDate?: string;
 }
 
+export class AdminRevenueQueryDto extends DashboardQueryDto {
+  @ApiPropertyOptional({
+    enum: ['day', 'week', 'month', 'year'],
+    default: 'month',
+    description: 'Time period used to group successful subscription revenue',
+  })
+  @IsOptional()
+  @IsEnum(['day', 'week', 'month', 'year'])
+  period?: 'day' | 'week' | 'month' | 'year' = 'month';
+}
 export class AdminStatsQueryDto {
   @ApiPropertyOptional({
     description:

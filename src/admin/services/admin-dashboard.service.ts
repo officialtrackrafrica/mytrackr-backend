@@ -9,7 +9,11 @@ import { Transaction as FinanceTransaction } from '../../finance/entities/transa
 import { Subscription } from '../../payments/entities/subscription.entity';
 import { Plan } from '../../payments/entities/plan.entity';
 import { PaymentTransaction } from '../../payments/entities/payment-transaction.entity';
-import { AdminStatsQueryDto, DashboardQueryDto } from '../dto';
+import {
+  AdminRevenueQueryDto,
+  AdminStatsQueryDto,
+  DashboardQueryDto,
+} from '../dto';
 import {
   resolveAdminDateRange,
   serializeAdminDateRange,
@@ -236,6 +240,9 @@ export class AdminDashboardService {
       case 'week':
         dateFormat = 'IYYY-IW';
         break;
+      case 'year':
+        dateFormat = 'YYYY';
+        break;
       case 'month':
       default:
         dateFormat = 'YYYY-MM';
@@ -263,6 +270,43 @@ export class AdminDashboardService {
     };
   }
 
+  async getSubscriptionRevenue(query: AdminRevenueQueryDto = {}) {
+    const period = query.period || 'month';
+    const range = resolveAdminDateRange(query);
+    const dateFormat = {
+      day: 'YYYY-MM-DD',
+      week: 'IYYY-IW',
+      month: 'YYYY-MM',
+      year: 'YYYY',
+    };
+    const periodExpression = `TO_CHAR(payment.createdAt, '${dateFormat[period]}')`;
+    const qb = this.paymentTransactionsRepository
+      .createQueryBuilder('payment')
+      .select(periodExpression, 'period')
+      .addSelect('COALESCE(SUM(CAST(payment.amount AS NUMERIC)), 0)', 'revenue')
+      .addSelect('COUNT(payment.id)', 'paymentCount')
+      .where('payment.status = :status', { status: 'success' })
+      .andWhere("payment.metadata ? 'planId'")
+      .groupBy(periodExpression)
+      .orderBy('period', 'ASC');
+
+    this.applyDateRange(qb, 'payment', 'createdAt', range);
+    const rows = await qb.getRawMany();
+    const data = rows.map((row) => ({
+      period: row.period,
+      revenue: Number(row.revenue || 0),
+      paymentCount: Number.parseInt(row.paymentCount || '0', 10),
+    }));
+
+    return {
+      period,
+      currency: 'NGN',
+      filters: serializeAdminDateRange(query, range),
+      totalRevenue: data.reduce((total, row) => total + row.revenue, 0),
+      paymentCount: data.reduce((total, row) => total + row.paymentCount, 0),
+      data,
+    };
+  }
   async getTransactionSummary() {
     const [summary, categoryBreakdown] = await Promise.all([
       this.transactionsRepository

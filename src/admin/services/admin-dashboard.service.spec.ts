@@ -268,4 +268,47 @@ describe('AdminDashboardService', () => {
       data: [{ period: '2026-08-06', count: 3 }],
     });
   });
+
+  it('returns successful subscription revenue grouped by year', async () => {
+    const qb = {
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      getRawMany: jest.fn().mockResolvedValue([
+        { period: '2025', revenue: '12500.50', paymentCount: '4' },
+        { period: '2026', revenue: '7500', paymentCount: '2' },
+      ]),
+    };
+    const service = new AdminDashboardService(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      { createQueryBuilder: jest.fn().mockReturnValue(qb) } as any,
+    );
+    const result = await service.getSubscriptionRevenue({
+      period: 'year',
+      dateFrom: '2025-01-01',
+      dateTo: '2027-01-01',
+    });
+    expect(qb.where).toHaveBeenCalledWith('payment.status = :status', {
+      status: 'success',
+    });
+    expect(qb.andWhere).toHaveBeenCalledWith("payment.metadata ? 'planId'");
+    expect(qb.groupBy).toHaveBeenCalledWith(
+      "TO_CHAR(payment.createdAt, 'YYYY')",
+    );
+    expect(result.totalRevenue).toBe(20000.5);
+    expect(result.paymentCount).toBe(6);
+    expect(result.data).toEqual([
+      { period: '2025', revenue: 12500.5, paymentCount: 4 },
+      { period: '2026', revenue: 7500, paymentCount: 2 },
+    ]);
+  });
 });

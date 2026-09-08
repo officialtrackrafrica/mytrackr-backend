@@ -203,21 +203,23 @@ export class AdminSystemService {
     const rawByTicketId = new Map(raw.map((row) => [row.ticket_id, row]));
 
     return {
-      tickets: tickets.map((ticket) => {
-        const row = rawByTicketId.get(ticket.id) || {};
-        return {
-          ...this.mapSupportTicket(ticket),
-          user: {
-            id: ticket.userId,
-            email: row.userEmail || null,
-            firstName: row.userFirstName || null,
-            lastName: row.userLastName || null,
-            name: [row.userFirstName, row.userLastName]
-              .filter(Boolean)
-              .join(' '),
-          },
-        };
-      }),
+      tickets: await Promise.all(
+        tickets.map(async (ticket) => {
+          const row = rawByTicketId.get(ticket.id) || {};
+          return {
+            ...(await this.mapSupportTicket(ticket)),
+            user: {
+              id: ticket.userId,
+              email: row.userEmail || null,
+              firstName: row.userFirstName || null,
+              lastName: row.userLastName || null,
+              name: [row.userFirstName, row.userLastName]
+                .filter(Boolean)
+                .join(' '),
+            },
+          };
+        }),
+      ),
       pagination: {
         total,
         page,
@@ -240,7 +242,10 @@ export class AdminSystemService {
       return acc;
     }, {});
 
-    const total = Object.values(byStatus).reduce((sum, count) => sum + count, 0);
+    const total = Object.values(byStatus).reduce(
+      (sum, count) => sum + count,
+      0,
+    );
 
     return {
       total,
@@ -445,7 +450,9 @@ export class AdminSystemService {
     const [tickets, total] = await qb.getManyAndCount();
 
     return {
-      tickets: tickets.map((ticket) => this.mapSupportTicket(ticket)),
+      tickets: await Promise.all(
+        tickets.map((ticket) => this.mapSupportTicket(ticket)),
+      ),
       pagination: {
         total,
         page,
@@ -470,7 +477,8 @@ export class AdminSystemService {
     if (!ticket) throw new NotFoundException('Ticket not found');
 
     Object.assign(ticket, dto);
-    return this.ticketsRepository.save(ticket);
+    const saved = await this.ticketsRepository.save(ticket);
+    return this.mapSupportTicket(saved);
   }
 
   async getDisputes(query: DisputeQueryDto) {
@@ -686,13 +694,15 @@ export class AdminSystemService {
     return new URL('/transactions', appUrl).toString();
   }
 
-  private mapSupportTicket(ticket: SupportTicket) {
+  private async mapSupportTicket(ticket: SupportTicket) {
     return {
       id: ticket.id,
       title: ticket.subject,
       description: ticket.description,
       category: ticket.category || 'request',
-      attachmentUrl: ticket.attachmentUrl || undefined,
+      attachmentUrl: ticket.attachmentUrl
+        ? await this.storageService.getSignedUrl(ticket.attachmentUrl)
+        : undefined,
       status: ticket.status,
       priority: ticket.priority,
       resolution: ticket.resolution || undefined,
@@ -723,9 +733,19 @@ export class AdminSystemService {
     const participantsById = new Map(
       participants.map((participant) => [participant.id, participant]),
     );
+    const [mappedTicket, replyAttachmentUrls] = await Promise.all([
+      this.mapSupportTicket(ticket),
+      Promise.all(
+        replies.map((reply) =>
+          reply.attachmentUrl
+            ? this.storageService.getSignedUrl(reply.attachmentUrl)
+            : Promise.resolve(undefined),
+        ),
+      ),
+    ]);
 
     return {
-      ...this.mapSupportTicket(ticket),
+      ...mappedTicket,
       user: user
         ? {
             id: user.id,
@@ -744,10 +764,10 @@ export class AdminSystemService {
             ? [user.firstName, user.lastName].filter(Boolean).join(' ')
             : '',
           message: ticket.description,
-          attachmentUrl: ticket.attachmentUrl || undefined,
+          attachmentUrl: mappedTicket.attachmentUrl,
           createdAt: ticket.createdAt,
         },
-        ...replies.map((reply) => {
+        ...replies.map((reply, index) => {
           const sender = participantsById.get(reply.senderId);
           return {
             id: reply.id,
@@ -759,7 +779,7 @@ export class AdminSystemService {
                 ? 'MyTrackr'
                 : '',
             message: reply.message,
-            attachmentUrl: reply.attachmentUrl || undefined,
+            attachmentUrl: replyAttachmentUrls[index],
             createdAt: reply.createdAt,
           };
         }),

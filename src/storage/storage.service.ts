@@ -4,7 +4,12 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import {
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 @Injectable()
 export class StorageService {
@@ -52,7 +57,7 @@ export class StorageService {
 
       await this.s3Client.send(command);
 
-      return `https://${this.bucketName}.s3.filebase.com/${key}`;
+      return key;
     } catch (error: any) {
       this.logger.error(
         `Error uploading file to Filebase: ${error.message}`,
@@ -62,5 +67,36 @@ export class StorageService {
         'Failed to upload file to storage',
       );
     }
+  }
+
+  async getSignedUrl(storedValue: string, expiresIn = 3600): Promise<string> {
+    const key = this.extractObjectKey(storedValue);
+
+    return getSignedUrl(
+      this.s3Client,
+      new GetObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+      }),
+      { expiresIn },
+    );
+  }
+
+  private extractObjectKey(storedValue: string): string {
+    if (!/^https?:\/\//i.test(storedValue)) {
+      return storedValue.replace(/^\/+/, '');
+    }
+
+    const url = new URL(storedValue);
+    let key = decodeURIComponent(url.pathname).replace(/^\/+/, '');
+
+    if (url.hostname === 's3.filebase.com') {
+      const bucketPrefix = `${this.bucketName}/`;
+      if (key.startsWith(bucketPrefix)) {
+        key = key.slice(bucketPrefix.length);
+      }
+    }
+
+    return key;
   }
 }

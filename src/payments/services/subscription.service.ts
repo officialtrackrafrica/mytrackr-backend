@@ -670,6 +670,17 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('No active subscription found');
     }
 
+    if (subscription.cancelAtPeriodEnd) {
+      return {
+        success: true,
+        subscriptionId: subscription.id,
+        status: subscription.status,
+        cancelAtPeriodEnd: true,
+        canceledAt: subscription.canceledAt,
+        currentPeriodEnd: subscription.currentPeriodEnd,
+      };
+    }
+
     if (subscription.gatewaySubscriptionId && subscription.gatewayEmailToken) {
       await this.paystackService.disableSubscription({
         code: subscription.gatewaySubscriptionId,
@@ -677,15 +688,17 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       });
     }
 
-    subscription.status = 'canceled';
     subscription.cancelAtPeriodEnd = true;
     subscription.canceledAt = new Date();
     await this.subRepository.save(subscription);
 
     return {
       success: true,
+      subscriptionId: subscription.id,
       status: subscription.status,
+      cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
       canceledAt: subscription.canceledAt,
+      currentPeriodEnd: subscription.currentPeriodEnd,
     };
   }
 

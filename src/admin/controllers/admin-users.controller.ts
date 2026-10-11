@@ -23,6 +23,7 @@ import { AppAbility } from '../../casl/casl-ability.factory';
 import { Action } from '../../casl/action.enum';
 import { AdminUsersService } from '../services/admin-users.service';
 import { AdminAuditService } from '../services/admin-audit.service';
+import { SubscriptionService } from '../../payments/services/subscription.service';
 import {
   UpdateUserStatusDto,
   AdminChangeUserPlanDto,
@@ -41,6 +42,7 @@ export class AdminUsersController {
   constructor(
     private readonly adminUsersService: AdminUsersService,
     private readonly auditService: AdminAuditService,
+    private readonly subscriptionService: SubscriptionService,
   ) {}
 
   @Get()
@@ -145,6 +147,33 @@ export class AdminUsersController {
       userId,
       req.user.id,
       { planId: dto.planId },
+      req.ip,
+    );
+    return result;
+  }
+
+  @Post(':id/subscription/cancel')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({
+    summary: 'Disable automatic renewal for a user subscription',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Automatic renewal disabled; access remains active until the current period ends',
+  })
+  @ApiResponse({ status: 400, description: 'User has no active subscription' })
+  async cancelSubscription(@Param('id') userId: string, @Req() req: any) {
+    const result = await this.subscriptionService.cancelSubscription(userId);
+    await this.auditService.log(
+      'USER_SUBSCRIPTION_AUTO_RENEW_DISABLED_BY_ADMIN',
+      'Subscription',
+      result.subscriptionId,
+      req.user.id,
+      {
+        userId,
+        currentPeriodEnd: result.currentPeriodEnd,
+      },
       req.ip,
     );
     return result;

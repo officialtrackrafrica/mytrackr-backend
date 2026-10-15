@@ -84,14 +84,14 @@ describe('AdminFinanceService', () => {
     expect(queryBuilder.andWhere).toHaveBeenNthCalledWith(
       2,
       'tx.date < :summaryDateTo',
-      { summaryDateTo: new Date('2026-08-07') },
+      { summaryDateTo: new Date('2026-08-08') },
     );
     expect(result).toEqual({
       period: 'month',
       filters: {
         date: undefined,
         dateFrom: '2026-02-07T00:00:00.000Z',
-        dateTo: '2026-08-07T00:00:00.000Z',
+        dateTo: '2026-08-08T00:00:00.000Z',
       },
       currency: 'NGN',
       data: [

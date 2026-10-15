@@ -196,17 +196,17 @@ describe('AdminDashboardService', () => {
 
     expect(snapshotSpy).toHaveBeenNthCalledWith(1, {
       start: new Date('2026-08-01'),
-      end: new Date('2026-08-06'),
+      end: new Date('2026-08-07'),
     });
     expect(snapshotSpy).toHaveBeenNthCalledWith(2, {
-      start: new Date('2026-07-27'),
+      start: new Date('2026-07-26'),
       end: new Date('2026-08-01'),
     });
     expect(result.filters).toEqual({
       date: undefined,
       dateFrom: '2026-08-01T00:00:00.000Z',
-      dateTo: '2026-08-06T00:00:00.000Z',
-      previousDateFrom: '2026-07-27T00:00:00.000Z',
+      dateTo: '2026-08-07T00:00:00.000Z',
+      previousDateFrom: '2026-07-26T00:00:00.000Z',
       previousDateTo: '2026-08-01T00:00:00.000Z',
     });
     expect(result.percentageChanges.totalUsers).toBe(50);

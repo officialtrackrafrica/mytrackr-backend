@@ -31,13 +31,25 @@ export function resolveAdminDateRange(
   }
 
   const start = from ? parseAdminDate(from, 'dateFrom') : undefined;
-  const end = to ? parseAdminDate(to, 'dateTo') : undefined;
+  const end = to ? parseAdminEndDate(to) : undefined;
 
   if (start && end && start > end) {
     throw new BadRequestException('dateFrom must be before dateTo');
   }
 
   return { start, end };
+}
+
+function parseAdminEndDate(value: string): Date {
+  const end = parseAdminDate(value, 'dateTo');
+
+  // Date-only end values represent the whole calendar day. Queries use an
+  // exclusive upper bound, so normalize them to midnight the following day.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    end.setUTCDate(end.getUTCDate() + 1);
+  }
+
+  return end;
 }
 
 function parseAdminDate(value: string, field: string): Date {

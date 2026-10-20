@@ -44,6 +44,7 @@ import {
   AdminTermsService,
   AdminPrivacyPolicyService,
   LearningHubService,
+  AdminCalculationAuditService,
 } from './services';
 
 import {
@@ -62,6 +63,7 @@ import {
   AdminPrivacyPolicyController,
   LearningHubController,
   AdminLearningHubController,
+  AdminCalculationAuditController,
 } from './controllers';
 
 import { CaslModule } from '../casl/casl.module';
@@ -125,6 +127,7 @@ import { ReportsModule } from '../reports/reports.module';
     AdminPrivacyPolicyController,
     LearningHubController,
     AdminLearningHubController,
+    AdminCalculationAuditController,
   ],
   providers: [
     AdminUsersService,
@@ -138,6 +141,7 @@ import { ReportsModule } from '../reports/reports.module';
     AdminTermsService,
     AdminPrivacyPolicyService,
     LearningHubService,
+    AdminCalculationAuditService,
   ],
   exports: [AdminAuditService, AdminSystemService],
 })

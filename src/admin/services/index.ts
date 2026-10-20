@@ -9,3 +9,4 @@ export { AdminCategorizationRulesService } from './admin-categorization-rules.se
 export { AdminTermsService } from './admin-terms.service';
 export { AdminPrivacyPolicyService } from './admin-privacy-policy.service';
 export { LearningHubService } from './learning-hub.service';
+export { AdminCalculationAuditService } from './admin-calculation-audit.service';

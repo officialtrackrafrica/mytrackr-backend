@@ -16,3 +16,4 @@ export {
   LearningHubController,
   AdminLearningHubController,
 } from './learning-hub.controller';
+export { AdminCalculationAuditController } from './admin-calculation-audit.controller';

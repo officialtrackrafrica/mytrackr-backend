@@ -64,6 +64,7 @@ import {
   LearningHubController,
   AdminLearningHubController,
   AdminCalculationAuditController,
+  AdminCalculationAuditLoginController,
 } from './controllers';
 
 import { CaslModule } from '../casl/casl.module';
@@ -128,6 +129,7 @@ import { ReportsModule } from '../reports/reports.module';
     LearningHubController,
     AdminLearningHubController,
     AdminCalculationAuditController,
+    AdminCalculationAuditLoginController,
   ],
   providers: [
     AdminUsersService,

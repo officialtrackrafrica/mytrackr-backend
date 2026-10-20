@@ -9,11 +9,33 @@ import {
 import type { Response } from 'express';
 import { ApiCookieAuth, ApiOperation, ApiProduces, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards';
+import { Public } from '../../auth/decorators/public.decorator';
 import { CheckPolicies } from '../../casl/decorators/check-policies.decorator';
 import { PoliciesGuard } from '../../casl/guards/policies.guard';
 import { AppAbility } from '../../casl/casl-ability.factory';
 import { Action } from '../../casl/action.enum';
 import { AdminCalculationAuditService } from '../services/admin-calculation-audit.service';
+
+@ApiTags('Admin - Calculation audit')
+@Controller('admin/calculation-audit')
+export class AdminCalculationAuditLoginController {
+  @Get('login')
+  @Public()
+  @ApiOperation({ summary: 'Server-rendered admin login for calculation audit' })
+  @ApiProduces('text/html')
+  login(@Res() response: Response) {
+    response.type('html').send(`<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin login · MyTrackr</title><style>
+:root{font-family:Inter,ui-sans-serif,system-ui;color:#17211b;background:#f3f6f3}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:20px}.card{width:min(430px,100%);background:#fff;border:1px solid #dfe7e1;border-radius:18px;padding:32px;box-shadow:0 18px 60px rgba(27,62,42,.1)}.eyebrow{color:#287a4b;font-weight:800;text-transform:uppercase;letter-spacing:.12em;font-size:12px}h1{margin:4px 0 8px}p{color:#637269}label{display:block;font-size:13px;font-weight:700;margin-top:18px}input,button{display:block;width:100%;padding:12px;margin-top:7px;border-radius:9px;border:1px solid #bdcbbf;font:inherit}button{margin-top:24px;border:0;background:#216b42;color:#fff;font-weight:800;cursor:pointer}button:disabled{opacity:.65;cursor:wait}.error{display:none;background:#fbe9e6;color:#8a3025;padding:11px;border-radius:8px;margin-top:16px;font-size:13px}.error.show{display:block}</style></head>
+<body><main class="card"><p class="eyebrow">MyTrackr Admin</p><h1>Calculation audit</h1><p>Sign in with an administrator account to inspect report calculations.</p>
+<form id="login-form"><label>Email<input name="email" type="email" autocomplete="username" required autofocus></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><div id="error" class="error" role="alert"></div><button id="submit" type="submit">Sign in</button></form></main>
+<script>
+const form=document.getElementById('login-form');const button=document.getElementById('submit');const errorBox=document.getElementById('error');
+form.addEventListener('submit',async(event)=>{event.preventDefault();button.disabled=true;button.textContent='Signing in…';errorBox.classList.remove('show');try{const data=new FormData(form);const response=await fetch('/auth/admin/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:data.get('email'),password:data.get('password')})});const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.message||'Unable to sign in');window.location.assign('/admin/calculation-audit');}catch(error){errorBox.textContent=error instanceof Error?error.message:'Unable to sign in';errorBox.classList.add('show');button.disabled=false;button.textContent='Sign in';}});
+</script></body></html>`);
+  }
+}
 
 @ApiTags('Admin - Calculation audit')
 @ApiCookieAuth('accessToken')

@@ -53,6 +53,7 @@ export class AdminCalculationAuditController {
     @Query('startDate') startDateText: string | undefined,
     @Query('endDate') endDateText: string | undefined,
     @Query('view') requestedView: string | undefined,
+    @Query('transactionScope') requestedTransactionScope: string | undefined,
     @Res() response: Response,
   ) {
     const today = new Date();
@@ -63,6 +64,8 @@ export class AdminCalculationAuditController {
     const startDate = this.parseDate(startText, false);
     const endDate = this.parseDate(endText, true);
     const view = this.validView(requestedView);
+    const transactionScope =
+      requestedTransactionScope === 'all-stored' ? 'all-stored' : 'period';
 
     if (startDate > endDate) {
       throw new BadRequestException('startDate must not be after endDate');
@@ -70,11 +73,24 @@ export class AdminCalculationAuditController {
 
     const users = await this.auditService.getUsersWithLinkedAccounts();
     const audit = userId
-      ? await this.auditService.getAudit(userId, startDate, endDate)
+      ? await this.auditService.getAudit(
+          userId,
+          startDate,
+          endDate,
+          transactionScope === 'all-stored',
+        )
       : null;
 
     response.type('html').send(
-      this.renderPage({ users, audit, userId, startText, endText, view }),
+      this.renderPage({
+        users,
+        audit,
+        userId,
+        startText,
+        endText,
+        view,
+        transactionScope,
+      }),
     );
   }
 
@@ -96,6 +112,7 @@ export class AdminCalculationAuditController {
     startText: string;
     endText: string;
     view: string;
+    transactionScope: string;
   }): string {
     const e = this.escapeHtml;
     const options = input.users
@@ -110,7 +127,7 @@ export class AdminCalculationAuditController {
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Calculation audit · MyTrackr Admin</title><style>${this.styles()}</style></head>
 <body><main><header><div><p class="eyebrow">MyTrackr Admin</p><h1>Calculation audit</h1><p>Trace every transaction used—or excluded—from P&amp;L, cash flow, and burn rate.</p></div></header>
-<form method="get"><label>User with linked account<select name="userId" required><option value="">Select a user</option>${options}</select></label><label>Start date<input type="date" name="startDate" value="${e(input.startText)}" required></label><label>End date<input type="date" name="endDate" value="${e(input.endText)}" required></label><label>Transactions to show<select name="view">${this.renderViewOptions(input.view)}</select></label><button type="submit">Run audit</button></form>
+<form method="get"><label>User with linked account<select name="userId" required><option value="">Select a user</option>${options}</select></label><label>Start date<input type="date" name="startDate" value="${e(input.startText)}" required></label><label>End date<input type="date" name="endDate" value="${e(input.endText)}" required></label><label>Transaction period<select name="transactionScope"><option value="period" ${input.transactionScope === 'period' ? 'selected' : ''}>Selected date range</option><option value="all-stored" ${input.transactionScope === 'all-stored' ? 'selected' : ''}>All stored transactions</option></select></label><label>Transactions to show<select name="view">${this.renderViewOptions(input.view)}</select></label><button type="submit">Run audit</button></form>
 ${input.audit ? this.renderAudit(input.audit, input.startText, input.endText, input.view) : '<section class="empty">Select a user and date range to inspect the calculations.</section>'}
 </main></body></html>`;
   }
@@ -150,6 +167,20 @@ ${input.audit ? this.renderAudit(input.audit, input.startText, input.endText, in
           `<article><span>${e(label)}</span><strong>${label === 'Months of runway' ? e(value) : money(value)}</strong></article>`,
       )
       .join('');
+    const balanceSheetCards = [
+      ['Total assets', audit.balanceSheet.summary.totalAssets],
+      ['Total liabilities', audit.balanceSheet.summary.totalLiabilities],
+      ["Owner's equity", audit.balanceSheet.summary.ownersEquity],
+      ['Owner investments', audit.balanceSheet.summary.ownerInvestments],
+      ['Retained profit', audit.balanceSheet.summary.retainedProfits],
+      ['Owner withdrawals', audit.balanceSheet.summary.ownerWithdrawals],
+      ['Accounting difference', audit.balanceSheet.integrityCheck.difference],
+    ]
+      .map(
+        ([label, value]) =>
+          `<article><span>${e(label)}</span><strong>${money(value)}</strong></article>`,
+      )
+      .join('');
     const accounts = audit.accounts
       .map(
         (account: any) =>
@@ -163,17 +194,18 @@ ${input.audit ? this.renderAudit(input.audit, input.startText, input.endText, in
       .map((tx: any) => {
         const pnlIncluded = tx.treatment.pnl !== null;
         const cashIncluded = tx.treatment.cashFlow !== null;
-        return `<tr><td>${e(String(tx.date).slice(0, 10))}</td><td><strong>${e(tx.name || tx.description || 'Transaction')}</strong><small>${e(tx.description || '')}</small></td><td>${e(tx.direction)}<small>${e(tx.category || 'UNCATEGORISED')} · ${e(tx.subCategory || '—')}</small></td><td class="number">${money(tx.amount)}</td><td><span class="pill ${pnlIncluded ? 'yes' : 'no'}">${pnlIncluded ? e(tx.treatment.pnl) : 'Excluded'}</span><small>${e(tx.treatment.pnlReason)}</small></td><td><span class="pill ${cashIncluded ? 'yes' : 'no'}">${cashIncluded ? e(tx.treatment.cashFlow) : 'Excluded'}</span><small>${e(tx.treatment.cashFlowReason)}</small></td><td><span class="pill ${tx.treatment.burnRate ? 'yes' : 'no'}">${tx.treatment.burnRate ? 'Included' : 'Excluded'}</span><small>${e(tx.treatment.burnRateReason)}</small></td></tr>`;
+        return `<tr><td>${e(String(tx.date).slice(0, 10))}</td><td><strong>${e(tx.name || tx.description || 'Transaction')}</strong><small>${e(tx.description || '')}</small><small>Transaction: ${e(tx.id)}${tx.externalId ? ` · External: ${e(tx.externalId)}` : ''}${tx.bankAccountId ? ` · Account: ${e(tx.bankAccountId)}` : ''}</small></td><td>${e(tx.direction)}<small>${e(tx.category || 'UNCATEGORISED')} · ${e(tx.subCategory || '—')}</small><small>Categorised: ${tx.isCategorised ? 'Yes' : 'No'} · Source: ${e(tx.categorySource || '—')}</small></td><td class="number">${money(tx.amount)}</td><td><span class="pill ${pnlIncluded ? 'yes' : 'no'}">${pnlIncluded ? e(tx.treatment.pnl) : 'Excluded'}</span><small>${e(tx.treatment.pnlReason)}</small></td><td><span class="pill ${cashIncluded ? 'yes' : 'no'}">${cashIncluded ? e(tx.treatment.cashFlow) : 'Excluded'}</span><small>${e(tx.treatment.cashFlowReason)}</small></td><td><span class="pill ${tx.treatment.burnRate ? 'yes' : 'no'}">${tx.treatment.burnRate ? 'Included' : 'Excluded'}</span><small>${e(tx.treatment.burnRateReason)}</small></td></tr>`;
       })
       .join('');
 
-    return `<section class="identity"><div><h2>${e(audit.business.name)}</h2><p>${e(audit.user.email)} · ${e(startText)} to ${e(endText)}</p></div><div><b>${audit.counts.total}</b> transactions</div></section>
+    return `<section class="identity"><div><h2>${e(audit.business.name)}</h2><p>${e(audit.user.email)} · report period ${e(startText)} to ${e(endText)}</p></div><div class="identity-actions"><div><b>${audit.counts.total}</b> ${audit.includesAllStoredTransactions ? 'stored' : 'period'} transactions</div><button type="button" class="print-button" onclick="window.print()">Print full audit</button></div></section>
 <section><h2>Linked account balances</h2><ul class="accounts">${accounts}</ul></section>
-<section class="cards">${cards}</section>
+<section><h2>P&amp;L and cash-flow totals</h2><div class="cards nested-cards">${cards}</div></section>
+<section><h2>Balance-sheet totals</h2><p class="section-intro">Balance sheet is calculated from all stored records through today, independently of the report-period dates above.</p><div class="cards nested-cards">${balanceSheetCards}</div></section>
 <section><h2>Formulas used</h2><div class="formulas">
 <code>Revenue = Σ categorized INCOME credits</code><code>COGS = Σ categorized COGS debits</code><code>Gross profit = Revenue − COGS</code><code>Total expenses = Σ categorized EXPENSE debits</code><code>Net profit = Gross profit − Total expenses</code><code>Net profit margin = Net profit ÷ Revenue × 100</code><code>Cash in = Σ non-transfer credits</code><code>Cash out = Σ non-transfer debits</code><code>Net cash flow = Cash in − Cash out</code><code>Monthly burn rate = Cash out ÷ inclusive calendar months</code><code>Cash balance = Σ current linked bank-account balances</code><code>Runway = Cash balance ÷ Monthly burn rate</code>
 </div><p class="note">The selected period spans <b>${this.inclusiveMonths(startText, endText)}</b> inclusive calendar month(s). Runway: <b>${audit.cashFlow.monthsOfRunway ?? 'N/A'}</b> months; low-runway alert: <b>${audit.cashFlow.lowRunwayAlert ? 'Yes' : 'No'}</b>.</p></section>
-<section><div class="table-heading"><div><h2>Transaction evidence</h2><p>Showing ${visibleTransactions.length} of ${audit.counts.total}. P&amp;L included: ${audit.counts.pnlIncluded}; cash flow included: ${audit.counts.cashFlowIncluded}; burn rate included: ${audit.counts.burnRateIncluded}.</p></div></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Transaction</th><th>Direction / category</th><th>Amount</th><th>P&amp;L</th><th>Cash flow</th><th>Burn rate</th></tr></thead><tbody>${rows || '<tr><td colspan="7">No transactions match this view.</td></tr>'}</tbody></table></div></section>`;
+<section><div class="table-heading"><div><h2>Transaction evidence</h2><p>Showing ${visibleTransactions.length} of ${audit.counts.total} ${audit.includesAllStoredTransactions ? 'transactions stored for this business' : 'transactions in the selected period'}. P&amp;L treatment, cash-flow treatment, categorisation, IDs, and linked-account IDs are included.</p>${audit.includesAllStoredTransactions ? `<p class="note">P&amp;L and cash-flow cards use only ${e(startText)} to ${e(endText)}. The ledger below contains every stored transaction so entries outside that range are not part of those period totals.</p>` : ''}</div></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Transaction / identifiers</th><th>Direction / category</th><th>Amount</th><th>P&amp;L</th><th>Cash flow</th><th>Burn rate</th></tr></thead><tbody>${rows || '<tr><td colspan="7">No transactions match this view.</td></tr>'}</tbody></table></div></section>`;
   }
 
   private validView(view?: string): string {
@@ -233,6 +265,6 @@ ${input.audit ? this.renderAudit(input.audit, input.startText, input.endText, in
   }
 
   private styles(): string {
-    return `:root{font-family:Inter,ui-sans-serif,system-ui;color:#17211b;background:#f3f6f3}*{box-sizing:border-box}body{margin:0}main{max-width:1500px;margin:auto;padding:32px}header{margin-bottom:24px}h1{font-size:34px;margin:3px 0}h2{margin:0 0 10px}.eyebrow{color:#287a4b;font-weight:800;text-transform:uppercase;letter-spacing:.12em;font-size:12px}form,section{background:white;border:1px solid #dfe7e1;border-radius:14px;padding:20px;margin-bottom:18px}form{display:grid;grid-template-columns:2fr 1fr 1fr 1.3fr auto;gap:14px;align-items:end}label{font-size:13px;font-weight:700}input,select,button{display:block;width:100%;margin-top:6px;padding:11px;border:1px solid #bdcbbf;border-radius:8px;background:white}button{background:#216b42;color:white;border:0;font-weight:800;cursor:pointer}.identity{display:flex;justify-content:space-between;align-items:center}.identity p,.table-heading p{margin:3px 0;color:#637269}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;background:transparent;border:0;padding:0}.cards article{background:white;border:1px solid #dfe7e1;border-radius:12px;padding:16px}.cards span,.cards strong{display:block}.cards span{font-size:12px;color:#637269}.cards strong{font-size:20px;margin-top:6px}.accounts{list-style:none;padding:0;margin:0}.accounts li{padding:8px 0;border-top:1px solid #edf1ee}.accounts strong{margin-left:10px}.accounts small{margin-left:8px}.formulas{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:8px}.formulas code{padding:10px;background:#f2f7f3;border-radius:7px;color:#194e32}.note{background:#fff9e8;padding:12px;border-radius:8px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:11px;border-bottom:1px solid #e5ebe6;vertical-align:top}th{background:#f6f8f6;white-space:nowrap}.number{text-align:right;white-space:nowrap}td small{display:block;color:#68766d;margin-top:5px;max-width:280px}.pill{display:inline-block;padding:3px 7px;border-radius:999px;font-size:11px;font-weight:800}.pill.yes{background:#dff5e7;color:#176136}.pill.no{background:#f6e4e1;color:#8a3025}.empty{text-align:center;color:#637269;padding:50px}@media(max-width:900px){main{padding:16px}form{grid-template-columns:1fr}.identity{align-items:flex-start;gap:15px}}`;
+    return `:root{font-family:Inter,ui-sans-serif,system-ui;color:#17211b;background:#f3f6f3}*{box-sizing:border-box}body{margin:0}main{max-width:1500px;margin:auto;padding:32px}header{margin-bottom:24px}h1{font-size:34px;margin:3px 0}h2{margin:0 0 10px}.eyebrow{color:#287a4b;font-weight:800;text-transform:uppercase;letter-spacing:.12em;font-size:12px}form,section{background:white;border:1px solid #dfe7e1;border-radius:14px;padding:20px;margin-bottom:18px}form{display:grid;grid-template-columns:2fr 1fr 1fr 1.3fr 1.3fr auto;gap:14px;align-items:end}label{font-size:13px;font-weight:700}input,select,button{display:block;width:100%;margin-top:6px;padding:11px;border:1px solid #bdcbbf;border-radius:8px;background:white}button{background:#216b42;color:white;border:0;font-weight:800;cursor:pointer}.identity{display:flex;justify-content:space-between;align-items:center}.identity-actions{display:flex;align-items:center;gap:14px}.print-button{width:auto;margin:0}.identity p,.table-heading p,.section-intro{margin:3px 0;color:#637269}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;background:transparent;border:0;padding:0}.nested-cards{margin:14px 0 0}.cards article{background:white;border:1px solid #dfe7e1;border-radius:12px;padding:16px}.cards span,.cards strong{display:block}.cards span{font-size:12px;color:#637269}.cards strong{font-size:20px;margin-top:6px}.accounts{list-style:none;padding:0;margin:0}.accounts li{padding:8px 0;border-top:1px solid #edf1ee}.accounts strong{margin-left:10px}.accounts small{margin-left:8px}.formulas{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:8px}.formulas code{padding:10px;background:#f2f7f3;border-radius:7px;color:#194e32}.note{background:#fff9e8;padding:12px;border-radius:8px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:11px;border-bottom:1px solid #e5ebe6;vertical-align:top}th{background:#f6f8f6;white-space:nowrap}.number{text-align:right;white-space:nowrap}td small{display:block;color:#68766d;margin-top:5px;max-width:320px;overflow-wrap:anywhere}.pill{display:inline-block;padding:3px 7px;border-radius:999px;font-size:11px;font-weight:800}.pill.yes{background:#dff5e7;color:#176136}.pill.no{background:#f6e4e1;color:#8a3025}.empty{text-align:center;color:#637269;padding:50px}@media(max-width:900px){main{padding:16px}form{grid-template-columns:1fr}.identity{align-items:flex-start;gap:15px}.identity-actions{align-items:flex-end;flex-direction:column}}@media print{@page{size:landscape;margin:8mm}:root{font-size:10px;background:white}body{background:white}main{max-width:none;padding:0}header,form,.print-button{display:none}section{border:0;border-radius:0;padding:8px 0;margin:0 0 10px;break-inside:avoid}.table-wrap{overflow:visible}table{font-size:8px}thead{display:table-header-group}tr{break-inside:avoid}th,td{padding:4px}.pill{padding:1px 4px}td small{max-width:190px}.cards{grid-template-columns:repeat(4,1fr)}.cards article{padding:7px}.cards strong{font-size:12px}.note{padding:6px}.identity-actions{display:block}}`;
   }
 }

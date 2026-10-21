@@ -10,6 +10,7 @@ import {
 } from '../../finance/entities/transaction.entity';
 import { CashFlowService } from '../../reports/services/cash-flow.service';
 import { PnlService } from '../../reports/services/pnl.service';
+import { BalanceSheetService } from '../../reports/services/balance-sheet.service';
 
 const OTHER_EXPENSE_SUB_CATEGORIES = [
   'Tax payment',
@@ -41,6 +42,7 @@ export class AdminCalculationAuditService {
     private readonly transactionRepository: Repository<Transaction>,
     private readonly pnlService: PnlService,
     private readonly cashFlowService: CashFlowService,
+    private readonly balanceSheetService: BalanceSheetService,
   ) {}
 
   async getUsersWithLinkedAccounts() {
@@ -67,7 +69,12 @@ export class AdminCalculationAuditService {
       .getMany();
   }
 
-  async getAudit(userId: string, startDate: Date, endDate: Date) {
+  async getAudit(
+    userId: string,
+    startDate: Date,
+    endDate: Date,
+    includeAllTransactions = false,
+  ) {
     const user = await this.userRepository.findOne({
       where: { id: userId },
       relations: ['business'],
@@ -84,27 +91,31 @@ export class AdminCalculationAuditService {
       throw new NotFoundException('This user has no linked bank account');
     }
 
-    const inRange = await this.transactionRepository
+    const transactionQuery = this.transactionRepository
       .createQueryBuilder('tx')
-      .where('tx.businessId = :businessId', { businessId: user.business.id })
-      .andWhere('tx.date BETWEEN :startDate AND :endDate', {
+      .where('tx.businessId = :businessId', { businessId: user.business.id });
+    if (!includeAllTransactions) {
+      transactionQuery.andWhere('tx.date BETWEEN :startDate AND :endDate', {
         startDate,
         endDate,
-      })
+      });
+    }
+    const selectedTransactions = await transactionQuery
       .orderBy('tx.date', 'DESC')
       .addOrderBy('tx.createdAt', 'DESC')
       .getMany();
 
-    const audited: AuditedTransaction[] = inRange.map((tx) =>
+    const audited: AuditedTransaction[] = selectedTransactions.map((tx) =>
       Object.assign(tx, { treatment: this.classify(tx) }),
     );
-    const [pnl, cashFlow] = await Promise.all([
+    const [pnl, cashFlow, balanceSheet] = await Promise.all([
       this.pnlService.calculatePnlForBusiness(
         user.business.id,
         startDate,
         endDate,
       ),
       this.cashFlowService.calculateCashFlow(userId, startDate, endDate),
+      this.balanceSheetService.calculateBalanceSheet(userId),
     ]);
 
     return {
@@ -114,6 +125,8 @@ export class AdminCalculationAuditService {
       transactions: audited,
       pnl,
       cashFlow,
+      balanceSheet,
+      includesAllStoredTransactions: includeAllTransactions,
       counts: {
         total: audited.length,
         pnlIncluded: audited.filter((tx) => tx.treatment.pnl !== null).length,

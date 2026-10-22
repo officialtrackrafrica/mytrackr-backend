@@ -43,6 +43,7 @@ export class MonoService {
   private readonly maxRetries = 3;
   private readonly initialRetryDelayMs = 60 * 1000; // 1 minute
   private monoAccountFkColumnName: string | null = null;
+  private readonly financeSyncs = new Map<string, Promise<void>>();
 
   constructor(
     private configService: ConfigService,
@@ -355,13 +356,47 @@ export class MonoService {
     return this.getTransactionsFromDb(userId, start, effectiveEnd);
   }
 
+  // Date filters affect the response, never the forward sync boundary.
+  async syncUserTransactionsForFinance(userId: string, startDate?: string): Promise<void> {
+    const previous = this.financeSyncs.get(userId) || Promise.resolve();
+    const pending = previous.catch(() => undefined).then(async () => {
+      const requestedStart = startDate ? new Date(startDate) : undefined;
+      if (requestedStart && (isNaN(requestedStart.getTime()) || requestedStart > new Date())) {
+        throw new BadRequestException('Invalid transaction sync start date');
+      }
+      const accounts = await this.monoAccountRepository.find({
+        where: { user: { id: userId } },
+      });
+      await Promise.all(accounts.map(async (account) => {
+        await this.syncTransactionsForAccount(account, requestedStart, false, false, true);
+        // Retry projection even when Mono is fresh, in case an earlier projection failed.
+        await this.transactionSyncService.syncAccountTransactions(account.monoAccountId);
+      }));
+    });
+    this.financeSyncs.set(userId, pending);
+    try {
+      await pending;
+    } finally {
+      if (this.financeSyncs.get(userId) === pending) this.financeSyncs.delete(userId);
+    }
+  }
+
   async syncTransactionsForAccount(
     account: MonoAccount,
     requestedStart?: Date,
     forceSync?: boolean,
     autoCategorize = false,
+    reuseToday = false,
   ) {
     const now = new Date();
+    const lagosDay = (date: Date) => new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Africa/Lagos', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(date);
+    const forwardIsFresh = reuseToday && !forceSync && account.lastSyncedAt &&
+      lagosDay(new Date(account.lastSyncedAt)) === lagosDay(now);
+    const needsBackfill = requestedStart &&
+      (!account.earliestSyncedAt || requestedStart < account.earliestSyncedAt);
+    if (forwardIsFresh && !needsBackfill) return;
 
     let forwardStart: Date;
     if (!account.lastSyncedAt || forceSync) {
@@ -370,7 +405,7 @@ export class MonoService {
       forwardStart = new Date(account.lastSyncedAt);
     }
 
-    if (forwardStart < now) {
+    if (!forwardIsFresh && forwardStart < now) {
       this.logger.log(
         `Forward sync for ${account.monoAccountId}: ${forwardStart.toISOString()} → ${now.toISOString()}`,
       );
@@ -412,7 +447,7 @@ export class MonoService {
     await this.monoAccountRepository.update(
       { id: account.id },
       {
-        lastSyncedAt: now,
+        lastSyncedAt: forwardIsFresh ? account.lastSyncedAt : now,
         earliestSyncedAt: newEarliest,
       },
     );
@@ -458,7 +493,7 @@ export class MonoService {
         this.logger.error(
           `Error fetching transactions page ${page} for ${account.monoAccountId}: ${error.message}`,
         );
-        hasMore = false;
+        throw error;
       }
     }
 
@@ -674,10 +709,11 @@ export class MonoService {
   }
 
   private formatDateForMono(date: Date): string {
-    const dd = String(date.getUTCDate()).padStart(2, '0');
-    const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
-    const yyyy = date.getUTCFullYear();
-    return `${dd}-${mm}-${yyyy}`;
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Africa/Lagos', day: '2-digit', month: '2-digit', year: 'numeric',
+    }).formatToParts(date);
+    const value = (type: string) => parts.find((part) => part.type === type)!.value;
+    return `${value('day')}-${value('month')}-${value('year')}`;
   }
 
   private async getTransactionsFromMono(

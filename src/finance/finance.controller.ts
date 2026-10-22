@@ -46,6 +46,7 @@ import { Transaction, CategorySource } from './entities/transaction.entity';
 import { AccountCategory } from './entities/account-category.entity';
 import { AccountSubCategory } from './entities/account-subcategory.entity';
 import { MonoTransaction } from '../mono/entities/transaction.entity';
+import { MonoService } from '../mono/mono.service';
 import { CategorizationService } from './services/categorization.service';
 import { CsvUploadService } from './services/csv-upload.service';
 import { PdfUploadService } from './services/pdf-upload.service';
@@ -190,6 +191,7 @@ export class FinanceController {
     private readonly categorySuggestionService: CategorySuggestionService,
     private readonly transactionReportPdfService: TransactionReportPdfService,
     private readonly subscriptionService: SubscriptionService,
+    private readonly monoService: MonoService,
   ) {}
 
   @Get('assets/categories')
@@ -808,6 +810,8 @@ export class FinanceController {
   @ApiOperation({
     summary:
       "List transactions for the user's business with pagination and filtering",
+    description:
+      'Syncs connected bank accounts through today (Africa/Lagos), reusing successful same-day syncs, before applying response filters. Older requested history is backfilled when needed.',
   })
   @ApiResponse({
     status: 200,
@@ -821,6 +825,8 @@ export class FinanceController {
     const businessId = await this.businessService.getBusinessIdForUser(
       req.user.id,
     );
+
+    await this.monoService.syncUserTransactionsForFinance(req.user.id, queryDto.startDate);
 
     const {
       page = 1,

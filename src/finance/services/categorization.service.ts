@@ -59,6 +59,7 @@ interface GoogleGenerateContentResult {
 }
 
 type GeminiCategorizationResult = {
+  transactionIndex?: number;
   categoryName?: string;
   categoryType?: string;
   subCategoryName?: string;
@@ -150,7 +151,11 @@ export class CategorizationService {
           const full = await this.transactionRepository.findOneBy({
             id: existing.id,
           });
-          if (full && !full.isCategorised) {
+          if (
+            full &&
+            (!full.isCategorised ||
+              (autoCategorize && this.needsAiCategorization(full)))
+          ) {
             tx = full;
             if (!autoCategorize) {
               transactionsToUpdate.push(tx);
@@ -176,14 +181,6 @@ export class CategorizationService {
               await this.applyAiPrediction(
                 tx,
                 this.getCategorizationText(dto),
-                userId ?? '',
-              );
-            }
-
-            if (!tx.isCategorised) {
-              await this.applyGeminiPrediction(
-                tx,
-                businessId || undefined,
                 userId ?? '',
               );
             }
@@ -259,14 +256,6 @@ export class CategorizationService {
         );
       }
 
-      if (!tx.isCategorised) {
-        await this.applyGeminiPrediction(
-          tx,
-          businessId || undefined,
-          userId ?? '',
-        );
-      }
-
       // ── Step 3: Mono default category ─────────────────────────────────────
       if (!tx.isCategorised && dto.monoCategory) {
         tx.category = dto.monoCategory;
@@ -298,6 +287,14 @@ export class CategorizationService {
           `Heuristic fallback applied to "${dto.description}": ${tx.category}`,
         );
       }
+    }
+
+    if (autoCategorize) {
+      await this.applyGeminiPredictions(
+        [...transactionsToInsert, ...transactionsToUpdate],
+        businessId || undefined,
+        userId ?? '',
+      );
     }
 
     if (transactionsToInsert.length > 0) {
@@ -333,18 +330,24 @@ export class CategorizationService {
     businessId: string | null,
     userId: string | null,
   ): Promise<number> {
-    const query = this.transactionRepository
-      .createQueryBuilder('tx')
-      .where(
-        new Brackets((qb) => {
-          qb.where('tx.categorySource IS NULL').orWhere(
-            'tx.categorySource != :manualSource',
-            {
-              manualSource: CategorySource.MANUAL,
-            },
-          );
-        }),
-      );
+    const query = this.transactionRepository.createQueryBuilder('tx').where(
+      new Brackets((qb) => {
+        qb.where('tx.categorySource IS NULL').orWhere(
+          'tx.categorySource != :manualSource',
+          {
+            manualSource: CategorySource.MANUAL,
+          },
+        );
+      }),
+    );
+
+    query.andWhere(
+      new Brackets((qb) => {
+        qb.where("NULLIF(TRIM(tx.category), '') IS NULL").orWhere(
+          "NULLIF(TRIM(tx.subCategory), '') IS NULL",
+        );
+      }),
+    );
 
     if (businessId) {
       query.andWhere('tx.businessId = :businessId', { businessId });
@@ -352,7 +355,9 @@ export class CategorizationService {
       query.andWhere('tx.userId = :userId', { userId });
     }
 
-    const transactions = await query.getMany();
+    const transactions = (await query.getMany()).filter((tx) =>
+      this.needsAiCategorization(tx),
+    );
 
     if (transactions.length === 0) {
       this.logger.log('Retroactive AI sync: nothing to update.');
@@ -373,59 +378,55 @@ export class CategorizationService {
       if (!tx.name) {
         tx.name = this.extractCounterpartyName(tx.description) as any;
       }
-      const description = this.getCategorizationText(tx);
-      tx.category = null as any;
-      tx.subCategory = null as any;
-      tx.categoryId = null as any;
-      tx.subCategoryId = null as any;
-      tx.aiCategory = null as any;
-      tx.ruleCategory = null as any;
-      tx.ruleSubCategory = null as any;
-      tx.heuristicCategory = null as any;
-      tx.ruleId = null as any;
-      tx.notes = null as any;
-      tx.isCategorised = false;
-      tx.categorySource = CategorySource.HEURISTIC;
-
       const ruleMatched = await this.applyRules(tx, activeRules);
-      if (!tx.isCategorised) {
-        const geminiMatched = await this.applyGeminiPrediction(
-          tx,
-          businessId || undefined,
-          userId ?? '',
-        );
-        if (geminiMatched) {
-          await this.learnFromCategorizedTransaction(tx, userId ?? '');
-        }
-      } else if (ruleMatched) {
+      if (ruleMatched) {
         await this.learnFromCategorizedTransaction(tx, userId ?? '');
       }
-
-      if (!tx.isCategorised) {
-        await this.applyAiPrediction(tx, description, userId ?? '');
-      }
-
-      // Fall back to direction heuristic
-      if (!tx.isCategorised) {
-        tx.category =
-          tx.direction === TransactionDirection.CREDIT
-            ? TransactionCategory.INCOME
-            : TransactionCategory.EXPENSE;
-
-        const cat = await this.categoryRepo.findOne({
-          where: { type: tx.category as any },
-        });
-        if (cat) tx.categoryId = cat.id;
-
-        tx.heuristicCategory = tx.category;
-        tx.isCategorised = true;
-        tx.categorySource = CategorySource.HEURISTIC;
-      }
-
-      updatedCount++;
     }
 
-    await this.transactionRepository.save(transactions, { chunk: 100 });
+    const batchSize = this.getAiBatchSize();
+    for (let offset = 0; offset < transactions.length; offset += batchSize) {
+      const batch = transactions.slice(offset, offset + batchSize);
+      const matched = await this.applyGeminiPredictions(
+        batch,
+        businessId || undefined,
+        userId ?? '',
+      );
+
+      for (const tx of batch) {
+        if (matched.has(tx)) {
+          await this.learnFromCategorizedTransaction(tx, userId ?? '');
+        }
+
+        if (!tx.isCategorised) {
+          await this.applyAiPrediction(
+            tx,
+            this.getCategorizationText(tx),
+            userId ?? '',
+          );
+        }
+
+        // Fall back to direction heuristic
+        if (!tx.isCategorised) {
+          tx.category =
+            tx.direction === TransactionDirection.CREDIT
+              ? TransactionCategory.INCOME
+              : TransactionCategory.EXPENSE;
+
+          const cat = await this.categoryRepo.findOne({
+            where: { type: tx.category as any },
+          });
+          if (cat) tx.categoryId = cat.id;
+
+          tx.heuristicCategory = tx.category;
+          tx.isCategorised = true;
+          tx.categorySource = CategorySource.HEURISTIC;
+        }
+
+        updatedCount++;
+      }
+      await this.transactionRepository.save(batch, { chunk: batchSize });
+    }
 
     this.logger.log(
       `Retroactive AI sync complete: updated ${updatedCount} transactions.`,
@@ -553,6 +554,7 @@ export class CategorizationService {
     description: string,
     userId: string,
   ): Promise<boolean> {
+    if (!this.needsAiCategorization(tx)) return false;
     try {
       const predicted = await this.aiCategorizationService.predict(
         description,
@@ -640,8 +642,7 @@ export class CategorizationService {
     return (
       subCategories.find(
         (subCategory) =>
-          this.normalizeCategoryName(subCategory.name) ===
-          normalizedPrediction,
+          this.normalizeCategoryName(subCategory.name) === normalizedPrediction,
       ) || null
     );
   }
@@ -797,11 +798,28 @@ export class CategorizationService {
     }
   }
 
-  private async applyGeminiPrediction(
-    tx: Transaction,
+  private needsAiCategorization(tx: Transaction): boolean {
+    return (
+      tx.categorySource !== CategorySource.MANUAL &&
+      (!tx.category?.trim() || !tx.subCategory?.trim())
+    );
+  }
+
+  private getAiBatchSize(): number {
+    return Math.min(
+      this.getPositiveIntConfig('CATEGORY_SUGGESTION_AI_BATCH_SIZE', 200),
+      200,
+    );
+  }
+
+  private async applyGeminiPredictions(
+    transactions: Transaction[],
     businessId: string | undefined,
     userId: string,
-  ): Promise<boolean> {
+  ): Promise<Set<Transaction>> {
+    const matched = new Set<Transaction>();
+    const pending = transactions.filter((tx) => this.needsAiCategorization(tx));
+    if (!pending.length) return matched;
     const aiBaseUrl =
       this.configService.get<string>('CATEGORY_SUGGESTION_AI_BASE_URL') ||
       this.configService.get<string>('STATEMENT_AI_BASE_URL') ||
@@ -814,12 +832,12 @@ export class CategorizationService {
       '';
 
     if (!aiBaseUrl || !aiModel) {
-      return false;
+      return matched;
     }
 
     const categories = await this.listCategories(businessId);
     if (categories.length === 0) {
-      return false;
+      return matched;
     }
 
     const aiApiKey =
@@ -844,65 +862,138 @@ export class CategorizationService {
     }));
     const systemPrompt = [
       'You are a transaction categorization assistant for MyTrackr.',
-      'Choose exactly one category and, when possible, one subcategory from the provided catalog.',
+      'For each transaction choose exactly one category and, when possible, one subcategory from the provided catalog.',
       'Never invent a category or subcategory outside the catalog.',
       'The transaction direction is authoritative, but balance-sheet categories may have either direction: owner contributions are EQUITY credits; owner withdrawals are EQUITY debits; loans received are LIABILITY credits; loan-principal repayments are LIABILITY debits; asset purchases/savings are ASSET debits; asset disposals or receivable repayments may be ASSET credits.',
       'Use TRANSFER only for genuine movement between business-owned accounts. Do not label owner funding, loans, savings, refunds, customer receipts, or expenses as generic transfers.',
       'Return JSON only with this exact shape:',
-      '{"categoryName":"string","categoryType":"string","subCategoryName":"string or omitted","confidence":0.0}',
+      '{"results":[{"transactionIndex":0,"categoryName":"string","categoryType":"string","subCategoryName":"string or omitted","confidence":0.0}]}',
+      'Return one result per transaction, using its exact transactionIndex.',
       'Confidence must be between 0 and 1.',
       'Do not include markdown fences.',
     ].join('\n');
-    const userPrompt = JSON.stringify({
-      transaction: {
-        description: tx.description,
-        name: tx.name || undefined,
-        amount: Number(tx.amount),
-        direction: tx.direction,
-        monoCategory: tx.monoCategory || undefined,
-        existingAiCategory: tx.aiCategory || undefined,
-      },
-      allowedCatalog,
-      userId,
-    });
-
-    try {
-      const response = this.isGoogleAiStudioBaseUrl(aiBaseUrl)
-        ? await this.callGoogleCategorizationAi(
-            aiBaseUrl,
-            aiModel,
-            aiApiKey,
-            aiTemperature,
-            aiTopP,
-            aiTimeoutMs,
-            systemPrompt,
-            userPrompt,
-          )
-        : await this.callOpenAiCompatibleCategorizationAi(
-            aiBaseUrl,
-            aiModel,
-            aiApiKey,
-            aiTemperature,
-            aiTopP,
-            aiTimeoutMs,
-            systemPrompt,
-            userPrompt,
-          );
-      const result = this.parseGeminiCategorization(response);
-      const confidence = this.normalizeConfidence(result?.confidence);
-
-      if (!result || confidence < AI_AUTO_APPLY_THRESHOLD) {
-        if (result?.categoryName || result?.categoryType) {
-          tx.notes = `Gemini suggestion: ${result.subCategoryName || result.categoryName || result.categoryType} (${(confidence * 100).toFixed(1)}% confidence)`;
-        }
-        return false;
-      }
-
-      return this.applyValidatedAiCategory(tx, result, categories);
-    } catch (error: any) {
-      this.logger.warn(`Gemini categorization failed: ${error.message}`);
-      return false;
+    const payloads = pending.map((tx) => ({
+      description: tx.description?.slice(0, 1000),
+      name: tx.name?.slice(0, 200) || undefined,
+      amount: Number(tx.amount),
+      direction: tx.direction,
+      monoCategory: tx.monoCategory?.slice(0, 100) || undefined,
+      existingAiCategory: tx.aiCategory?.slice(0, 100) || undefined,
+    }));
+    // Bound the full prompt size as well as row count, including the catalog.
+    const maxChars = this.getPositiveIntConfig(
+      'CATEGORY_SUGGESTION_AI_BATCH_MAX_CHARS',
+      120000,
+    );
+    const fixedChars =
+      systemPrompt.length +
+      JSON.stringify({ transactions: [], allowedCatalog, userId }).length;
+    if (fixedChars >= maxChars) {
+      this.logger.warn(
+        'Categorization catalog exceeds AI prompt budget; skipping AI requests.',
+      );
+      return matched;
     }
+    for (let offset = 0; offset < pending.length; ) {
+      const start = offset;
+      let chars = fixedChars;
+      const batchPayload: Array<
+        (typeof payloads)[number] & { transactionIndex: number }
+      > = [];
+      while (
+        offset < pending.length &&
+        batchPayload.length < this.getAiBatchSize()
+      ) {
+        const payload = {
+          ...payloads[offset],
+          transactionIndex: batchPayload.length,
+        };
+        const size = JSON.stringify(payload).length + 1;
+        if (batchPayload.length && chars + size > maxChars) break;
+        if (chars + size > maxChars) {
+          offset++;
+          break;
+        }
+        batchPayload.push(payload);
+        chars += size;
+        offset++;
+      }
+      if (!batchPayload.length) continue;
+      const batch = pending.slice(start, offset);
+      const userPrompt = JSON.stringify({
+        transactions: batchPayload,
+        allowedCatalog,
+        userId,
+      });
+
+      try {
+        const response = this.isGoogleAiStudioBaseUrl(aiBaseUrl)
+          ? await this.callGoogleCategorizationAi(
+              aiBaseUrl,
+              aiModel,
+              aiApiKey,
+              aiTemperature,
+              aiTopP,
+              aiTimeoutMs,
+              systemPrompt,
+              userPrompt,
+            )
+          : await this.callOpenAiCompatibleCategorizationAi(
+              aiBaseUrl,
+              aiModel,
+              aiApiKey,
+              aiTemperature,
+              aiTopP,
+              aiTimeoutMs,
+              systemPrompt,
+              userPrompt,
+            );
+        const parsed = this.parseGeminiCategorization(response);
+        const results =
+          parsed?.results ||
+          (batch.length === 1 && parsed
+            ? [{ ...parsed, transactionIndex: 0 }]
+            : []);
+        const seen = new Set<number>();
+        for (const result of results) {
+          if (
+            !result ||
+            typeof result !== 'object' ||
+            (result.categoryName !== undefined &&
+              typeof result.categoryName !== 'string') ||
+            (result.categoryType !== undefined &&
+              typeof result.categoryType !== 'string') ||
+            (result.subCategoryName !== undefined &&
+              typeof result.subCategoryName !== 'string')
+          )
+            continue;
+          const index = result?.transactionIndex;
+          if (
+            !Number.isInteger(index) ||
+            index! < 0 ||
+            index! >= batch.length ||
+            seen.has(index!)
+          )
+            continue;
+          seen.add(index!);
+          const tx = batch[index!];
+          const confidence = this.normalizeConfidence(result?.confidence);
+
+          if (!result || confidence < AI_AUTO_APPLY_THRESHOLD) {
+            if (result?.categoryName || result?.categoryType) {
+              tx.notes = `Gemini suggestion: ${result.subCategoryName || result.categoryName || result.categoryType} (${(confidence * 100).toFixed(1)}% confidence)`;
+            }
+            continue;
+          }
+
+          if (this.applyValidatedAiCategory(tx, result, categories))
+            matched.add(tx);
+        }
+      } catch (error: any) {
+        this.logger.warn(`Gemini categorization failed: ${error.message}`);
+      }
+    }
+    return matched;
   }
 
   private async callOpenAiCompatibleCategorizationAi(
@@ -966,12 +1057,27 @@ export class CategorizationService {
           responseSchema: {
             type: 'OBJECT',
             properties: {
-              categoryName: { type: 'STRING' },
-              categoryType: { type: 'STRING' },
-              subCategoryName: { type: 'STRING' },
-              confidence: { type: 'NUMBER' },
+              results: {
+                type: 'ARRAY',
+                items: {
+                  type: 'OBJECT',
+                  properties: {
+                    transactionIndex: { type: 'INTEGER' },
+                    categoryName: { type: 'STRING' },
+                    categoryType: { type: 'STRING' },
+                    subCategoryName: { type: 'STRING' },
+                    confidence: { type: 'NUMBER' },
+                  },
+                  required: [
+                    'transactionIndex',
+                    'categoryName',
+                    'categoryType',
+                    'confidence',
+                  ],
+                },
+              },
             },
-            required: ['categoryName', 'categoryType', 'confidence'],
+            required: ['results'],
           },
         },
       },
@@ -998,7 +1104,9 @@ export class CategorizationService {
 
   private parseGeminiCategorization(
     response: ChatCompletionsApiResult,
-  ): GeminiCategorizationResult | null {
+  ):
+    | (GeminiCategorizationResult & { results?: GeminiCategorizationResult[] })
+    | null {
     const rawContent = response.choices?.[0]?.message?.content;
     const outputText =
       typeof rawContent === 'string'
@@ -1015,7 +1123,14 @@ export class CategorizationService {
     }
 
     try {
-      return JSON.parse(jsonString) as GeminiCategorizationResult;
+      const parsed = JSON.parse(jsonString);
+      if (
+        !parsed ||
+        typeof parsed !== 'object' ||
+        (parsed.results !== undefined && !Array.isArray(parsed.results))
+      )
+        return null;
+      return parsed;
     } catch (error: any) {
       this.logger.warn(
         `Failed to parse Gemini categorization: ${error.message}`,
@@ -1084,7 +1199,9 @@ export class CategorizationService {
       .join(' - ');
   }
 
-  private extractCounterpartyName(narration?: string | null): string | undefined {
+  private extractCounterpartyName(
+    narration?: string | null,
+  ): string | undefined {
     if (!narration) {
       return undefined;
     }

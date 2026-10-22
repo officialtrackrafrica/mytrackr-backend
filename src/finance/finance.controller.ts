@@ -1288,7 +1288,7 @@ export class FinanceController {
   @ApiOperation({
     summary: 'Initialize AI categorisation sync',
     description:
-      'Reprocesses all non-manual transactions for the current business using Gemini AI, preserving user manual overrides.',
+      'Categorizes non-manual transactions missing a category or subcategory in bounded AI batches, preserving user manual overrides.',
   })
   @ApiResponse({
     status: 200,

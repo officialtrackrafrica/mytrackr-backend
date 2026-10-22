@@ -3,11 +3,15 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
   Transaction,
-  TransactionCategory,
   TransactionDirection,
 } from '../../finance/entities/transaction.entity';
 import { BankAccount } from '../../finance/entities/bank-account.entity';
 import { BusinessService } from '../../business/services/business.service';
+import {
+  AccountingTreatment,
+  getAccountingTreatment,
+  isOperatingExpense,
+} from '../../common/accounting/accounting-treatment';
 
 @Injectable()
 export class DashboardService {
@@ -30,6 +34,8 @@ export class DashboardService {
 
     const transactions = await this.transactionRepository
       .createQueryBuilder('tx')
+      .leftJoinAndSelect('tx.subCategoryRef', 'subCategoryRef')
+      .addSelect('subCategoryRef.accountingType')
       .where('tx.businessId = :businessId', { businessId })
       .andWhere('tx.date BETWEEN :startDate AND :endDate', {
         startDate,
@@ -46,6 +52,7 @@ export class DashboardService {
     let expenses = 0;
     let totalCogs = 0;
     let cashOut = 0;
+    let refunds = 0;
     let uncategorisedCount = 0;
 
     const diffMonths = Math.max(
@@ -57,35 +64,37 @@ export class DashboardService {
 
     for (const tx of transactions) {
       const amount = Number(tx.amount);
+      const treatment = getAccountingTreatment(tx);
 
-      if (tx.category === TransactionCategory.TRANSFER) continue;
-
-      if (tx.category === TransactionCategory.INCOME) {
+      if (treatment === AccountingTreatment.REVENUE) {
         revenue += amount;
-      } else if (tx.category === TransactionCategory.COGS) {
+      } else if (treatment === AccountingTreatment.COGS) {
         totalCogs += amount;
-      } else if (tx.category === TransactionCategory.EXPENSE) {
+      } else if (
+        treatment === AccountingTreatment.OPERATING_EXPENSE ||
+        treatment === AccountingTreatment.OTHER_EXPENSE
+      ) {
         expenses += amount;
-      } else {
-        if (!tx.isCategorised) uncategorisedCount++;
-        if (tx.direction === TransactionDirection.CREDIT) {
-          revenue += amount;
-        } else if (tx.direction === TransactionDirection.DEBIT) {
-          expenses += amount;
-        }
+      } else if (
+        treatment === AccountingTreatment.REFUND_REVERSAL &&
+        tx.direction === TransactionDirection.CREDIT
+      ) {
+        expenses -= amount;
+        refunds += amount;
       }
 
-      if (
-        tx.direction === TransactionDirection.DEBIT &&
-        tx.category !== TransactionCategory.TRANSFER
-      ) {
+      if (treatment === AccountingTreatment.UNCLASSIFIED) {
+        uncategorisedCount++;
+      }
+
+      if (isOperatingExpense(treatment)) {
         cashOut += amount;
       }
     }
 
     expenses = expenses + totalCogs;
     const netProfit = revenue - expenses;
-    const burnRate = cashOut / diffMonths;
+    const burnRate = Math.max(0, cashOut - refunds) / diffMonths;
 
     const cashBalance = bankAccounts.reduce(
       (acc, account) => acc + Number(account.currentBalance),

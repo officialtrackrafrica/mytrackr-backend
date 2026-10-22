@@ -17,6 +17,34 @@ export const DEFAULT_CATEGORIZATION_RULES: Array<{
   priority: number;
 }> = [
   {
+    matchType: MatchType.STARTS_WITH,
+    matchValue: 'rev-',
+    category: AccountCategoryType.TRANSFER,
+    subCategory: 'Refund and Reversal',
+    priority: 1,
+  },
+  {
+    matchType: MatchType.CONTAINS,
+    matchValue: 'reversal',
+    category: AccountCategoryType.TRANSFER,
+    subCategory: 'Refund and Reversal',
+    priority: 2,
+  },
+  {
+    matchType: MatchType.CONTAINS,
+    matchValue: 'piggyvest',
+    category: AccountCategoryType.ASSET,
+    subCategory: 'Business savings or investment',
+    priority: 3,
+  },
+  {
+    matchType: MatchType.CONTAINS,
+    matchValue: 'loan repayment',
+    category: AccountCategoryType.ASSET,
+    subCategory: 'Loan advanced or receivable',
+    priority: 4,
+  },
+  {
     matchType: MatchType.CONTAINS,
     matchValue: 'bank charge',
     category: AccountCategoryType.EXPENSE,

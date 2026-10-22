@@ -5,23 +5,25 @@ import { User } from '../../auth/entities/user.entity';
 import { BankAccount } from '../../finance/entities/bank-account.entity';
 import {
   Transaction,
-  TransactionCategory,
   TransactionDirection,
 } from '../../finance/entities/transaction.entity';
 import { CashFlowService } from '../../reports/services/cash-flow.service';
 import { PnlService } from '../../reports/services/pnl.service';
 import { BalanceSheetService } from '../../reports/services/balance-sheet.service';
-
-const OTHER_EXPENSE_SUB_CATEGORIES = [
-  'Tax payment',
-  'Tax',
-  'Interest on loan',
-  'Interest',
-  'Loan Interest',
-];
+import {
+  AccountingTreatment,
+  getAccountingTreatment,
+  isOperatingExpense,
+} from '../../common/accounting/accounting-treatment';
 
 export type AuditTreatment = {
-  pnl: 'Revenue' | 'COGS' | 'Operating expense' | 'Other expense' | null;
+  pnl:
+    | 'Revenue'
+    | 'COGS'
+    | 'Operating expense'
+    | 'Other expense'
+    | 'Expense reversal'
+    | null;
   pnlReason: string;
   cashFlow: 'Cash in' | 'Cash out' | null;
   cashFlowReason: string;
@@ -93,6 +95,8 @@ export class AdminCalculationAuditService {
 
     const transactionQuery = this.transactionRepository
       .createQueryBuilder('tx')
+      .leftJoinAndSelect('tx.subCategoryRef', 'subCategoryRef')
+      .addSelect('subCategoryRef.accountingType')
       .where('tx.businessId = :businessId', { businessId: user.business.id });
     if (!includeAllTransactions) {
       transactionQuery.andWhere('tx.date BETWEEN :startDate AND :endDate', {
@@ -139,48 +143,48 @@ export class AdminCalculationAuditService {
   }
 
   private classify(tx: Transaction): AuditTreatment {
-    const isTransfer = tx.category === TransactionCategory.TRANSFER;
+    const accountingTreatment = getAccountingTreatment(tx);
+    const isTransfer =
+      accountingTreatment === AccountingTreatment.INTERNAL_TRANSFER;
     let pnl: AuditTreatment['pnl'] = null;
     let pnlReason = 'Excluded: category/direction is not used by P&L';
 
-    if (!tx.isCategorised) {
+    if (accountingTreatment === AccountingTreatment.UNCLASSIFIED) {
       pnlReason = 'Excluded: transaction is not categorised';
     } else if (isTransfer) {
       pnlReason = 'Excluded: internal transfer';
-    } else if (
-      tx.category === TransactionCategory.INCOME &&
-      tx.direction === TransactionDirection.CREDIT
-    ) {
+    } else if (accountingTreatment === AccountingTreatment.REVENUE) {
       pnl = 'Revenue';
       pnlReason = 'Included as revenue: categorised INCOME credit';
-    } else if (
-      tx.category === TransactionCategory.COGS &&
-      tx.direction === TransactionDirection.DEBIT
-    ) {
+    } else if (accountingTreatment === AccountingTreatment.COGS) {
       pnl = 'COGS';
       pnlReason = 'Included as COGS: categorised COGS debit';
+    } else if (accountingTreatment === AccountingTreatment.OTHER_EXPENSE) {
+      pnl = 'Other expense';
+      pnlReason = 'Included as other expense';
     } else if (
-      tx.category === TransactionCategory.EXPENSE &&
-      tx.direction === TransactionDirection.DEBIT
+      accountingTreatment === AccountingTreatment.OPERATING_EXPENSE
     ) {
-      const isOther = OTHER_EXPENSE_SUB_CATEGORIES.some((name) =>
-        tx.subCategory?.toLowerCase().includes(name.toLowerCase()),
-      );
-      pnl = isOther ? 'Other expense' : 'Operating expense';
+      pnl = 'Operating expense';
       pnlReason = `Included as ${pnl.toLowerCase()}`;
+    } else if (
+      accountingTreatment === AccountingTreatment.REFUND_REVERSAL
+    ) {
+      pnl = 'Expense reversal';
+      pnlReason = 'Included as a reduction of operating expenses';
     }
 
     let cashFlow: AuditTreatment['cashFlow'] = null;
     let cashFlowReason = 'Excluded: internal transfer';
     if (!isTransfer && tx.direction === TransactionDirection.CREDIT) {
       cashFlow = 'Cash in';
-      cashFlowReason = 'Included as cash in: non-transfer credit';
+      cashFlowReason = `Included as cash in: ${accountingTreatment.toLowerCase()}`;
     } else if (!isTransfer && tx.direction === TransactionDirection.DEBIT) {
       cashFlow = 'Cash out';
       cashFlowReason = 'Included as cash out: non-transfer debit';
     }
 
-    const burnRate = cashFlow === 'Cash out';
+    const burnRate = isOperatingExpense(accountingTreatment);
     return {
       pnl,
       pnlReason,
@@ -188,10 +192,10 @@ export class AdminCalculationAuditService {
       cashFlowReason,
       burnRate,
       burnRateReason: burnRate
-        ? 'Included: non-transfer debit contributes to cash out'
+        ? 'Included: confirmed operating debit contributes to burn rate'
         : isTransfer
           ? 'Excluded: internal transfer'
-          : 'Excluded: only non-transfer debits contribute to burn rate',
+          : 'Excluded: not a confirmed operating expense',
     };
   }
 }

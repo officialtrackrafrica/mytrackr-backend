@@ -669,6 +669,7 @@ export class CategorizationService {
     if (tx.direction === TransactionDirection.CREDIT) {
       const compatibleCreditCategories: string[] = [
         TransactionCategory.INCOME,
+        TransactionCategory.ASSET,
         TransactionCategory.LIABILITY,
         TransactionCategory.EQUITY,
         TransactionCategory.TRANSFER,
@@ -681,6 +682,8 @@ export class CategorizationService {
         TransactionCategory.EXPENSE,
         TransactionCategory.COGS,
         TransactionCategory.ASSET,
+        TransactionCategory.LIABILITY,
+        TransactionCategory.EQUITY,
         TransactionCategory.TRANSFER,
       ];
       return compatibleDebitCategories.includes(categoryType);
@@ -843,7 +846,8 @@ export class CategorizationService {
       'You are a transaction categorization assistant for MyTrackr.',
       'Choose exactly one category and, when possible, one subcategory from the provided catalog.',
       'Never invent a category or subcategory outside the catalog.',
-      'The transaction direction is authoritative: CREDIT transactions cannot be categorized as EXPENSE, COGS, or ASSET; DEBIT transactions cannot be categorized as INCOME, LIABILITY, or EQUITY unless the catalog category is TRANSFER.',
+      'The transaction direction is authoritative, but balance-sheet categories may have either direction: owner contributions are EQUITY credits; owner withdrawals are EQUITY debits; loans received are LIABILITY credits; loan-principal repayments are LIABILITY debits; asset purchases/savings are ASSET debits; asset disposals or receivable repayments may be ASSET credits.',
+      'Use TRANSFER only for genuine movement between business-owned accounts. Do not label owner funding, loans, savings, refunds, customer receipts, or expenses as generic transfers.',
       'Return JSON only with this exact shape:',
       '{"categoryName":"string","categoryType":"string","subCategoryName":"string or omitted","confidence":0.0}',
       'Confidence must be between 0 and 1.',

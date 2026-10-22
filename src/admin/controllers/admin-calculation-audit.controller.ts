@@ -174,7 +174,10 @@ ${input.audit ? this.renderAudit(input.audit, input.startText, input.endText, in
       ['Owner investments', audit.balanceSheet.summary.ownerInvestments],
       ['Retained profit', audit.balanceSheet.summary.retainedProfits],
       ['Owner withdrawals', audit.balanceSheet.summary.ownerWithdrawals],
-      ['Accounting difference', audit.balanceSheet.integrityCheck.difference],
+      [
+        'Opening / unresolved reconciliation',
+        audit.balanceSheet.equity.equityReconciliation,
+      ],
     ]
       .map(
         ([label, value]) =>
@@ -203,7 +206,7 @@ ${input.audit ? this.renderAudit(input.audit, input.startText, input.endText, in
 <section><h2>P&amp;L and cash-flow totals</h2><div class="cards nested-cards">${cards}</div></section>
 <section><h2>Balance-sheet totals</h2><p class="section-intro">Balance sheet is calculated from all stored records through today, independently of the report-period dates above.</p><div class="cards nested-cards">${balanceSheetCards}</div></section>
 <section><h2>Formulas used</h2><div class="formulas">
-<code>Revenue = Σ categorized INCOME credits</code><code>COGS = Σ categorized COGS debits</code><code>Gross profit = Revenue − COGS</code><code>Total expenses = Σ categorized EXPENSE debits</code><code>Net profit = Gross profit − Total expenses</code><code>Net profit margin = Net profit ÷ Revenue × 100</code><code>Cash in = Σ non-transfer credits</code><code>Cash out = Σ non-transfer debits</code><code>Net cash flow = Cash in − Cash out</code><code>Monthly burn rate = Cash out ÷ inclusive calendar months</code><code>Cash balance = Σ current linked bank-account balances</code><code>Runway = Cash balance ÷ Monthly burn rate</code>
+<code>Revenue = Σ categorized INCOME credits</code><code>COGS = Σ categorized COGS debits</code><code>Gross profit = Revenue − COGS</code><code>Total expenses = Expense debits − matched refund/reversal credits</code><code>Net profit = Gross profit − Total expenses</code><code>Net profit margin = Net profit ÷ Revenue × 100</code><code>Cash in/out = all non-internal cash movements</code><code>Internal transfer = movement between business-owned accounts</code><code>Net cash flow = Cash in − Cash out</code><code>Monthly burn = confirmed operating outflow ÷ inclusive calendar months</code><code>Owner's money = Total assets − Total liabilities</code><code>Reconciliation = Owner's money − recorded equity</code><code>Cash balance = Σ current linked bank-account balances</code><code>Runway = Cash balance ÷ Monthly burn rate</code>
 </div><p class="note">The selected period spans <b>${this.inclusiveMonths(startText, endText)}</b> inclusive calendar month(s). Runway: <b>${audit.cashFlow.monthsOfRunway ?? 'N/A'}</b> months; low-runway alert: <b>${audit.cashFlow.lowRunwayAlert ? 'Yes' : 'No'}</b>.</p></section>
 <section><div class="table-heading"><div><h2>Transaction evidence</h2><p>Showing ${visibleTransactions.length} of ${audit.counts.total} ${audit.includesAllStoredTransactions ? 'transactions stored for this business' : 'transactions in the selected period'}. P&amp;L treatment, cash-flow treatment, categorisation, IDs, and linked-account IDs are included.</p>${audit.includesAllStoredTransactions ? `<p class="note">P&amp;L and cash-flow cards use only ${e(startText)} to ${e(endText)}. The ledger below contains every stored transaction so entries outside that range are not part of those period totals.</p>` : ''}</div></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Transaction / identifiers</th><th>Direction / category</th><th>Amount</th><th>P&amp;L</th><th>Cash flow</th><th>Burn rate</th></tr></thead><tbody>${rows || '<tr><td colspan="7">No transactions match this view.</td></tr>'}</tbody></table></div></section>`;
   }

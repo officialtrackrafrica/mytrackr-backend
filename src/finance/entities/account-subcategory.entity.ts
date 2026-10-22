@@ -10,6 +10,21 @@ import {
 } from 'typeorm';
 import { AccountCategory } from './account-category.entity';
 
+export enum SubCategoryAccountingType {
+  REVENUE = 'REVENUE',
+  COGS = 'COGS',
+  OPERATING_EXPENSE = 'OPERATING_EXPENSE',
+  OTHER_EXPENSE = 'OTHER_EXPENSE',
+  REFUND_REVERSAL = 'REFUND_REVERSAL',
+  OWNER_CONTRIBUTION = 'OWNER_CONTRIBUTION',
+  OWNER_DRAWING = 'OWNER_DRAWING',
+  LOAN_RECEIVED = 'LOAN_RECEIVED',
+  LOAN_REPAYMENT = 'LOAN_REPAYMENT',
+  ASSET_MOVEMENT = 'ASSET_MOVEMENT',
+  INTERNAL_TRANSFER = 'INTERNAL_TRANSFER',
+  UNCLASSIFIED = 'UNCLASSIFIED',
+}
+
 @Entity('account_subcategories')
 export class AccountSubCategory {
   @PrimaryGeneratedColumn('uuid')
@@ -31,6 +46,9 @@ export class AccountSubCategory {
 
   @Column({ default: false })
   isSystem: boolean;
+
+  @Column({ type: 'varchar', length: 50, nullable: true, select: false })
+  accountingType: SubCategoryAccountingType | null;
 
   @Column({ nullable: true })
   @Index('IDX_account_subcategory_business_id')

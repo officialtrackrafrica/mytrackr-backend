@@ -3,18 +3,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
   Transaction,
-  TransactionCategory,
   TransactionDirection,
 } from '../../finance/entities/transaction.entity';
 import { BusinessService } from '../../business/services/business.service';
-
-const OTHER_EXPENSE_SUB_CATEGORIES = [
-  'Tax payment',
-  'Tax',
-  'Interest on loan',
-  'Interest',
-  'Loan Interest',
-];
+import {
+  AccountingTreatment,
+  getAccountingTreatment,
+} from '../../common/accounting/accounting-treatment';
 
 @Injectable()
 export class PnlService {
@@ -91,25 +86,17 @@ export class PnlService {
     startDate: Date,
     endDate: Date,
   ) {
-    const results = await this.transactionRepository
+    const transactions = await this.transactionRepository
       .createQueryBuilder('tx')
+      .leftJoinAndSelect('tx.subCategoryRef', 'subCategoryRef')
+      .addSelect('subCategoryRef.accountingType')
       .where('tx.businessId = :businessId', { businessId })
       .andWhere('tx.date BETWEEN :startDate AND :endDate', {
         startDate,
         endDate,
       })
       .andWhere('tx.isCategorised = :isCat', { isCat: true })
-      .andWhere('tx.category != :transfer', {
-        transfer: TransactionCategory.TRANSFER,
-      })
-      .select('tx.category', 'category')
-      .addSelect('tx.subCategory', 'subCategory')
-      .addSelect('tx.direction', 'direction')
-      .addSelect('SUM(tx.amount)', 'total')
-      .groupBy('tx.category')
-      .addGroupBy('tx.subCategory')
-      .addGroupBy('tx.direction')
-      .getRawMany();
+      .getMany();
 
     const incomeLines: { subCategory: any; amount: number }[] = [];
     const cogsLines: { subCategory: any; amount: number }[] = [];
@@ -121,44 +108,51 @@ export class PnlService {
     let totalOperatingExpenses = 0;
     let totalOtherExpenses = 0;
 
-    for (const r of results) {
-      const amount = parseFloat(r.total);
+    const addLine = (
+      lines: { subCategory: any; amount: number }[],
+      subCategory: string | null,
+      amount: number,
+    ) => {
+      const label = subCategory || 'Unspecified';
+      const existing = lines.find((line) => line.subCategory === label);
+      if (existing) existing.amount += amount;
+      else lines.push({ subCategory: label, amount });
+    };
 
-      if (
-        r.category === TransactionCategory.INCOME &&
-        r.direction === TransactionDirection.CREDIT
-      ) {
-        incomeLines.push({ subCategory: r.subCategory, amount });
+    for (const tx of transactions) {
+      const amount = Number(tx.amount);
+      const treatment = getAccountingTreatment(tx);
+
+      if (treatment === AccountingTreatment.REVENUE) {
+        addLine(incomeLines, tx.subCategory, amount);
         totalRevenue += amount;
         continue;
       }
 
-      if (
-        r.category === TransactionCategory.COGS &&
-        r.direction === TransactionDirection.DEBIT
-      ) {
-        cogsLines.push({ subCategory: r.subCategory, amount });
+      if (treatment === AccountingTreatment.COGS) {
+        addLine(cogsLines, tx.subCategory, amount);
         totalCogs += amount;
         continue;
       }
 
-      if (
-        r.category === TransactionCategory.EXPENSE &&
-        r.direction === TransactionDirection.DEBIT
-      ) {
-        const isOther = OTHER_EXPENSE_SUB_CATEGORIES.some(
-          (cat) =>
-            r.subCategory &&
-            r.subCategory.toLowerCase().includes(cat.toLowerCase()),
-        );
+      if (treatment === AccountingTreatment.OTHER_EXPENSE) {
+        addLine(otherExpenseLines, tx.subCategory, amount);
+        totalOtherExpenses += amount;
+        continue;
+      }
 
-        if (isOther) {
-          otherExpenseLines.push({ subCategory: r.subCategory, amount });
-          totalOtherExpenses += amount;
-        } else {
-          operatingExpenseLines.push({ subCategory: r.subCategory, amount });
-          totalOperatingExpenses += amount;
-        }
+      if (treatment === AccountingTreatment.OPERATING_EXPENSE) {
+        addLine(operatingExpenseLines, tx.subCategory, amount);
+        totalOperatingExpenses += amount;
+        continue;
+      }
+
+      if (
+        treatment === AccountingTreatment.REFUND_REVERSAL &&
+        tx.direction === TransactionDirection.CREDIT
+      ) {
+        addLine(operatingExpenseLines, 'Refunds and reversals', -amount);
+        totalOperatingExpenses -= amount;
       }
     }
 

@@ -5,7 +5,10 @@ import {
   AccountCategory,
   AccountCategoryType,
 } from '../../finance/entities/account-category.entity';
-import { AccountSubCategory } from '../../finance/entities/account-subcategory.entity';
+import {
+  AccountSubCategory,
+  SubCategoryAccountingType,
+} from '../../finance/entities/account-subcategory.entity';
 
 @Injectable()
 export class FinancialCategoriesSeed {
@@ -96,6 +99,20 @@ export class FinancialCategoriesSeed {
         subs: ['Personal Use'],
       },
       {
+        name: 'Business Assets and Savings',
+        type: AccountCategoryType.ASSET,
+        subs: [
+          'Business savings or investment',
+          'Equipment or fixed asset purchase',
+          'Loan advanced or receivable',
+        ],
+      },
+      {
+        name: 'Loans and Borrowing',
+        type: AccountCategoryType.LIABILITY,
+        subs: ['Loan received', 'Loan principal repayment'],
+      },
+      {
         name: 'Internal Transfers',
         type: AccountCategoryType.TRANSFER,
         subs: [
@@ -122,8 +139,18 @@ export class FinancialCategoriesSeed {
       }
 
       for (const subName of catData.subs) {
+        const accountingType = this.getAccountingType(
+          catData.type,
+          subName,
+        );
         const subExists = await this.subCategoryRepo.findOne({
           where: { name: subName, categoryId: category.id },
+          select: {
+            id: true,
+            name: true,
+            categoryId: true,
+            accountingType: true,
+          },
         });
 
         if (!subExists) {
@@ -131,11 +158,52 @@ export class FinancialCategoriesSeed {
             name: subName,
             categoryId: category.id,
             isSystem: true,
+            accountingType,
           });
           await this.subCategoryRepo.save(sub);
           this.logger.log(`  Added Sub-category: ${subName}`);
+        } else if (subExists.accountingType !== accountingType) {
+          subExists.accountingType = accountingType;
+          await this.subCategoryRepo.save(subExists);
         }
       }
+    }
+  }
+
+  private getAccountingType(
+    categoryType: AccountCategoryType,
+    subCategory: string,
+  ): SubCategoryAccountingType {
+    const normalized = subCategory.toLowerCase();
+
+    if (normalized.includes('refund') || normalized.includes('reversal')) {
+      return SubCategoryAccountingType.REFUND_REVERSAL;
+    }
+
+    switch (categoryType) {
+      case AccountCategoryType.INCOME:
+        return SubCategoryAccountingType.REVENUE;
+      case AccountCategoryType.COGS:
+        return SubCategoryAccountingType.COGS;
+      case AccountCategoryType.EXPENSE:
+        return /tax|interest/.test(normalized)
+          ? SubCategoryAccountingType.OTHER_EXPENSE
+          : SubCategoryAccountingType.OPERATING_EXPENSE;
+      case AccountCategoryType.ASSET:
+        return SubCategoryAccountingType.ASSET_MOVEMENT;
+      case AccountCategoryType.LIABILITY:
+        return normalized.includes('repayment')
+          ? SubCategoryAccountingType.LOAN_REPAYMENT
+          : SubCategoryAccountingType.LOAN_RECEIVED;
+      case AccountCategoryType.EQUITY:
+        return normalized.includes('personal') ||
+          normalized.includes('withdrawal')
+          ? SubCategoryAccountingType.OWNER_DRAWING
+          : SubCategoryAccountingType.OWNER_CONTRIBUTION;
+      case AccountCategoryType.TRANSFER:
+        return SubCategoryAccountingType.INTERNAL_TRANSFER;
+      default:
+        return SubCategoryAccountingType.UNCLASSIFIED;
     }
   }
 }

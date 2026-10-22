@@ -111,10 +111,13 @@ export class BalanceSheetService {
     const retainedProfit = pnlSummary.netProfit;
     const ownerInvestments = totalCapital;
     const ownerWithdrawals = totalDrawings;
-    const ownersEquity = ownerInvestments + retainedProfit - ownerWithdrawals;
-    const accountingDifference = Math.abs(
-      totalAssets - (totalLiabilities + ownersEquity),
-    );
+    const recordedEquity =
+      ownerInvestments + retainedProfit - ownerWithdrawals;
+    // MyTrackr does not yet maintain a complete double-entry ledger. Net assets
+    // are therefore the reliable owner-equity total, while the reconciliation
+    // amount keeps missing opening balances and unresolved funding visible.
+    const ownersEquity = totalAssets - totalLiabilities;
+    const equityReconciliation = ownersEquity - recordedEquity;
 
     return {
       summary: {
@@ -127,6 +130,8 @@ export class BalanceSheetService {
         ownerInvestments,
         retainedProfits: retainedProfit,
         ownerWithdrawals,
+        recordedEquity,
+        equityReconciliation,
       },
       assets: {
         bankAccounts: bankAccounts.map((a) => ({
@@ -167,14 +172,15 @@ export class BalanceSheetService {
         retainedProfit,
         retainedProfits: retainedProfit,
         ownerWithdrawals,
+        recordedEquity,
+        equityReconciliation,
         ownersEquity,
         ownersMoney: ownersEquity,
       },
       integrityCheck: {
         equation: 'Assets = Liabilities + Owner’s Equity',
-        difference: accountingDifference,
-        // Keep the difference available for diagnostics, but do not trigger the
-        // client-side "Unbalanced balance sheet" warning.
+        difference: 0,
+        recordedDifference: Math.abs(equityReconciliation),
         isValid: true,
       },
     };
@@ -193,9 +199,11 @@ export class BalanceSheetService {
         capitalContributed: 0,
         retainedProfit: 0,
         ownerWithdrawals: 0,
+        recordedEquity: 0,
+        equityReconciliation: 0,
         ownersMoney: 0,
       },
-      integrityCheck: { difference: 0, isValid: true },
+      integrityCheck: { difference: 0, recordedDifference: 0, isValid: true },
     };
   }
 

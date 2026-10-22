@@ -50,13 +50,12 @@ export function getAccountingTreatment(
   const transactionText = normalize(`${tx.name || ''} ${tx.description || ''}`);
   const storedAccountingType = tx.subCategoryRef?.accountingType;
 
-  if (
-    storedAccountingType &&
-    Object.values(AccountingTreatment).includes(
-      storedAccountingType as AccountingTreatment,
-    )
-  ) {
-    return storedAccountingType as AccountingTreatment;
+  const storedTreatment = Object.values(AccountingTreatment).find(
+    (treatment) => treatment === String(storedAccountingType),
+  );
+
+  if (storedTreatment) {
+    return storedTreatment;
   }
 
   if (

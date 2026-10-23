@@ -48,7 +48,8 @@ export class MonoFinanceController {
   @ApiOperation({
     summary: 'Get transactions for all linked accounts (synced from cache)',
     description:
-      'Performs on-demand delta sync, then returns cached transactions from the database. ' +
+      'Requests a real-time bank refresh, then returns synced transactions from the database. ' +
+      'Returns saved transactions with sync.status=processing while Mono refreshes. ' +
       'Supports date range queries. If the requested range extends beyond what is cached, ' +
       'it will backfill from Mono automatically.',
   })
@@ -75,7 +76,7 @@ export class MonoFinanceController {
   @ApiHeader({
     name: 'x-force-sync',
     required: false,
-    description: 'Set to true to force a full re-sync from Jan 1',
+    description: 'Set to true to request a bank refresh and re-import transactions from Jan 1',
   })
   @ApiResponse({
     status: 200,

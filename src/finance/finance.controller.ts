@@ -826,7 +826,7 @@ export class FinanceController {
       req.user.id,
     );
 
-    await this.monoService.syncUserTransactionsForFinance(req.user.id, queryDto.startDate);
+    const sync = await this.monoService.syncUserTransactionsForFinance(req.user.id, queryDto.startDate);
 
     const {
       page = 1,
@@ -856,6 +856,7 @@ export class FinanceController {
 
     return {
       data: serialized,
+      sync,
       summary,
       meta: {
         total,

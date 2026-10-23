@@ -1024,6 +1024,29 @@ export class AuditLogCleanupDto {
   dryRun?: boolean = false;
 }
 
+export class SupportTicketMessageResponseDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ enum: ['user', 'admin'] })
+  senderType: 'user' | 'admin';
+
+  @ApiProperty()
+  senderId: string;
+
+  @ApiProperty()
+  senderName: string;
+
+  @ApiProperty()
+  message: string;
+
+  @ApiPropertyOptional()
+  attachmentUrl?: string;
+
+  @ApiProperty()
+  createdAt: Date;
+}
+
 export class SupportTicketResponseDto {
   @ApiProperty()
   id: string;
@@ -1054,6 +1077,11 @@ export class SupportTicketResponseDto {
 
   @ApiProperty()
   updatedAt: Date;
+}
+
+export class SupportTicketDetailResponseDto extends SupportTicketResponseDto {
+  @ApiProperty({ type: [SupportTicketMessageResponseDto] })
+  messages: SupportTicketMessageResponseDto[];
 }
 
 export class ResolveDisputeDto {

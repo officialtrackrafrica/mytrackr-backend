@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
   UnauthorizedException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -36,6 +37,17 @@ import {
 } from '../finance/entities/transaction.entity';
 import { SubscriptionService } from '../payments/services/subscription.service';
 
+export class TransactionSyncProcessing extends Error {
+  constructor() {
+    super('Bank transaction refresh is processing. Showing saved transactions.');
+  }
+}
+
+export interface TransactionSyncStatus {
+  status: 'completed' | 'processing';
+  message?: string;
+}
+
 @Injectable()
 export class MonoService {
   private readonly logger = new Logger(MonoService.name);
@@ -43,7 +55,7 @@ export class MonoService {
   private readonly maxRetries = 3;
   private readonly initialRetryDelayMs = 60 * 1000; // 1 minute
   private monoAccountFkColumnName: string | null = null;
-  private readonly financeSyncs = new Map<string, Promise<void>>();
+  private readonly financeSyncs = new Map<string, Promise<TransactionSyncStatus>>();
 
   constructor(
     private configService: ConfigService,
@@ -101,9 +113,23 @@ export class MonoService {
         throw new Error(data.message || `GET ${path} failed`);
       }
 
+      if (extraHeaders?.['x-realtime'] === 'true') {
+        const jobStatus = response.headers.get('x-job-status')?.toLowerCase();
+        if (jobStatus === 'processing') throw new TransactionSyncProcessing();
+        if (jobStatus === 'failed') {
+          throw new ServiceUnavailableException(
+            'Bank transaction refresh failed. The linked account may require reauthorization.',
+          );
+        }
+      }
+
       return data as T;
     } catch (error) {
-      if (error instanceof InternalServerErrorException) throw error;
+      if (
+        error instanceof InternalServerErrorException ||
+        error instanceof TransactionSyncProcessing ||
+        error instanceof ServiceUnavailableException
+      ) throw error;
       throw new InternalServerErrorException(
         error instanceof Error ? error.message : 'Mono API request failed',
       );
@@ -331,7 +357,7 @@ export class MonoService {
       return { message: 'No linked accounts found for this user', data: [] };
     }
 
-    await Promise.all(
+    const syncResults = await Promise.all(
       userAccounts.map((acc) =>
         this.syncTransactionsForAccount(
           acc,
@@ -345,19 +371,25 @@ export class MonoService {
               { autoCategorize },
             ),
           )
-          .catch((e) =>
+          .catch((e) => {
+            if (e instanceof TransactionSyncProcessing) return e;
             this.logger.error(
               `Sync failed for account ${acc.monoAccountId}: ${e.message}`,
-            ),
-          ),
+            );
+            throw e;
+          }),
       ),
     );
 
-    return this.getTransactionsFromDb(userId, start, effectiveEnd);
+    const processing = syncResults.some((result) => result instanceof TransactionSyncProcessing);
+    return {
+      ...(await this.getTransactionsFromDb(userId, start, effectiveEnd)),
+      sync: this.getSyncStatus(processing),
+    };
   }
 
   // Date filters affect the response, never the forward sync boundary.
-  async syncUserTransactionsForFinance(userId: string, startDate?: string): Promise<void> {
+  async syncUserTransactionsForFinance(userId: string, startDate?: string): Promise<TransactionSyncStatus> {
     const previous = this.financeSyncs.get(userId) || Promise.resolve();
     const pending = previous.catch(() => undefined).then(async () => {
       const requestedStart = startDate ? new Date(startDate) : undefined;
@@ -367,18 +399,30 @@ export class MonoService {
       const accounts = await this.monoAccountRepository.find({
         where: { user: { id: userId } },
       });
-      await Promise.all(accounts.map(async (account) => {
-        await this.syncTransactionsForAccount(account, requestedStart, false, false, true);
+      const results = await Promise.all(accounts.map(async (account) => {
+        try {
+          await this.syncTransactionsForAccount(account, requestedStart, false, false, true);
+        } catch (error) {
+          if (error instanceof TransactionSyncProcessing) return error;
+          throw error;
+        }
         // Retry projection even when Mono is fresh, in case an earlier projection failed.
         await this.transactionSyncService.syncAccountTransactions(account.monoAccountId);
       }));
+      return this.getSyncStatus(results.some((result) => result instanceof TransactionSyncProcessing));
     });
     this.financeSyncs.set(userId, pending);
     try {
-      await pending;
+      return await pending;
     } finally {
       if (this.financeSyncs.get(userId) === pending) this.financeSyncs.delete(userId);
     }
+  }
+
+  private getSyncStatus(processing: boolean): TransactionSyncStatus {
+    return processing
+      ? { status: 'processing', message: new TransactionSyncProcessing().message }
+      : { status: 'completed' };
   }
 
   async syncTransactionsForAccount(
@@ -387,6 +431,7 @@ export class MonoService {
     forceSync?: boolean,
     autoCategorize = false,
     reuseToday = false,
+    realtime = true,
   ) {
     const now = new Date();
     const lagosDay = (date: Date) => new Intl.DateTimeFormat('en-CA', {
@@ -414,6 +459,7 @@ export class MonoService {
         forwardStart,
         now,
         autoCategorize,
+        realtime,
       );
     }
 
@@ -462,7 +508,18 @@ export class MonoService {
     startDate: Date,
     endDate: Date,
     autoCategorize = false,
+    realtime = false,
   ) {
+    const details = await this.monoGet<any>(`/accounts/${account.monoAccountId}`);
+    const meta = details?.data?.meta;
+    if (String(meta?.data_status).toUpperCase() === 'PROCESSING') {
+      throw new TransactionSyncProcessing();
+    }
+    if (!this.hasTransactionData(meta)) {
+      throw new ServiceUnavailableException(
+        `Bank transactions are not available yet (status: ${meta?.data_status || 'unknown'}). Please try again shortly.`,
+      );
+    }
     const start = this.formatDateForMono(startDate);
     const end = this.formatDateForMono(endDate);
 
@@ -475,12 +532,21 @@ export class MonoService {
       params.append('start', start);
       params.append('end', end);
       params.append('page', String(page));
+      params.append('paginate', 'true');
 
       const url = `/accounts/${account.monoAccountId}/transactions?${params.toString()}`;
 
       try {
-        const response = await this.monoGet<any>(url);
-        const transactions = response?.data || [];
+        // Only the first page starts a bank refresh. Further pages read its results.
+        const response = await this.monoGet<any>(url, {
+          'x-realtime': String(realtime && page === 1),
+        });
+        if (response?.status === 'failed' || !Array.isArray(response?.data)) {
+          throw new ServiceUnavailableException(
+            'Mono returned an invalid transaction response',
+          );
+        }
+        const transactions = response.data;
 
         if (transactions.length > 0) {
           await this.upsertTransactions(account, transactions, autoCategorize);
@@ -490,6 +556,7 @@ export class MonoService {
         hasMore = !!response?.meta?.next;
         page++;
       } catch (error) {
+        if (error instanceof TransactionSyncProcessing) throw error;
         this.logger.error(
           `Error fetching transactions page ${page} for ${account.monoAccountId}: ${error.message}`,
         );
@@ -1162,6 +1229,16 @@ export class MonoService {
     }
   }
 
+  private hasTransactionData(meta: any): boolean {
+    const status = String(meta?.data_status || '').toUpperCase();
+    return (
+      status === 'AVAILABLE' ||
+      (status === 'PARTIAL' &&
+        Array.isArray(meta?.retrieved_data) &&
+        meta.retrieved_data.includes('transactions'))
+    );
+  }
+
   private async handleAccountUpdated(data: any) {
     const monoAccountId = data?.account?._id || data?.id;
     if (!monoAccountId) return;
@@ -1208,21 +1285,30 @@ export class MonoService {
         where: { monoAccountId },
         relations: ['user'],
       });
-      if (account && !account.lastSyncedAt) {
+      const syncStatus = String(data?.meta?.sync_status || '').toUpperCase();
+      if (
+        account && this.hasTransactionData(data?.meta) &&
+        (!syncStatus || syncStatus === 'SUCCESSFUL')
+      ) {
         this.logger.log(
-          `Triggering initial transaction sync for ${monoAccountId}`,
+          `Importing available transactions for ${monoAccountId}`,
         );
 
-        this.syncTransactionsForAccount(account)
+        // Import refreshed history even when an earlier request already advanced
+        // the local cursor. Never start another realtime job from its webhook.
+        await this.syncTransactionsForAccount(account, undefined, true, false, false, false)
           .then(async () => {
             this.logger.log(
-              `Initial sync complete for ${monoAccountId}. Triggering enrichment...`,
+              `Transaction import complete for ${monoAccountId}`,
             );
 
             // Sync to finance module
             await this.transactionSyncService.syncAccountTransactions(
               monoAccountId,
             );
+
+            // Refresh webhooks must not repeat the initial enrichment jobs.
+            if (account.lastSyncedAt) return;
 
             const canAutoCategorize = account.user
               ? await this.subscriptionService.userHasCapability(
@@ -1247,7 +1333,7 @@ export class MonoService {
           })
           .catch((e) =>
             this.logger.error(
-              `Initial sync/enrichment failed for ${monoAccountId}: ${e.message}`,
+              `Transaction sync/enrichment failed for ${monoAccountId}: ${e.message}`,
             ),
           );
       }
@@ -1294,7 +1380,7 @@ export class MonoService {
       `Re-syncing transactions after categorisation for ${monoAccountId}`,
     );
 
-    await this.syncTransactionsForAccount(account, undefined, true);
+    await this.syncTransactionsForAccount(account, undefined, true, false, false, false);
     await this.transactionSyncService.syncAccountTransactions(monoAccountId);
 
     await this.monoAccountRepository.update(
@@ -1343,7 +1429,7 @@ export class MonoService {
       `Re-syncing transactions after metadata enrichment for ${monoAccountId}`,
     );
 
-    await this.syncTransactionsForAccount(account, undefined, true);
+    await this.syncTransactionsForAccount(account, undefined, true, false, false, false);
     await this.transactionSyncService.syncAccountTransactions(monoAccountId);
 
     this.logger.log(`Transaction metadata updated for ${monoAccountId}`);

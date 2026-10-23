@@ -469,7 +469,7 @@ export class AdminSystemService {
 
     if (!ticket) throw new NotFoundException('Ticket not found');
 
-    return this.mapSupportTicket(ticket);
+    return this.mapSupportTicketDetail(ticket);
   }
 
   async updateTicket(id: string, dto: UpdateTicketDto) {

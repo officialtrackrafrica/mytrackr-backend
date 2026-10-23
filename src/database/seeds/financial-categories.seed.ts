@@ -72,6 +72,7 @@ export class FinancialCategoriesSeed {
           'Rent',
           'Salaries & Wages',
           'Marketing/Advertising',
+          'Branding',
           'Subscription - Capcut, Captions etc.',
           'Utlity Bill (Light, Water, Waste etc.)',
           'Airtime/Data Subscription',

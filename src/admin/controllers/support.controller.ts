@@ -25,6 +25,7 @@ import {
   CreateSupportTicketDto,
   CreateSupportTicketUploadDto,
   SupportTicketResponseDto,
+  SupportTicketDetailResponseDto,
   UserSupportTicketQueryDto,
 } from '../dto';
 
@@ -72,12 +73,12 @@ export class SupportController {
 
   @Get('tickets/:id')
   @ApiOperation({
-    summary: 'Get support ticket details for the authenticated user',
+    summary: 'Get support ticket details and messages for the authenticated user',
   })
   @ApiResponse({
     status: 200,
-    description: 'Support ticket details',
-    type: SupportTicketResponseDto,
+    description: 'Support ticket details including the original message and replies',
+    type: SupportTicketDetailResponseDto,
   })
   @ApiResponse({ status: 404, description: 'Ticket not found' })
   async getMyTicket(@Req() req: any, @Param('id') id: string) {

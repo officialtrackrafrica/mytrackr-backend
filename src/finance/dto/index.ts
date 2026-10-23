@@ -651,6 +651,12 @@ export class TransactionCategorySuggestionsResponseDto {
 }
 
 export class PaginatedTransactionResponseDto {
+  @ApiProperty({
+    example: { status: 'processing', message: 'Bank transaction refresh is processing. Showing saved transactions.' },
+    description: 'Bank sync status. Saved transactions remain available during processing.',
+  })
+  sync: { status: 'completed' | 'processing'; message?: string };
+
   @ApiProperty({ type: [TransactionResponseDto] })
   data: TransactionResponseDto[];
 

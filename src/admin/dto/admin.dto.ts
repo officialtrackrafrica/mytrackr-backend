@@ -874,13 +874,14 @@ export class UpdateTicketDto {
 }
 
 export class ReplySupportTicketDto {
-  @ApiProperty({ description: 'Reply message body' })
+  @ApiProperty({ description: 'Reply message body', example: 'Your bank refresh has completed. Please reload your transaction history.' })
   @IsString()
   message: string;
 
   @ApiPropertyOptional({
     enum: ['open', 'in_progress', 'resolved', 'closed'],
     description: 'Optional ticket status update after replying',
+    example: 'resolved',
   })
   @IsOptional()
   @IsString()
@@ -898,17 +899,18 @@ export class ReplySupportTicketUploadDto extends ReplySupportTicketDto {
 }
 
 export class CreateSupportTicketDto {
-  @ApiProperty({ description: 'Support ticket title' })
+  @ApiProperty({ description: 'Support ticket title', example: 'Missing bank transactions' })
   @IsString()
   title: string;
 
-  @ApiProperty({ description: 'Support ticket description' })
+  @ApiProperty({ description: 'Support ticket description', example: 'My latest bank transactions are missing after refreshing my transaction history.' })
   @IsString()
   description: string;
 
   @ApiPropertyOptional({
     default: 'request',
     description: 'Support ticket category/type',
+    example: 'request',
   })
   @IsOptional()
   @IsString()
@@ -1025,19 +1027,19 @@ export class AuditLogCleanupDto {
 }
 
 export class SupportTicketMessageResponseDto {
-  @ApiProperty()
+  @ApiProperty({ example: '7d2f8253-9668-462b-a7eb-75f89369492a' })
   id: string;
 
-  @ApiProperty({ enum: ['user', 'admin'] })
+  @ApiProperty({ enum: ['user', 'admin'], example: 'admin' })
   senderType: 'user' | 'admin';
 
-  @ApiProperty()
+  @ApiProperty({ example: 'fa13b08b-5f82-4dcb-b553-153b91c57455' })
   senderId: string;
 
-  @ApiProperty()
+  @ApiProperty({ example: 'MyTrackr Support' })
   senderName: string;
 
-  @ApiProperty()
+  @ApiProperty({ example: 'Your bank refresh has completed. Please reload your transaction history.' })
   message: string;
 
   @ApiPropertyOptional()
@@ -1048,25 +1050,25 @@ export class SupportTicketMessageResponseDto {
 }
 
 export class SupportTicketResponseDto {
-  @ApiProperty()
+  @ApiProperty({ example: 'a0b65911-fcee-45de-a087-e927068df656' })
   id: string;
 
-  @ApiProperty()
+  @ApiProperty({ example: 'Missing bank transactions' })
   title: string;
 
-  @ApiProperty()
+  @ApiProperty({ example: 'My latest bank transactions are missing after refreshing my transaction history.' })
   description: string;
 
-  @ApiProperty()
+  @ApiProperty({ example: 'request' })
   category: string;
 
   @ApiPropertyOptional()
   attachmentUrl?: string;
 
-  @ApiProperty()
+  @ApiProperty({ example: 'resolved' })
   status: string;
 
-  @ApiProperty()
+  @ApiProperty({ example: 'medium' })
   priority: string;
 
   @ApiPropertyOptional()
@@ -1080,7 +1082,29 @@ export class SupportTicketResponseDto {
 }
 
 export class SupportTicketDetailResponseDto extends SupportTicketResponseDto {
-  @ApiProperty({ type: [SupportTicketMessageResponseDto] })
+  @ApiProperty({
+    type: [SupportTicketMessageResponseDto],
+    description: 'Conversation in chronological order: original user message followed by saved replies.',
+    example: [
+      {
+        id: 'a0b65911-fcee-45de-a087-e927068df656',
+        senderType: 'user',
+        senderId: 'f331255d-3516-439c-a3f1-7d456db192be',
+        senderName: 'Ada Okafor',
+        message: 'My latest bank transactions are missing after refreshing my transaction history.',
+        createdAt: '2026-10-23T09:00:00.000Z',
+      },
+      {
+        id: '7d2f8253-9668-462b-a7eb-75f89369492a',
+        senderType: 'admin',
+        senderId: 'fa13b08b-5f82-4dcb-b553-153b91c57455',
+        senderName: 'MyTrackr Support',
+        message: 'Your bank refresh has completed. Please reload your transaction history.',
+        attachmentUrl: 'https://storage.example.com/support-ticket-replies/guide.pdf?signature=example',
+        createdAt: '2026-10-23T09:15:00.000Z',
+      },
+    ],
+  })
   messages: SupportTicketMessageResponseDto[];
 }
 

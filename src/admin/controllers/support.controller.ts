@@ -74,6 +74,7 @@ export class SupportController {
   @Get('tickets/:id')
   @ApiOperation({
     summary: 'Get support ticket details and messages for the authenticated user',
+    description: 'Use messages to display the conversation. The first entry is the original request; subsequent entries include admin replies and optional signed attachment URLs.',
   })
   @ApiResponse({
     status: 200,

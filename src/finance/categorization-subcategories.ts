@@ -1,4 +1,11 @@
 const SUBCATEGORY_ALIASES: Record<string, string> = {
+  'loan advanced or receivable': 'Loan Given Out',
+  'loan received': 'Loan Borrowed',
+  'loan principal repayment': 'Loan Repaid',
+  'loan given out': 'Loan Given Out',
+  'loan repayment received': 'Loan Repayment Received',
+  'loan borrowed': 'Loan Borrowed',
+  'loan repaid': 'Loan Repaid',
   'salary and wages': 'Salaries & Wages',
   'salaries & wages': 'Salaries & Wages',
   'wages & salaries': 'Salaries & Wages',

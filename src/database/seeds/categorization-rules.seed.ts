@@ -39,9 +39,9 @@ export const DEFAULT_CATEGORIZATION_RULES: Array<{
   },
   {
     matchType: MatchType.CONTAINS,
-    matchValue: 'loan repayment',
+    matchValue: 'loan repayment received',
     category: AccountCategoryType.ASSET,
-    subCategory: 'Loan advanced or receivable',
+    subCategory: 'Loan Repayment Received',
     priority: 4,
   },
   {
@@ -680,6 +680,7 @@ export class CategorizationRulesSeed {
       isSystem: true,
       matchValue: In([
         'transfer from',
+        'loan repayment',
         'transfer to',
         'stamp duty',
         'stamp duties',

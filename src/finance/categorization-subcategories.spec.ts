@@ -2,6 +2,9 @@ import { normalizeCategorizationSubCategory } from './categorization-subcategori
 
 describe('normalizeCategorizationSubCategory', () => {
   it.each([
+    ['Loan advanced or receivable', 'Loan Given Out'],
+    ['Loan received', 'Loan Borrowed'],
+    ['Loan principal repayment', 'Loan Repaid'],
     ['Salary and Wages', 'Salaries & Wages'],
     ['Wages & Salaries', 'Salaries & Wages'],
     ['Airtime/Internet Subscription', 'Airtime/Data Subscription'],

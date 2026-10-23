@@ -104,13 +104,14 @@ export class FinancialCategoriesSeed {
         subs: [
           'Business savings or investment',
           'Equipment or fixed asset purchase',
-          'Loan advanced or receivable',
+          'Loan Given Out',
+          'Loan Repayment Received',
         ],
       },
       {
         name: 'Loans and Borrowing',
         type: AccountCategoryType.LIABILITY,
-        subs: ['Loan received', 'Loan principal repayment'],
+        subs: ['Loan Borrowed', 'Loan Repaid'],
       },
       {
         name: 'Internal Transfers',
@@ -143,7 +144,7 @@ export class FinancialCategoriesSeed {
           catData.type,
           subName,
         );
-        const subExists = await this.subCategoryRepo.findOne({
+        let subExists = await this.subCategoryRepo.findOne({
           where: { name: subName, categoryId: category.id },
           select: {
             id: true,
@@ -152,6 +153,26 @@ export class FinancialCategoriesSeed {
             accountingType: true,
           },
         });
+
+        const legacyNames: Record<string, string> = {
+          'Loan Given Out': 'Loan advanced or receivable',
+          'Loan Borrowed': 'Loan received',
+          'Loan Repaid': 'Loan principal repayment',
+        };
+        if (!subExists && legacyNames[subName]) {
+          subExists = await this.subCategoryRepo.findOne({
+            where: {
+              name: legacyNames[subName],
+              categoryId: category.id,
+              isSystem: true,
+            },
+          });
+          if (subExists) {
+            subExists.name = subName;
+            subExists.accountingType = accountingType;
+            await this.subCategoryRepo.save(subExists);
+          }
+        }
 
         if (!subExists) {
           const sub = this.subCategoryRepo.create({
@@ -192,7 +213,7 @@ export class FinancialCategoriesSeed {
       case AccountCategoryType.ASSET:
         return SubCategoryAccountingType.ASSET_MOVEMENT;
       case AccountCategoryType.LIABILITY:
-        return normalized.includes('repayment')
+        return /repayment|repaid/.test(normalized)
           ? SubCategoryAccountingType.LOAN_REPAYMENT
           : SubCategoryAccountingType.LOAN_RECEIVED;
       case AccountCategoryType.EQUITY:

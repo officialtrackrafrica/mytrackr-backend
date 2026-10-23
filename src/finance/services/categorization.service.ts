@@ -865,6 +865,7 @@ export class CategorizationService {
       'For each transaction choose exactly one category and, when possible, one subcategory from the provided catalog.',
       'Never invent a category or subcategory outside the catalog.',
       'The transaction direction is authoritative, but balance-sheet categories may have either direction: owner contributions are EQUITY credits; owner withdrawals are EQUITY debits; loans received are LIABILITY credits; loan-principal repayments are LIABILITY debits; asset purchases/savings are ASSET debits; asset disposals or receivable repayments may be ASSET credits.',
+      'Use Loan Given Out for money lent (ASSET debit), Loan Repayment Received for principal recovered (ASSET credit), Loan Borrowed for borrowing received (LIABILITY credit), and Loan Repaid for borrowed principal repaid (LIABILITY debit). Keep loan interest separate as an expense.',
       'Use TRANSFER only for genuine movement between business-owned accounts. Do not label owner funding, loans, savings, refunds, customer receipts, or expenses as generic transfers.',
       'Return JSON only with this exact shape:',
       '{"results":[{"transactionIndex":0,"categoryName":"string","categoryType":"string","subCategoryName":"string or omitted","confidence":0.0}]}',

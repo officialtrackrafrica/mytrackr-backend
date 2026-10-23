@@ -27,6 +27,17 @@ describe('FinancialCategoriesSeed', () => {
 
     await seed.run();
 
+    for (const [name, accountingType] of [
+      ['Loan Given Out', 'ASSET_MOVEMENT'],
+      ['Loan Repayment Received', 'ASSET_MOVEMENT'],
+      ['Loan Borrowed', 'LOAN_RECEIVED'],
+      ['Loan Repaid', 'LOAN_REPAYMENT'],
+    ]) {
+      expect(subCategoryRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ name, accountingType }),
+      );
+    }
+
     expect(subCategoryRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'Licenses and permits',

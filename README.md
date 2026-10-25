@@ -124,9 +124,13 @@ Reference: [Mono real-time data documentation](https://docs.mono.co/docs/financi
 ### Admin staging test
 
 The server-rendered `/admin/calculation-audit` page includes a **Test bank sync**
-panel. Select a user, click **Sync selected user**, then use **Check saved results**
-after any processing job completes. The table shows each account's result,
-before/after transaction counts, latest transaction date, and last import time.
+panel. Select a user, click **Sync selected user**, then use **Check sync status**.
+The table shows Mono's actual `processing`, `finished`, or `failed` status, the
+job ID and last status check, before/after transaction counts, latest transaction
+date, and last import time. The original counts persist in this browser tab across
+reloads. Mono job IDs and statuses persist in the database across server restarts.
+Old refreshes that did not capture a job ID show **No tracked job**; start a new
+sync after deploying this version to capture one.
 Run the audit again to refresh its report after importing transactions.
 
 Under **Admin - Mono Integration** in Swagger, authenticate as an admin and call
@@ -138,11 +142,21 @@ is required. This performs a real bank refresh and writes transactions, returnin
 
 If processing, allow the webhook to arrive and call
 `GET /admin/mono/users/{userId}/sync` to compare the saved counts and timestamps.
-This GET only reads local data. The POST bypasses the application's cache but
+This GET checks Mono's `/accounts/{accountId}/jobs/{jobId}` endpoint and saves the
+latest observed job status. It does not start a new bank refresh or import data.
+When a status check fails, the page labels the status as last known instead of
+claiming it is current. A finished bank job does not prove the local import ran:
+if the import time remains unchanged, inspect webhook delivery and server logs.
+The POST bypasses the application's cache but
 cannot bypass Mono's five-minute interval. A completed result with no count
 increase can be valid if the bank has no new transactions. Verify a known new
 transaction in the finance list before declaring the integration successful.
 Use a staging-connected account and point that Mono app's webhook at staging.
+
+The account entity adds nullable `syncJobId`, `syncJobStatus`, and
+`syncJobCheckedAt` columns. The current TypeORM configuration uses
+`synchronize: true` and creates them on application startup; deployments that
+disable synchronization must apply equivalent nullable columns before rollout.
 
 ## License
 

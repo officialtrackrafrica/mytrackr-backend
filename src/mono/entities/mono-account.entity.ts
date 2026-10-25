@@ -53,6 +53,15 @@ export class MonoAccount {
   @Column({ type: 'timestamptz', nullable: true })
   lastSyncedAt: Date;
 
+  @Column({ type: 'varchar', nullable: true })
+  syncJobId: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  syncJobStatus: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  syncJobCheckedAt: Date | null;
+
   @Column({ type: 'timestamptz', nullable: true })
   lastCategorisedAt: Date;
 

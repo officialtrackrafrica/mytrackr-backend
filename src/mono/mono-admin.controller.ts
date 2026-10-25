@@ -38,7 +38,7 @@ export class MonoAdminController {
   @ApiCookieAuth('accessToken')
   @ApiOperation({
     summary: 'Inspect saved transaction sync progress for a selected user',
-    description: 'Reads local account sync timestamps, transaction counts, and latest transaction dates without initiating a bank refresh. Compare with the POST response before snapshot after a processing job completes.',
+    description: 'Checks the saved Mono job ID using Mono\'s job-status API and returns processing, finished, or failed alongside local counts and import times. Does not initiate a bank refresh. Status-check failures are reported per account with the last known status and check time.',
   })
   @ApiResponse({ status: 200, description: 'Current saved account sync snapshot' })
   @ApiResponse({ status: 404, description: 'No linked Mono accounts found for this user' })

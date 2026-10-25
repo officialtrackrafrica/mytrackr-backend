@@ -137,10 +137,10 @@ ${input.audit ? this.renderAudit(input.audit, input.startText, input.endText, in
     return `<section class="sync-test" aria-labelledby="sync-title">
 <h2 id="sync-title">Test bank sync</h2>
 <p>Use the user selected above to fetch new bank transactions. This saves transactions and updates finance records. Mono may charge for the refresh and allows a new session every five minutes.</p>
-<div style="display:flex;gap:12px;flex-wrap:wrap"><button type="button" id="sync-run" style="width:auto">Sync selected user</button><button type="button" id="sync-check" style="width:auto">Check saved results</button></div>
+<div style="display:flex;gap:12px;flex-wrap:wrap"><button type="button" id="sync-run" style="width:auto">Sync selected user</button><button type="button" id="sync-check" style="width:auto">Check sync status</button></div>
 <p id="sync-message" role="status" aria-live="polite">Select a user to test their linked accounts.</p>
 <div id="sync-results" style="overflow:auto"></div>
-<p>For processing accounts, wait for the bank webhook, then check saved results. Confirm a known new transaction appears and run the audit again to update the report below.</p>
+<p>Check sync status asks Mono about the tracked job without starting another bank refresh. Bank completion and local import are separate: if Mono has completed but the last import is unchanged, check webhook delivery. Confirm a known new transaction appears and run the audit again to update the report below.</p>
 </section>
 <script>
 (() => {
@@ -151,9 +151,14 @@ ${input.audit ? this.renderAudit(input.audit, input.startText, input.endText, in
   const output = document.getElementById('sync-results');
   let busy = false;
   let baseline = null;
+  const restoreBaseline = () => {
+    baseline = null;
+    try { baseline = JSON.parse(sessionStorage.getItem('mono-sync-before:' + userSelect.value) || 'null'); } catch (_) {}
+  };
+  restoreBaseline();
   const updateButtons = () => { run.disabled = check.disabled = busy || !userSelect.value; };
   userSelect.addEventListener('change', () => {
-    baseline = null;
+    restoreBaseline();
     output.replaceChildren();
     message.textContent = 'Ready to check the selected user.';
     updateButtons();
@@ -161,7 +166,7 @@ ${input.audit ? this.renderAudit(input.audit, input.startText, input.endText, in
   const show = (snapshot, results) => {
     const table = document.createElement('table');
     const head = table.createTHead().insertRow();
-    ['Bank / account', 'Result', 'Transactions before', 'Transactions now', 'Latest transaction', 'Last imported'].forEach(label => {
+    ['Bank / account', 'Result', 'Mono job status', 'Job ID', 'Status checked', 'Transactions before', 'Transactions now', 'Latest transaction', 'Last imported'].forEach(label => {
       const cell = document.createElement('th'); cell.textContent = label; head.appendChild(cell);
     });
     const body = table.createTBody();
@@ -172,6 +177,8 @@ ${input.audit ? this.renderAudit(input.audit, input.startText, input.endText, in
       [
         (account.institutionName || 'Bank') + ' / ' + account.accountId,
         result ? result.status + (result.message ? ': ' + result.message : '') : 'Saved snapshot',
+        account.jobCheckError ? account.jobCheckError + ' Last known: ' + (account.jobStatus || 'unknown') : account.jobStatus === 'finished' ? 'Completed at bank (check local import time)' : account.jobStatus === 'failed' ? 'Failed at bank; reauthorization may be needed' : account.jobStatus === 'processing' ? 'Processing at bank' : 'No tracked job; run Sync selected user to capture one',
+        account.jobId || 'Not captured', account.jobCheckedAt || 'Not checked',
         prior ? prior.transactionCount : '—', account.transactionCount,
         account.latestTransactionDate || 'None', account.lastSyncedAt || 'Never'
       ].forEach(value => { const cell = row.insertCell(); cell.textContent = String(value); });
@@ -193,13 +200,18 @@ ${input.audit ? this.renderAudit(input.audit, input.startText, input.endText, in
       if (!response.ok) throw new Error(payload.message || 'Unable to check bank sync');
       if (method === 'POST') {
         baseline = data.before;
+        try { sessionStorage.setItem('mono-sync-before:' + selectedUser, JSON.stringify(baseline)); } catch (_) {}
         show(data.after, data.results);
         const pending = data.results.some(item => item.status === 'processing');
         const failed = data.results.some(item => item.status === 'failed');
         message.textContent = failed ? 'Some accounts failed. Review the results below.' : pending ? 'Bank refresh is processing. Wait, then check saved results.' : 'Import completed. Compare counts and verify your expected new transaction in the audit.';
       } else {
         show(data);
-        message.textContent = 'Saved results loaded. This check does not start another bank refresh.';
+        const accounts = data.accounts || [];
+        const unknown = accounts.some(item => item.jobCheckError || !item.jobId);
+        const failed = accounts.some(item => item.jobStatus === 'failed');
+        const pending = accounts.some(item => item.jobStatus === 'processing');
+        message.textContent = unknown ? 'Some job statuses could not be confirmed. Review each account below.' : failed ? 'Mono reports a failed refresh. Review the account below.' : pending ? 'Mono is still processing. Check again shortly.' : 'Mono refresh completed. Compare the local import time and counts below; completion at the bank does not confirm local import.';
       }
     } catch (error) {
       message.textContent = error instanceof Error ? error.message : 'Unable to check bank sync';

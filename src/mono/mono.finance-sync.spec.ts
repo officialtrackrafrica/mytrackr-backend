@@ -367,7 +367,7 @@ describe('Finance transaction refresh', () => {
       global.fetch = jest.fn().mockResolvedValue({
         ok: true,
         json: async () => ({ data: [] }),
-        headers: new Headers({ 'x-job-status': status }),
+        headers: new Headers({ 'x-job-status': status, 'x-job-id': 'tracked-job' }),
       });
       Object.assign(service, { configService: { get: () => 'test-key' } });
       try {
@@ -376,6 +376,10 @@ describe('Finance transaction refresh', () => {
             'x-realtime': 'true',
           }),
         ).rejects.toThrow(status === 'processing' ? 'processing' : 'failed');
+        expect(repo.update).toHaveBeenCalledWith(
+          { monoAccountId: 'mono' },
+          { syncJobId: 'tracked-job', syncJobStatus: status, syncJobCheckedAt: expect.any(Date) },
+        );
       } finally {
         global.fetch = originalFetch;
       }

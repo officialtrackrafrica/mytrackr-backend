@@ -75,7 +75,7 @@ describe('Admin sync HTTP smoke test', () => {
       .expect(200)
       .expect('Content-Type', /html/);
     expect(response.text).toContain('Sync selected user');
-    expect(response.text).toContain('Check saved results');
+    expect(response.text).toContain('Check sync status');
     expect(response.text).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
     const scripts = [
       ...response.text.matchAll(/<script>([\s\S]*?)<\/script>/g),
@@ -154,7 +154,16 @@ describe('Admin sync HTTP smoke test', () => {
           results: [{ accountId: 'mono-1', status: 'processing' }],
         }),
       })
-      .mockResolvedValueOnce({ ok: true, json: async () => snapshot });
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ...snapshot,
+          accounts: [
+            { ...snapshot.accounts[0], jobId: 'job-1', jobStatus: 'finished' },
+          ],
+        }),
+      });
+    const storage = new Map<string, string>();
     runInNewContext(script, {
       document: {
         querySelector: () => user,
@@ -167,6 +176,10 @@ describe('Admin sync HTTP smoke test', () => {
       },
       window: { location: { pathname: '/api/admin/calculation-audit' } },
       fetch: fetchMock,
+      sessionStorage: {
+        getItem: (key: string) => storage.get(key) || null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+      },
     });
     await run.listeners.click();
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -183,7 +196,16 @@ describe('Admin sync HTTP smoke test', () => {
       `/api/admin/mono/users/${userId}/sync`,
       expect.objectContaining({ method: 'GET' }),
     );
-    expect(message.textContent).toContain('Saved results loaded');
+    expect(message.textContent).toContain('Mono refresh completed');
+    expect(
+      cells.some(
+        (cell) =>
+          cell.textContent === 'Completed at bank (check local import time)',
+      ),
+    ).toBe(true);
+    expect(JSON.parse(storage.get('mono-sync-before:' + userId)!)).toEqual(
+      snapshot,
+    );
   });
 
   it('rejects malformed user IDs', async () => {

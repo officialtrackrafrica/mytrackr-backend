@@ -104,23 +104,38 @@ export class MonoService {
       const response = await fetch(`${this.baseUrl}${path}`, {
         method: 'GET',
         headers: this.defaultHeaders(extraHeaders),
+        ...(path.includes('/jobs/') ? { signal: AbortSignal.timeout(15_000) } : {}),
       });
 
       const data = await response.json();
 
-      if (!response.ok) {
-        this.logger.error(`Mono GET ${path} failed: ${JSON.stringify(data)}`);
-        throw new Error(data.message || `GET ${path} failed`);
-      }
-
       if (extraHeaders?.['x-realtime'] === 'true') {
         const jobStatus = response.headers.get('x-job-status')?.toLowerCase();
+        const jobId = response.headers.get('x-job-id');
+        const transactionAccount = path.match(/^\/accounts\/([^/]+)\/transactions(?:\?|$)/)?.[1];
+        if (transactionAccount) {
+          // Persist before throwing processing/failed so another request or server
+          // instance can inspect the exact job after a page reload.
+          await this.monoAccountRepository.update(
+            { monoAccountId: transactionAccount },
+            {
+              syncJobId: jobId || null,
+              syncJobStatus: jobStatus || null,
+              syncJobCheckedAt: new Date(),
+            },
+          );
+        }
         if (jobStatus === 'processing') throw new TransactionSyncProcessing();
         if (jobStatus === 'failed') {
           throw new ServiceUnavailableException(
             'Bank transaction refresh failed. The linked account may require reauthorization. Use POST /mono/reauth with the Mono accountId to reconnect, then retry.',
           );
         }
+      }
+
+      if (!response.ok) {
+        this.logger.error(`Mono GET ${path} failed: ${JSON.stringify(data)}`);
+        throw new Error(data.message || `GET ${path} failed`);
       }
 
       return data as T;
@@ -267,7 +282,7 @@ export class MonoService {
     return this.monoGet('/accounts');
   }
 
-  async getAdminUserSyncStatus(userId: string) {
+  async getAdminUserSyncStatus(userId: string, checkLiveJobs = true) {
     const accounts = await this.monoAccountRepository.find({
       where: { user: { id: userId } },
     });
@@ -276,6 +291,29 @@ export class MonoService {
       userId,
       checkedAt: new Date(),
       accounts: await Promise.all(accounts.map(async (account) => {
+        let jobStatus = account.syncJobStatus || null;
+        let jobCheckedAt = account.syncJobCheckedAt || null;
+        let jobCheckError: string | null = null;
+        if (checkLiveJobs && account.syncJobId) {
+          try {
+            const response = await this.monoGet<any>(
+              `/accounts/${encodeURIComponent(account.monoAccountId)}/jobs/${encodeURIComponent(account.syncJobId)}`,
+            );
+            const status = String(response?.data?.status || '').toLowerCase();
+            if (!['processing', 'finished', 'failed'].includes(status)) {
+              throw new Error('Invalid Mono job status');
+            }
+            jobStatus = status;
+            jobCheckedAt = new Date();
+            await this.monoAccountRepository.update(
+              { id: account.id, syncJobId: account.syncJobId },
+              { syncJobStatus: status, syncJobCheckedAt: jobCheckedAt },
+            );
+          } catch (error) {
+            jobCheckError = 'Unable to confirm current status with Mono. The displayed status is the last known result; retry the check.';
+            this.logger.error(`Mono job check failed for ${account.monoAccountId}: ${error.message}`);
+          }
+        }
         const where = { monoAccount: { id: account.id } };
         const [transactionCount, latest] = await Promise.all([
           this.transactionRepository.count({ where }),
@@ -288,13 +326,17 @@ export class MonoService {
           lastSyncedAt: account.lastSyncedAt || null,
           transactionCount,
           latestTransactionDate: latest?.date || null,
+          jobId: account.syncJobId || null,
+          jobStatus,
+          jobCheckedAt,
+          jobCheckError,
         };
       })),
     };
   }
 
   async testAdminUserSync(userId: string) {
-    const before = await this.getAdminUserSyncStatus(userId);
+    const before = await this.getAdminUserSyncStatus(userId, false);
     const accounts = await this.monoAccountRepository.find({
       where: { user: { id: userId } },
     });
@@ -324,7 +366,7 @@ export class MonoService {
     return {
       userId,
       before,
-      after: await this.getAdminUserSyncStatus(userId),
+      after: await this.getAdminUserSyncStatus(userId, false),
       results,
     };
   }
@@ -1204,6 +1246,17 @@ export class MonoService {
         break;
 
       case 'mono.accounts.jobs.update':
+        if (
+          data?.name === 'jobs.accounts.sync_statement' &&
+          typeof data?.account === 'string' && typeof data?.id === 'string' &&
+          ['processing', 'finished', 'failed'].includes(String(data?.status).toLowerCase())
+        ) {
+          // A delayed webhook for an older job must not replace the latest job.
+          await this.monoAccountRepository.update(
+            { monoAccountId: data.account, syncJobId: data.id },
+            { syncJobStatus: String(data.status).toLowerCase(), syncJobCheckedAt: new Date() },
+          );
+        }
         // Fetch the completed job's data without starting another bank refresh.
         // Let failures propagate so Mono can retry delivery.
         if (

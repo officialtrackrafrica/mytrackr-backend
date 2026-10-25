@@ -128,8 +128,88 @@ export class AdminCalculationAuditController {
 <title>Calculation audit · MyTrackr Admin</title><style>${this.styles()}</style></head>
 <body><main><header><div><p class="eyebrow">MyTrackr Admin</p><h1>Calculation audit</h1><p>Trace every transaction used—or excluded—from P&amp;L, cash flow, and burn rate.</p></div></header>
 <form method="get"><label>User with linked account<select name="userId" required><option value="">Select a user</option>${options}</select></label><label>Start date<input type="date" name="startDate" value="${e(input.startText)}" required></label><label>End date<input type="date" name="endDate" value="${e(input.endText)}" required></label><label>Transaction period<select name="transactionScope"><option value="period" ${input.transactionScope === 'period' ? 'selected' : ''}>Selected date range</option><option value="all-stored" ${input.transactionScope === 'all-stored' ? 'selected' : ''}>All stored transactions</option></select></label><label>Transactions to show<select name="view">${this.renderViewOptions(input.view)}</select></label><button type="submit">Run audit</button></form>
+${this.renderSyncControls()}
 ${input.audit ? this.renderAudit(input.audit, input.startText, input.endText, input.view) : '<section class="empty">Select a user and date range to inspect the calculations.</section>'}
 </main></body></html>`;
+  }
+
+  private renderSyncControls(): string {
+    return `<section class="sync-test" aria-labelledby="sync-title">
+<h2 id="sync-title">Test bank sync</h2>
+<p>Use the user selected above to fetch new bank transactions. This saves transactions and updates finance records. Mono may charge for the refresh and allows a new session every five minutes.</p>
+<div style="display:flex;gap:12px;flex-wrap:wrap"><button type="button" id="sync-run" style="width:auto">Sync selected user</button><button type="button" id="sync-check" style="width:auto">Check saved results</button></div>
+<p id="sync-message" role="status" aria-live="polite">Select a user to test their linked accounts.</p>
+<div id="sync-results" style="overflow:auto"></div>
+<p>For processing accounts, wait for the bank webhook, then check saved results. Confirm a known new transaction appears and run the audit again to update the report below.</p>
+</section>
+<script>
+(() => {
+  const userSelect = document.querySelector('select[name="userId"]');
+  const run = document.getElementById('sync-run');
+  const check = document.getElementById('sync-check');
+  const message = document.getElementById('sync-message');
+  const output = document.getElementById('sync-results');
+  let busy = false;
+  let baseline = null;
+  const updateButtons = () => { run.disabled = check.disabled = busy || !userSelect.value; };
+  userSelect.addEventListener('change', () => {
+    baseline = null;
+    output.replaceChildren();
+    message.textContent = 'Ready to check the selected user.';
+    updateButtons();
+  });
+  const show = (snapshot, results) => {
+    const table = document.createElement('table');
+    const head = table.createTHead().insertRow();
+    ['Bank / account', 'Result', 'Transactions before', 'Transactions now', 'Latest transaction', 'Last imported'].forEach(label => {
+      const cell = document.createElement('th'); cell.textContent = label; head.appendChild(cell);
+    });
+    const body = table.createTBody();
+    (snapshot.accounts || []).forEach(account => {
+      const prior = baseline && baseline.accounts.find(item => item.accountId === account.accountId);
+      const result = (results || []).find(item => item.accountId === account.accountId);
+      const row = body.insertRow();
+      [
+        (account.institutionName || 'Bank') + ' / ' + account.accountId,
+        result ? result.status + (result.message ? ': ' + result.message : '') : 'Saved snapshot',
+        prior ? prior.transactionCount : '—', account.transactionCount,
+        account.latestTransactionDate || 'None', account.lastSyncedAt || 'Never'
+      ].forEach(value => { const cell = row.insertCell(); cell.textContent = String(value); });
+    });
+    output.replaceChildren(table);
+  };
+  const request = async (method) => {
+    if (busy || !userSelect.value) return;
+    const selectedUser = userSelect.value;
+    busy = true; updateButtons(); userSelect.disabled = true;
+    message.textContent = method === 'POST' ? 'Requesting bank refresh…' : 'Loading saved results…';
+    try {
+      const prefix = window.location.pathname.split('/admin/')[0];
+      const response = await fetch(prefix + '/admin/mono/users/' + encodeURIComponent(selectedUser) + '/sync', {
+        method, credentials: 'same-origin', headers: { Accept: 'application/json' }
+      });
+      const payload = await response.json();
+      const data = payload.data || payload;
+      if (!response.ok) throw new Error(payload.message || 'Unable to check bank sync');
+      if (method === 'POST') {
+        baseline = data.before;
+        show(data.after, data.results);
+        const pending = data.results.some(item => item.status === 'processing');
+        const failed = data.results.some(item => item.status === 'failed');
+        message.textContent = failed ? 'Some accounts failed. Review the results below.' : pending ? 'Bank refresh is processing. Wait, then check saved results.' : 'Import completed. Compare counts and verify your expected new transaction in the audit.';
+      } else {
+        show(data);
+        message.textContent = 'Saved results loaded. This check does not start another bank refresh.';
+      }
+    } catch (error) {
+      message.textContent = error instanceof Error ? error.message : 'Unable to check bank sync';
+    } finally { busy = false; userSelect.disabled = false; updateButtons(); }
+  };
+  run.addEventListener('click', () => request('POST'));
+  check.addEventListener('click', () => request('GET'));
+  updateButtons();
+})();
+</script>`;
   }
 
   private renderAudit(

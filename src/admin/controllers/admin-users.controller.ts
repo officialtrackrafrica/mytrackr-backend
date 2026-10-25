@@ -24,6 +24,7 @@ import { Action } from '../../casl/action.enum';
 import { AdminUsersService } from '../services/admin-users.service';
 import { AdminAuditService } from '../services/admin-audit.service';
 import { SubscriptionService } from '../../payments/services/subscription.service';
+import { UserAcquisitionSource } from '../../auth/entities/user.entity';
 import {
   UpdateUserStatusDto,
   AdminChangeUserPlanDto,
@@ -33,6 +34,40 @@ import {
   AdminResetUserPasswordDto,
   AdminUserSubscriptionHistoryQueryDto,
 } from '../dto';
+
+const ADMIN_USERS_LIST_SCHEMA = {
+  type: 'object' as const,
+  properties: {
+    users: {
+      type: 'array' as const,
+      items: {
+        type: 'object' as const,
+        additionalProperties: true,
+        properties: {
+          hasSubmittedAcquisitionSource: { type: 'boolean' as const, example: true },
+          acquisitionSource: {
+            type: 'string' as const,
+            enum: Object.values(UserAcquisitionSource),
+            nullable: true,
+            description: 'Where the user heard about us',
+            example: UserAcquisitionSource.INSTAGRAM,
+          },
+          acquisitionSourceOther: { type: 'string' as const, nullable: true },
+          acquisitionSourceSubmittedAt: { type: 'string' as const, format: 'date-time', nullable: true },
+        },
+      },
+    },
+    pagination: {
+      type: 'object' as const,
+      properties: {
+        total: { type: 'integer' as const },
+        page: { type: 'integer' as const },
+        limit: { type: 'integer' as const },
+        totalPages: { type: 'integer' as const },
+      },
+    },
+  },
+};
 
 @ApiTags('Admin - User Management')
 @Controller('admin/users')
@@ -50,7 +85,7 @@ export class AdminUsersController {
   @ApiOperation({
     summary: 'List all users with search, filter, and pagination',
   })
-  @ApiResponse({ status: 200, description: 'Paginated list of users' })
+  @ApiResponse({ status: 200, description: 'Paginated list of users including acquisition source details', schema: ADMIN_USERS_LIST_SCHEMA })
   async listUsers(@Query() query: AdminQueryDto) {
     return this.adminUsersService.findAllUsers(query);
   }
@@ -58,7 +93,7 @@ export class AdminUsersController {
   @Get('search')
   @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
   @ApiOperation({ summary: 'Search users with the admin user list filters' })
-  @ApiResponse({ status: 200, description: 'Paginated matching users' })
+  @ApiResponse({ status: 200, description: 'Paginated matching users including acquisition source details', schema: ADMIN_USERS_LIST_SCHEMA })
   async searchUsers(@Query() query: AdminQueryDto) {
     return this.adminUsersService.findAllUsers(query);
   }

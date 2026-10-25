@@ -27,6 +27,7 @@ import {
   ResolveDisputeDto,
   CreateSupportTicketDto,
   UserSupportTicketQueryDto,
+  UserReplySupportTicketDto,
 } from '../dto';
 
 @Injectable()
@@ -468,6 +469,34 @@ export class AdminSystemService {
     });
 
     if (!ticket) throw new NotFoundException('Ticket not found');
+
+    return this.mapSupportTicketDetail(ticket);
+  }
+
+  async replyToUserSupportTicket(
+    userId: string,
+    id: string,
+    dto: UserReplySupportTicketDto,
+    attachment?: any,
+  ) {
+    const ticket = await this.ticketsRepository.findOne({
+      where: { id, userId },
+    });
+    if (!ticket) throw new NotFoundException('Ticket not found');
+
+    const attachmentUrl = attachment
+      ? await this.storageService.uploadFile(attachment, 'support-ticket-replies')
+      : null;
+    const reply = this.ticketRepliesRepository.create({
+      ticketId: id,
+      senderId: userId,
+      senderType: 'user',
+      message: dto.message,
+      attachmentUrl,
+    });
+    await this.ticketRepliesRepository.save(reply);
+    ticket.updatedAt = new Date();
+    await this.ticketsRepository.save(ticket);
 
     return this.mapSupportTicketDetail(ticket);
   }

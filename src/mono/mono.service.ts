@@ -118,7 +118,7 @@ export class MonoService {
         if (jobStatus === 'processing') throw new TransactionSyncProcessing();
         if (jobStatus === 'failed') {
           throw new ServiceUnavailableException(
-            'Bank transaction refresh failed. The linked account may require reauthorization.',
+            'Bank transaction refresh failed. The linked account may require reauthorization. Use POST /mono/reauth with the Mono accountId to reconnect, then retry.',
           );
         }
       }
@@ -265,6 +265,68 @@ export class MonoService {
 
   async getAllPlatformAccounts() {
     return this.monoGet('/accounts');
+  }
+
+  async getAdminUserSyncStatus(userId: string) {
+    const accounts = await this.monoAccountRepository.find({
+      where: { user: { id: userId } },
+    });
+    if (!accounts.length) throw new NotFoundException('No linked Mono accounts found for this user');
+    return {
+      userId,
+      checkedAt: new Date(),
+      accounts: await Promise.all(accounts.map(async (account) => {
+        const where = { monoAccount: { id: account.id } };
+        const [transactionCount, latest] = await Promise.all([
+          this.transactionRepository.count({ where }),
+          this.transactionRepository.findOne({ where, order: { date: 'DESC' } }),
+        ]);
+        return {
+          accountId: account.monoAccountId,
+          institutionName: account.institutionName,
+          dataStatus: account.dataStatus,
+          lastSyncedAt: account.lastSyncedAt || null,
+          transactionCount,
+          latestTransactionDate: latest?.date || null,
+        };
+      })),
+    };
+  }
+
+  async testAdminUserSync(userId: string) {
+    const before = await this.getAdminUserSyncStatus(userId);
+    const accounts = await this.monoAccountRepository.find({
+      where: { user: { id: userId } },
+    });
+    const results: Array<{
+      accountId: string;
+      status: 'completed' | 'processing' | 'failed';
+      projection?: Awaited<ReturnType<TransactionSyncService['syncAccountTransactions']>>;
+      message?: string;
+    }> = [];
+    // Report each account independently so one bank failure does not hide others.
+    for (const account of accounts) {
+      try {
+        // Bypass the local freshness cache, retaining the incremental boundary.
+        await this.syncTransactionsForAccount(account, undefined, false, false, false, true);
+        const projection = await this.transactionSyncService.syncAccountTransactions(account.monoAccountId);
+        results.push({ accountId: account.monoAccountId, status: 'completed', projection });
+      } catch (error) {
+        const processing = error instanceof TransactionSyncProcessing;
+        results.push({
+          accountId: account.monoAccountId,
+          status: processing ? 'processing' : 'failed',
+          message: processing ? error.message : 'Bank refresh or finance import failed. Check server logs; the account may require reauthorization.',
+        });
+        if (!processing) this.logger.error(`Admin sync test failed for ${account.monoAccountId}: ${error.message}`);
+      }
+    }
+    return {
+      userId,
+      before,
+      after: await this.getAdminUserSyncStatus(userId),
+      results,
+    };
   }
 
   async getAllUserStatements(
@@ -430,15 +492,17 @@ export class MonoService {
     requestedStart?: Date,
     forceSync?: boolean,
     autoCategorize = false,
-    reuseToday = false,
+    reuseRecent = false,
     realtime = true,
   ) {
     const now = new Date();
-    const lagosDay = (date: Date) => new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Africa/Lagos', year: 'numeric', month: '2-digit', day: '2-digit',
-    }).format(date);
-    const forwardIsFresh = reuseToday && !forceSync && account.lastSyncedAt &&
-      lagosDay(new Date(account.lastSyncedAt)) === lagosDay(now);
+    // Mono permits a new realtime session every five minutes. A same-day
+    // cache hides transactions posted after the first successful daily import.
+    const syncAge = account.lastSyncedAt
+      ? now.getTime() - new Date(account.lastSyncedAt).getTime()
+      : Infinity;
+    const forwardIsFresh = reuseRecent && !forceSync &&
+      syncAge >= 0 && syncAge < 5 * 60 * 1000;
     const needsBackfill = requestedStart &&
       (!account.earliestSyncedAt || requestedStart < account.earliestSyncedAt);
     if (forwardIsFresh && !needsBackfill) return;
@@ -515,7 +579,9 @@ export class MonoService {
     if (String(meta?.data_status).toUpperCase() === 'PROCESSING') {
       throw new TransactionSyncProcessing();
     }
-    if (!this.hasTransactionData(meta)) {
+    // A realtime request can recover UNAVAILABLE/PARTIAL data. Only cached
+    // imports require transactions to already be available at Mono.
+    if (!realtime && !this.hasTransactionData(meta)) {
       throw new ServiceUnavailableException(
         `Bank transactions are not available yet (status: ${meta?.data_status || 'unknown'}). Please try again shortly.`,
       );
@@ -1128,12 +1194,33 @@ export class MonoService {
         break;
 
       case 'mono.events.account_updated':
+      case 'mono.accounts.account_updated':
         this.logger.log(
           `Account updated — data status: ${data?.meta?.data_status}`,
         );
         await this.handleAccountUpdated(data).catch((e) =>
           this.logger.error(e),
         );
+        break;
+
+      case 'mono.accounts.jobs.update':
+        // Fetch the completed job's data without starting another bank refresh.
+        // Let failures propagate so Mono can retry delivery.
+        if (
+          data?.name === 'jobs.accounts.sync_statement' &&
+          String(data?.status).toLowerCase() === 'finished' &&
+          typeof data?.account === 'string'
+        ) {
+          const account = await this.monoAccountRepository.findOne({
+            where: { monoAccountId: data.account },
+          });
+          if (account) {
+            await this.syncTransactionsForAccount(
+              account, undefined, false, false, false, false,
+            );
+            await this.transactionSyncService.syncAccountTransactions(data.account);
+          }
+        }
         break;
 
       case 'mono.events.transaction_categorisation':

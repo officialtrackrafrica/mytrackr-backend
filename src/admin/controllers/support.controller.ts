@@ -27,6 +27,8 @@ import {
   SupportTicketResponseDto,
   SupportTicketDetailResponseDto,
   UserSupportTicketQueryDto,
+  UserReplySupportTicketDto,
+  UserReplySupportTicketUploadDto,
 } from '../dto';
 
 @ApiTags('User - Support')
@@ -71,10 +73,35 @@ export class SupportController {
     return this.systemService.getUserSupportTickets(req.user.id, query);
   }
 
+  @Post('tickets/:id/replies')
+  @UseInterceptors(FileInterceptor('attachment'))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ type: UserReplySupportTicketUploadDto })
+  @ApiOperation({ summary: 'Reply to your support ticket' })
+  @ApiResponse({
+    status: 201,
+    description: 'Updated ticket with the original message and saved replies',
+    type: SupportTicketDetailResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Ticket not found' })
+  async replyToTicket(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UserReplySupportTicketDto,
+    @UploadedFile() attachment?: any,
+  ) {
+    return this.systemService.replyToUserSupportTicket(
+      req.user.id,
+      id,
+      dto,
+      attachment,
+    );
+  }
+
   @Get('tickets/:id')
   @ApiOperation({
     summary: 'Get support ticket details and messages for the authenticated user',
-    description: 'Use messages to display the conversation. The first entry is the original request; subsequent entries include admin replies and optional signed attachment URLs.',
+    description: 'Use messages to display the conversation. The first entry is the original request; subsequent entries include user and admin replies and optional signed attachment URLs.',
   })
   @ApiResponse({
     status: 200,

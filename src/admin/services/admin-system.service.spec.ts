@@ -18,8 +18,11 @@ describe('User support ticket conversation', () => {
   function setup(foundTicket: typeof ticket | null = ticket) {
     const ticketsRepository = {
       findOne: jest.fn().mockResolvedValue(foundTicket),
+      save: jest.fn().mockImplementation(async (value) => value),
     };
     const ticketRepliesRepository = {
+      create: jest.fn().mockImplementation((value) => value),
+      save: jest.fn().mockImplementation(async (value) => value),
       find: jest.fn().mockResolvedValue([
         {
           id: 'reply-1',
@@ -49,6 +52,7 @@ describe('User support ticket conversation', () => {
       createQueryBuilder: jest.fn().mockReturnValue(participantsQuery),
     };
     const storageService = {
+      uploadFile: jest.fn().mockResolvedValue('support-ticket-replies/user.pdf'),
       getSignedUrl: jest.fn().mockResolvedValue('https://storage.test/signed'),
     };
     // Avoid opening Redis connections; exercise the actual conversation mapper.
@@ -110,5 +114,62 @@ describe('User support ticket conversation', () => {
       where: { id: ticket.id, userId: 'other-user' },
     });
     expect(ticketRepliesRepository.find).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('saves an owner reply with attachment=%s and returns the conversation', async (withAttachment) => {
+    const { service, ticketsRepository, ticketRepliesRepository, storageService } = setup({ ...ticket });
+    const attachment = withAttachment ? { originalname: 'user.pdf' } : undefined;
+    const savedReply = {
+      id: 'user-reply-1',
+      ticketId: ticket.id,
+      senderId: ticket.userId,
+      senderType: 'user',
+      message: 'The issue persists',
+      attachmentUrl: withAttachment ? 'support-ticket-replies/user.pdf' : null,
+      createdAt: new Date(),
+    };
+    ticketRepliesRepository.find.mockResolvedValue([savedReply]);
+
+    const result = await service.replyToUserSupportTicket(
+      ticket.userId, ticket.id, { message: savedReply.message }, attachment,
+    );
+
+    expect(ticketsRepository.findOne).toHaveBeenCalledWith({
+      where: { id: ticket.id, userId: ticket.userId },
+    });
+    expect(ticketRepliesRepository.save).toHaveBeenCalledWith(expect.objectContaining({
+      ticketId: ticket.id,
+      senderId: ticket.userId,
+      senderType: 'user',
+      message: savedReply.message,
+      attachmentUrl: savedReply.attachmentUrl,
+    }));
+    expect(result.messages[1]).toEqual(expect.objectContaining({
+      senderType: 'user', message: savedReply.message,
+      attachmentUrl: withAttachment ? 'https://storage.test/signed' : undefined,
+    }));
+    expect(ticketsRepository.save).toHaveBeenCalledWith(expect.objectContaining({
+      status: ticket.status, updatedAt: expect.any(Date),
+    }));
+    if (withAttachment) {
+      expect(storageService.uploadFile).toHaveBeenCalledWith(attachment, 'support-ticket-replies');
+    } else {
+      expect(storageService.uploadFile).not.toHaveBeenCalled();
+    }
+  });
+
+  it('rejects replies to missing or other users tickets before uploading or saving', async () => {
+    const { service, ticketsRepository, ticketRepliesRepository, storageService } = setup(null);
+
+    await expect(service.replyToUserSupportTicket(
+      'other-user', ticket.id, { message: 'Reply' }, { originalname: 'user.pdf' },
+    )).rejects.toThrow(NotFoundException);
+
+    expect(ticketsRepository.findOne).toHaveBeenCalledWith({
+      where: { id: ticket.id, userId: 'other-user' },
+    });
+    expect(storageService.uploadFile).not.toHaveBeenCalled();
+    expect(ticketRepliesRepository.save).not.toHaveBeenCalled();
+    expect(ticketsRepository.save).not.toHaveBeenCalled();
   });
 });

@@ -371,6 +371,12 @@ export class AdminUsersService {
           firstName: user.firstName,
           lastName: user.lastName,
           dateCreated: user.createdAt,
+          hasSubmittedAcquisitionSource: Boolean(
+            user.acquisitionSourceSubmittedAt || user.acquisitionSource,
+          ),
+          acquisitionSource: user.acquisitionSource || null,
+          acquisitionSourceOther: user.acquisitionSourceOther || null,
+          acquisitionSourceSubmittedAt: user.acquisitionSourceSubmittedAt || null,
           createdAt: user.createdAt,
           plan: raw.planName
             ? { name: raw.planName, slug: raw.planSlug }

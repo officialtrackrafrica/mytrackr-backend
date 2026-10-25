@@ -93,6 +93,57 @@ Nest is an MIT-licensed open source project. It can grow thanks to the sponsors 
 - Website - [https://nestjs.com](https://nestjs.com/)
 - Twitter - [@nestframework](https://twitter.com/nestframework)
 
+## Mono transaction refresh
+
+`GET /finance/transactions` requests updated bank transactions before applying
+display filters. Successful imports are reused for five minutes, matching Mono's
+real-time session interval. This is a refresh on request, not a scheduled background sync.
+
+When Mono returns `x-job-status: processing`, the API returns saved transactions
+with `sync.status: processing`. The client should keep the saved history visible
+and retry after a short delay. Processing responses do not advance the sync cursor.
+The `mono.accounts.jobs.update` event with a finished statement job imports the
+completed result with `x-realtime: false`, then copies it into finance transactions.
+Account-updated webhooks also import available transactions.
+
+Configure the public `POST /mono/webhook` URL (including any deployment API prefix)
+in the Mono dashboard and set the matching `MONO_WEBHOOK_SECRET` in the application.
+Check webhook delivery logs when a refresh remains in processing. A failed job may
+require user reauthorization: call authenticated `POST /mono/reauth` with
+`{"accountId":"MONO_ACCOUNT_ID"}`, open the returned Mono link for the user,
+and refresh transactions after authorization completes. Bank-side failures can
+also cause failed jobs; a failed job alone does not prove authorization expired.
+
+To verify a deployment, use an account with a transaction posted after its previous
+import. Request transactions, inspect Mono's job headers/webhook delivery, and
+confirm the new transaction appears after completion. Repeat after five minutes
+on the same day. Also verify the reconnect flow with an account that requires it.
+
+Reference: [Mono real-time data documentation](https://docs.mono.co/docs/financial-data/realtime-data).
+
+### Admin staging test
+
+The server-rendered `/admin/calculation-audit` page includes a **Test bank sync**
+panel. Select a user, click **Sync selected user**, then use **Check saved results**
+after any processing job completes. The table shows each account's result,
+before/after transaction counts, latest transaction date, and last import time.
+Run the audit again to refresh its report after importing transactions.
+
+Under **Admin - Mono Integration** in Swagger, authenticate as an admin and call
+`POST /admin/mono/users/{userId}/sync` using the application's user UUID. No body
+is required. This performs a real bank refresh and writes transactions, returning
+`before` and `after` account snapshots and a `results` array with each account's
+`completed`, `processing`, or `failed` outcome. The snapshot includes
+`transactionCount`, `latestTransactionDate`, and `lastSyncedAt`.
+
+If processing, allow the webhook to arrive and call
+`GET /admin/mono/users/{userId}/sync` to compare the saved counts and timestamps.
+This GET only reads local data. The POST bypasses the application's cache but
+cannot bypass Mono's five-minute interval. A completed result with no count
+increase can be valid if the bank has no new transactions. Verify a known new
+transaction in the finance list before declaring the integration successful.
+Use a staging-connected account and point that Mono app's webhook at staging.
+
 ## License
 
 Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).

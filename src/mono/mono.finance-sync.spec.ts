@@ -38,7 +38,7 @@ describe('Finance transaction refresh', () => {
 
   afterEach(() => jest.useRealTimers());
 
-  it('syncs through now and reuses today regardless of the display range', async () => {
+  it('syncs through now and reuses a recent sync regardless of the display range', async () => {
     await service.syncUserTransactionsForFinance('user', '2026-10-01');
     expect(fetch).toHaveBeenCalledWith(
       expect.anything(),
@@ -53,12 +53,41 @@ describe('Finance transaction refresh', () => {
     expect(repo.find).toHaveBeenCalledWith({ where: { user: { id: 'user' } } });
   });
 
-  it('serializes simultaneous requests so they share the daily refresh', async () => {
+  it('serializes simultaneous requests so they share the recent refresh', async () => {
     await Promise.all([
       service.syncUserTransactionsForFinance('user'),
       service.syncUserTransactionsForFinance('user'),
     ]);
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes again after five minutes on the same day', async () => {
+    await service.syncUserTransactionsForFinance('user');
+    jest.advanceTimersByTime(5 * 60 * 1000);
+    await service.syncUserTransactionsForFinance('user');
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('imports a finished statement job without launching another realtime job', async () => {
+    const previousSync = account.lastSyncedAt;
+    repo.findOne = jest.fn().mockResolvedValue({ ...account });
+    await service.handleWebhookEvent({
+      event: 'mono.accounts.jobs.update',
+      data: { account: 'mono', name: 'jobs.accounts.sync_statement', status: 'finished' },
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      expect.anything(), previousSync, expect.any(Date), false, false,
+    );
+    expect(project).toHaveBeenCalledWith('mono');
+  });
+
+  it.each(['processing', 'failed'])('does not import a %s job', async (status) => {
+    await service.handleWebhookEvent({
+      event: 'mono.accounts.jobs.update',
+      data: { account: 'mono', name: 'jobs.accounts.sync_statement', status },
+    });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(project).not.toHaveBeenCalled();
   });
 
   it('refreshes on a new Lagos day even before UTC midnight', async () => {
@@ -150,13 +179,26 @@ describe('Finance transaction refresh', () => {
       Object.assign(service, { monoGet });
 
       await expect(
-        service.syncUserTransactionsForFinance('user'),
+        service.syncTransactionsForAccount(account, undefined, false, false, false, false),
       ).rejects.toThrow('not available yet');
       expect(monoGet).toHaveBeenCalledTimes(1);
       expect(repo.update).not.toHaveBeenCalled();
       expect(project).not.toHaveBeenCalled();
     },
   );
+
+  it('attempts realtime recovery when old account data is unavailable', async () => {
+    delete (service as any).fetchAndStoreTransactions;
+    const monoGet = jest.fn()
+      .mockResolvedValueOnce({ data: { meta: { data_status: 'UNAVAILABLE' } } })
+      .mockResolvedValueOnce({ data: [], meta: { next: null } });
+    Object.assign(service, { monoGet });
+    await service.syncUserTransactionsForFinance('user');
+    expect(monoGet).toHaveBeenNthCalledWith(
+      2, expect.stringContaining('/transactions?'), { 'x-realtime': 'true' },
+    );
+    expect(repo.update).toHaveBeenCalledTimes(1);
+  });
 
   it('imports partial accounts when transactions are available', async () => {
     delete (service as any).fetchAndStoreTransactions;

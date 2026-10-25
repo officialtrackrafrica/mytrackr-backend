@@ -898,6 +898,23 @@ export class ReplySupportTicketUploadDto extends ReplySupportTicketDto {
   attachment?: any;
 }
 
+export class UserReplySupportTicketDto {
+  @ApiProperty({ description: 'Reply message body', example: 'I still need help with this issue.' })
+  @IsString()
+  @MinLength(1)
+  message: string;
+}
+
+export class UserReplySupportTicketUploadDto extends UserReplySupportTicketDto {
+  @ApiPropertyOptional({
+    type: 'string',
+    format: 'binary',
+    description: 'Optional reply attachment file',
+  })
+  @IsOptional()
+  attachment?: any;
+}
+
 export class CreateSupportTicketDto {
   @ApiProperty({ description: 'Support ticket title', example: 'Missing bank transactions' })
   @IsString()

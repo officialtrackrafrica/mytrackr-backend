@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Param, ParseUUIDPipe, HttpCode, UseGuards } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -18,6 +18,33 @@ import { MonoAccountResponseDto } from './dto';
 @UseGuards(JwtAuthGuard, PoliciesGuard)
 export class MonoAdminController {
   constructor(private readonly monoService: MonoService) {}
+
+  @Post('users/:userId/sync')
+  @HttpCode(200)
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiCookieAuth('accessToken')
+  @ApiOperation({
+    summary: 'Test real-time transaction sync for a selected user',
+    description: 'Triggers a live refresh for each linked account, bypassing the local five-minute cache. Saves downloaded transactions and imports them into finance. Returns before/after counts, latest transaction dates, and per-account completed, processing, or failed results. Mono may charge for real-time requests and enforces its own five-minute interval. For processing results, check the status endpoint after webhook completion.',
+  })
+  @ApiResponse({ status: 200, description: 'Before/after snapshots and per-account refresh results. Completed does not imply new transactions were found.' })
+  @ApiResponse({ status: 404, description: 'No linked Mono accounts found for this user' })
+  async testUserSync(@Param('userId', ParseUUIDPipe) userId: string) {
+    return this.monoService.testAdminUserSync(userId);
+  }
+
+  @Get('users/:userId/sync')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiCookieAuth('accessToken')
+  @ApiOperation({
+    summary: 'Inspect saved transaction sync progress for a selected user',
+    description: 'Reads local account sync timestamps, transaction counts, and latest transaction dates without initiating a bank refresh. Compare with the POST response before snapshot after a processing job completes.',
+  })
+  @ApiResponse({ status: 200, description: 'Current saved account sync snapshot' })
+  @ApiResponse({ status: 404, description: 'No linked Mono accounts found for this user' })
+  async getUserSyncStatus(@Param('userId', ParseUUIDPipe) userId: string) {
+    return this.monoService.getAdminUserSyncStatus(userId);
+  }
 
   @Get('accounts/all')
   @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))

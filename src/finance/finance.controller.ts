@@ -811,7 +811,7 @@ export class FinanceController {
     summary:
       "List transactions for the user's business with pagination and filtering",
     description:
-      'Syncs connected bank accounts through today (Africa/Lagos), reusing successful same-day syncs, before applying response filters. Older requested history is backfilled when needed.',
+      'Requests a real-time refresh of connected bank accounts, reusing successful syncs for five minutes, before applying response filters. Returns saved transactions with sync.status=processing while Mono refreshes. Older requested history is backfilled when needed. A failed bank refresh may require reconnecting through POST /mono/reauth.',
   })
   @ApiResponse({
     status: 200,

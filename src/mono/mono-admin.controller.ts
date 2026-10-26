@@ -30,7 +30,7 @@ export class MonoAdminController {
   @ApiResponse({ status: 200, description: 'Before/after snapshots and per-account refresh results. Completed does not imply new transactions were found.' })
   @ApiResponse({ status: 404, description: 'No linked Mono accounts found for this user' })
   async testUserSync(@Param('userId', ParseUUIDPipe) userId: string) {
-    return this.monoService.testAdminUserSync(userId);
+    return this.monoService.withMonoResponses(() => this.monoService.testAdminUserSync(userId));
   }
 
   @Get('users/:userId/sync')
@@ -43,7 +43,7 @@ export class MonoAdminController {
   @ApiResponse({ status: 200, description: 'Current saved account sync snapshot' })
   @ApiResponse({ status: 404, description: 'No linked Mono accounts found for this user' })
   async getUserSyncStatus(@Param('userId', ParseUUIDPipe) userId: string) {
-    return this.monoService.getAdminUserSyncStatus(userId);
+    return this.monoService.withMonoResponses(() => this.monoService.getAdminUserSyncStatus(userId));
   }
 
   @Get('accounts/all')

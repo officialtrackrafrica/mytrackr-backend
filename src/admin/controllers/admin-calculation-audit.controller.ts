@@ -140,6 +140,7 @@ ${input.audit ? this.renderAudit(input.audit, input.startText, input.endText, in
 <div style="display:flex;gap:12px;flex-wrap:wrap"><button type="button" id="sync-run" style="width:auto">Sync selected user</button><button type="button" id="sync-check" style="width:auto">Check sync status</button></div>
 <p id="sync-message" role="status" aria-live="polite">Select a user to test their linked accounts.</p>
 <div id="sync-results" style="overflow:auto"></div>
+<details open><summary>Raw Mono responses</summary><div id="sync-raw"><p>Run sync or check status to see the response bodies exactly as Mono returned them.</p></div></details>
 <p>Check sync status asks Mono about the tracked job without starting another bank refresh. Bank completion and local import are separate: if Mono has completed but the last import is unchanged, check webhook delivery. Confirm a known new transaction appears and run the audit again to update the report below.</p>
 </section>
 <script>
@@ -149,6 +150,7 @@ ${input.audit ? this.renderAudit(input.audit, input.startText, input.endText, in
   const check = document.getElementById('sync-check');
   const message = document.getElementById('sync-message');
   const output = document.getElementById('sync-results');
+  const rawOutput = document.getElementById('sync-raw');
   let busy = false;
   let baseline = null;
   const restoreBaseline = () => {
@@ -160,6 +162,7 @@ ${input.audit ? this.renderAudit(input.audit, input.startText, input.endText, in
   userSelect.addEventListener('change', () => {
     restoreBaseline();
     output.replaceChildren();
+    rawOutput.replaceChildren();
     message.textContent = 'Ready to check the selected user.';
     updateButtons();
   });
@@ -197,6 +200,20 @@ ${input.audit ? this.renderAudit(input.audit, input.startText, input.endText, in
       });
       const payload = await response.json();
       const data = payload.data || payload;
+      rawOutput.replaceChildren();
+      (data.monoResponses || []).forEach(item => {
+        const section = document.createElement('section');
+        const label = document.createElement('p');
+        label.textContent = 'GET ' + item.url + ' — HTTP ' + item.status;
+        const headers = document.createElement('pre');
+        headers.textContent = JSON.stringify(item.headers, null, 2);
+        const body = document.createElement('pre');
+        body.style.overflow = 'auto';
+        body.textContent = item.body;
+        section.append(label, headers, body);
+        rawOutput.appendChild(section);
+      });
+      if (!rawOutput.childNodes.length) rawOutput.textContent = 'No Mono responses were received for this request.';
       if (!response.ok) throw new Error(payload.message || 'Unable to check bank sync');
       if (method === 'POST') {
         baseline = data.before;

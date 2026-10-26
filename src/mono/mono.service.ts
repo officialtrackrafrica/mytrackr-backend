@@ -8,6 +8,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import {
   InitiateAccountDto,
   ReauthAccountDto,
@@ -50,6 +51,20 @@ export interface TransactionSyncStatus {
 
 @Injectable()
 export class MonoService {
+  private readonly monoResponseCapture = new AsyncLocalStorage<Array<{
+    url: string;
+    status: number;
+    headers: Record<string, string>;
+    body: string;
+  }>>();
+
+  async withMonoResponses<T>(operation: () => Promise<T>) {
+    return this.monoResponseCapture.run([], async () => {
+      const data = await operation();
+      return { ...data, monoResponses: this.monoResponseCapture.getStore()! };
+    });
+  }
+
   private readonly logger = new Logger(MonoService.name);
   private readonly baseUrl = 'https://api.withmono.com/v2';
   private readonly maxRetries = 3;
@@ -107,7 +122,20 @@ export class MonoService {
         ...(path.includes('/jobs/') ? { signal: AbortSignal.timeout(15_000) } : {}),
       });
 
-      const data = await response.json();
+      const capture = this.monoResponseCapture?.getStore();
+      let data: any;
+      if (capture) {
+        const body = await response.text();
+        capture.push({
+          url: `${this.baseUrl}${path}`,
+          status: response.status,
+          headers: Object.fromEntries(response.headers.entries()),
+          body,
+        });
+        data = JSON.parse(body);
+      } else {
+        data = await response.json();
+      }
 
       if (extraHeaders?.['x-realtime'] === 'true') {
         const jobStatus = response.headers.get('x-job-status')?.toLowerCase();

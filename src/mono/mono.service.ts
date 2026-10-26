@@ -358,6 +358,7 @@ export class MonoService {
           jobStatus,
           jobCheckedAt,
           jobCheckError,
+          webhooks: account.syncWebhooks || [],
         };
       })),
     };
@@ -1245,6 +1246,30 @@ export class MonoService {
       throw new UnauthorizedException('Invalid webhook secret');
     }
     return true;
+  }
+
+  async recordSyncWebhook(payload: { event: string; data: any }, rawBody?: Buffer) {
+    if (!['mono.accounts.jobs.update', 'mono.events.account_updated', 'mono.accounts.account_updated'].includes(payload.event)) return;
+    const accountId = typeof payload.data?.account === 'string'
+      ? payload.data.account : payload.data?.account?._id || payload.data?.account?.id;
+    if (typeof accountId !== 'string') return;
+    const entry = {
+      receivedAt: new Date().toISOString(),
+      event: payload.event,
+      body: rawBody ? rawBody.toString('utf8') : JSON.stringify(payload),
+    };
+    // Append atomically so concurrent job/account deliveries cannot overwrite each other.
+    await this.monoAccountRepository.query(`
+      UPDATE mono_accounts SET "syncWebhooks" = (
+        SELECT COALESCE(jsonb_agg(value ORDER BY ordinal), '[]'::jsonb)
+        FROM (
+          SELECT value, ordinal
+          FROM jsonb_array_elements(COALESCE("syncWebhooks", '[]'::jsonb) || $1::jsonb)
+            WITH ORDINALITY AS entries(value, ordinal)
+          ORDER BY ordinal DESC LIMIT 20
+        ) recent
+      ) WHERE "monoAccountId" = $2
+    `, [JSON.stringify([entry]), accountId]);
   }
 
   async handleWebhookEvent(payload: { event: string; data: any }) {

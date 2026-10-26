@@ -138,6 +138,7 @@ describe('Admin sync HTTP smoke test', () => {
       'sync-message': message,
       'sync-results': output,
       'sync-raw': { ...element(), childNodes: [] },
+      'sync-webhooks': element(),
     };
     const cells: any[] = [];
     const row = () => ({

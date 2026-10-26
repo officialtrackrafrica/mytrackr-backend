@@ -141,6 +141,7 @@ ${input.audit ? this.renderAudit(input.audit, input.startText, input.endText, in
 <p id="sync-message" role="status" aria-live="polite">Select a user to test their linked accounts.</p>
 <div id="sync-results" style="overflow:auto"></div>
 <details open><summary>Raw Mono responses</summary><div id="sync-raw"><p>Run sync or check status to see the response bodies exactly as Mono returned them.</p></div></details>
+<details open><summary>Received Mono sync webhooks</summary><p>Latest 20 deliveries per account, saved before processing. Click Check sync status to reload. Only webhooks received after this update are available.</p><div id="sync-webhooks"></div></details>
 <p>Check sync status asks Mono about the tracked job without starting another bank refresh. Bank completion and local import are separate: if Mono has completed but the last import is unchanged, check webhook delivery. Confirm a known new transaction appears and run the audit again to update the report below.</p>
 </section>
 <script>
@@ -151,6 +152,7 @@ ${input.audit ? this.renderAudit(input.audit, input.startText, input.endText, in
   const message = document.getElementById('sync-message');
   const output = document.getElementById('sync-results');
   const rawOutput = document.getElementById('sync-raw');
+  const webhookOutput = document.getElementById('sync-webhooks');
   let busy = false;
   let baseline = null;
   const restoreBaseline = () => {
@@ -163,10 +165,25 @@ ${input.audit ? this.renderAudit(input.audit, input.startText, input.endText, in
     restoreBaseline();
     output.replaceChildren();
     rawOutput.replaceChildren();
+    webhookOutput.replaceChildren();
     message.textContent = 'Ready to check the selected user.';
     updateButtons();
   });
   const show = (snapshot, results) => {
+    webhookOutput.replaceChildren();
+    const deliveries = (snapshot.accounts || []).flatMap(account =>
+      (account.webhooks || []).map(item => ({ ...item, accountId: account.accountId }))
+    ).sort((a, b) => a.receivedAt.localeCompare(b.receivedAt));
+    deliveries.forEach(item => {
+      const label = document.createElement('p');
+      label.textContent = item.receivedAt + ' / ' + item.accountId + ' / ' + item.event;
+      const body = document.createElement('pre');
+      body.style.overflow = 'auto';
+      body.textContent = item.body;
+      webhookOutput.appendChild(label);
+      webhookOutput.appendChild(body);
+    });
+    if (!deliveries.length) webhookOutput.textContent = 'No saved sync webhooks received for this user. Check webhook delivery in Mono if the job has completed.';
     const table = document.createElement('table');
     const head = table.createTHead().insertRow();
     ['Bank / account', 'Result', 'Mono job status', 'Job ID', 'Status checked', 'Transactions before', 'Transactions now', 'Latest transaction', 'Last imported'].forEach(label => {

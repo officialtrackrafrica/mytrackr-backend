@@ -4,6 +4,25 @@ import { MonoService, TransactionSyncProcessing } from './mono.service';
 describe('Admin raw Mono responses', () => {
   afterEach(() => jest.restoreAllMocks());
 
+  it.each([
+    ['mono.accounts.jobs.update', { account: 'account-1', id: 'job-1', status: 'finished' }],
+    ['mono.events.account_updated', { account: { _id: 'account-1' }, meta: { sync_status: 'SUCCESSFUL' } }],
+  ])('saves the exact authenticated %s payload for its account', async (event, data) => {
+    const query = jest.fn().mockResolvedValue([]);
+    const service = Object.assign(Object.create(MonoService.prototype), {
+      monoAccountRepository: { query },
+    }) as MonoService;
+    const payload = { event, data };
+    const raw = JSON.stringify(payload, null, 3) + '\n';
+    await service.recordSyncWebhook(payload, Buffer.from(raw));
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('LIMIT 20'), [
+      expect.any(String), 'account-1',
+    ]);
+    expect(JSON.parse(query.mock.calls[0][1][0])[0]).toEqual({
+      event, body: raw, receivedAt: expect.any(String),
+    });
+  });
+
   it('preserves the exact body and job headers even when refresh is processing', async () => {
     const body = '{\n  "status": "successful", "data": []\n}\n';
     jest.spyOn(global, 'fetch').mockResolvedValue(new Response(body, {

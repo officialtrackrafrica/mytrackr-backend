@@ -62,6 +62,9 @@ export class MonoAccount {
   @Column({ type: 'timestamptz', nullable: true })
   syncJobCheckedAt: Date | null;
 
+  @Column({ type: 'jsonb', default: () => "'[]'::jsonb" })
+  syncWebhooks: Array<{ receivedAt: string; event: string; body: string }>;
+
   @Column({ type: 'timestamptz', nullable: true })
   lastCategorisedAt: Date;
 

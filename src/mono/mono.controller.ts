@@ -190,8 +190,10 @@ export class MonoController {
   async handleWebhook(
     @Headers('mono-webhook-secret') webhookSecret: string,
     @Body() payload: WebhookPayloadDto,
+    @Req() req: any,
   ) {
     this.monoService.verifyWebhookSecret(webhookSecret);
+    await this.monoService.recordSyncWebhook(payload, req.rawBody);
     return this.monoService.handleWebhookEvent(payload);
   }
 

@@ -2,6 +2,28 @@ import { NotFoundException } from '@nestjs/common';
 import { MonoService, TransactionSyncProcessing } from './mono.service';
 
 describe('Admin user sync test', () => {
+  it('recovers a failed status from the matching saved webhook when Mono rejects the status check', async () => {
+    const { service, accounts } = setup();
+    Object.assign(accounts[0], {
+      syncJobId: 'current-job', syncJobStatus: 'processing',
+      syncWebhooks: [
+        { receivedAt: '2026-10-26T10:42:40.140Z', body: JSON.stringify({
+          event: 'mono.accounts.jobs.update',
+          data: { account: 'mono-1', id: 'current-job', name: 'RTSTMT', status: 'failed' },
+        }) },
+        { receivedAt: '2026-10-26T10:43:00.000Z', body: JSON.stringify({
+          event: 'mono.accounts.jobs.update',
+          data: { account: 'mono-1', id: 'old-job', name: 'RTSTMT', status: 'finished' },
+        }) },
+      ],
+    });
+    Object.assign(service, { monoGet: jest.fn().mockRejectedValue(new Error('HTTP 400')) });
+    const result = await service.getAdminUserSyncStatus('selected-user');
+    expect(result.accounts[0]).toEqual(expect.objectContaining({
+      jobStatus: 'failed', jobCheckedAt: new Date('2026-10-26T10:42:40.140Z'),
+      jobCheckError: expect.stringContaining('received webhook'),
+    }));
+  });
   function setup() {
     const accounts = [
       {

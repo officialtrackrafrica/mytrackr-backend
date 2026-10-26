@@ -339,6 +339,21 @@ export class MonoService {
             );
           } catch (error) {
             jobCheckError = 'Unable to confirm current status with Mono. The displayed status is the last known result; retry the check.';
+            // Recover an already received delivery even if Mono's status API fails.
+            for (const webhook of [...(account.syncWebhooks || [])].reverse()) {
+              let payload: any;
+              try { payload = JSON.parse(webhook.body); } catch { continue; }
+              if (payload.event === 'mono.accounts.jobs.update' &&
+                payload.data?.account === account.monoAccountId &&
+                payload.data?.id === account.syncJobId &&
+                ['jobs.accounts.sync_statement', 'RTSTMT'].includes(payload.data?.name) &&
+                ['processing', 'finished', 'failed'].includes(String(payload.data?.status).toLowerCase())) {
+                jobStatus = String(payload.data.status).toLowerCase();
+                jobCheckedAt = new Date(webhook.receivedAt);
+                jobCheckError = 'Mono status API could not be checked. Showing the received webhook status for this job.';
+                break;
+              }
+            }
             this.logger.error(`Mono job check failed for ${account.monoAccountId}: ${error.message}`);
           }
         }
@@ -1300,7 +1315,7 @@ export class MonoService {
 
       case 'mono.accounts.jobs.update':
         if (
-          data?.name === 'jobs.accounts.sync_statement' &&
+          ['jobs.accounts.sync_statement', 'RTSTMT'].includes(data?.name) &&
           typeof data?.account === 'string' && typeof data?.id === 'string' &&
           ['processing', 'finished', 'failed'].includes(String(data?.status).toLowerCase())
         ) {
@@ -1313,7 +1328,7 @@ export class MonoService {
         // Fetch the completed job's data without starting another bank refresh.
         // Let failures propagate so Mono can retry delivery.
         if (
-          data?.name === 'jobs.accounts.sync_statement' &&
+          ['jobs.accounts.sync_statement', 'RTSTMT'].includes(data?.name) &&
           String(data?.status).toLowerCase() === 'finished' &&
           typeof data?.account === 'string'
         ) {

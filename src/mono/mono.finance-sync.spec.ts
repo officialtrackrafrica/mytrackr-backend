@@ -68,17 +68,30 @@ describe('Finance transaction refresh', () => {
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
-  it('imports a finished statement job without launching another realtime job', async () => {
+  it.each(['jobs.accounts.sync_statement', 'RTSTMT'])('imports a finished %s job without launching another realtime job', async (name) => {
     const previousSync = account.lastSyncedAt;
     repo.findOne = jest.fn().mockResolvedValue({ ...account });
     await service.handleWebhookEvent({
       event: 'mono.accounts.jobs.update',
-      data: { account: 'mono', name: 'jobs.accounts.sync_statement', status: 'finished' },
+      data: { account: 'mono', name, status: 'finished' },
     });
     expect(fetch).toHaveBeenCalledWith(
       expect.anything(), previousSync, expect.any(Date), false, false,
     );
     expect(project).toHaveBeenCalledWith('mono');
+  });
+
+  it('records a failed RTSTMT delivery for the tracked job without importing', async () => {
+    await service.handleWebhookEvent({
+      event: 'mono.accounts.jobs.update',
+      data: { account: 'mono', id: 'job-1', name: 'RTSTMT', status: 'failed' },
+    });
+    expect(repo.update).toHaveBeenCalledWith(
+      { monoAccountId: 'mono', syncJobId: 'job-1' },
+      { syncJobStatus: 'failed', syncJobCheckedAt: expect.any(Date) },
+    );
+    expect(fetch).not.toHaveBeenCalled();
+    expect(project).not.toHaveBeenCalled();
   });
 
   it.each(['processing', 'failed'])('does not import a %s job', async (status) => {

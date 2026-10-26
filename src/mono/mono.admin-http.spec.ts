@@ -17,6 +17,9 @@ describe('Admin sync HTTP smoke test', () => {
     accounts: [{ accountId: 'mono-1', transactionCount: 4 }],
   };
   const mono = {
+    withMonoResponses: jest.fn(async (operation: () => Promise<any>) => ({
+      ...(await operation()), monoResponses: [],
+    })),
     testAdminUserSync: jest.fn().mockResolvedValue({
       userId,
       before: snapshot,
@@ -134,6 +137,7 @@ describe('Admin sync HTTP smoke test', () => {
       'sync-check': check,
       'sync-message': message,
       'sync-results': output,
+      'sync-raw': { ...element(), childNodes: [] },
     };
     const cells: any[] = [];
     const row = () => ({

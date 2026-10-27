@@ -111,8 +111,7 @@ export class BalanceSheetService {
     const retainedProfit = pnlSummary.netProfit;
     const ownerInvestments = totalCapital;
     const ownerWithdrawals = totalDrawings;
-    const recordedEquity =
-      ownerInvestments + retainedProfit - ownerWithdrawals;
+    const recordedEquity = ownerInvestments + retainedProfit - ownerWithdrawals;
     // MyTrackr does not yet maintain a complete double-entry ledger. Net assets
     // are therefore the reliable owner-equity total, while the reconciliation
     // amount keeps missing opening balances and unresolved funding visible.
@@ -184,6 +183,71 @@ export class BalanceSheetService {
         isValid: true,
       },
     };
+  }
+
+  async generateBalanceSheetCsv(userId: string): Promise<string> {
+    const report = await this.calculateBalanceSheet(userId);
+    const rows: Array<Array<string | number>> = [
+      ['Balance Sheet'],
+      ['As of', new Date().toISOString()],
+      ['Currency', 'NGN'],
+      [],
+      ['ASSETS'],
+      ['Name', 'Category', 'Amount'],
+      ...report.assets.bankAccounts.map((account) => [
+        account.name,
+        'Cash and Bank',
+        account.balance,
+      ]),
+      ['Total Cash and Bank Balances', '', report.assets.cashAndBankBalances],
+      ...report.assets.businessAssets.map((asset) => [
+        asset.name,
+        asset.category,
+        asset.value,
+      ]),
+      ['Total Business Assets', '', report.assets.businessAssetsTotal],
+      ['Total Assets', '', report.assets.totalAssets],
+      [],
+      ['LIABILITIES'],
+      ['Name', 'Category', 'Amount'],
+      ...report.liabilities.activeLiabilities.map((liability) => [
+        liability.name,
+        liability.category,
+        liability.amountOwed,
+      ]),
+      ['Total Liabilities', '', report.liabilities.totalLiabilities],
+      [],
+      ['EQUITY'],
+      ['Metric', 'Amount'],
+      ['Capital Contributed', report.equity.capitalContributed],
+      ['Retained Profit', report.equity.retainedProfit],
+      ['Owner Withdrawals', report.equity.ownerWithdrawals],
+      ['Recorded Equity', report.equity.recordedEquity],
+      ['Equity Reconciliation', report.equity.equityReconciliation],
+      ['Total Owner Equity', report.equity.ownersEquity],
+      [],
+      ['INTEGRITY CHECK'],
+      ['Difference', report.integrityCheck.difference],
+      ['Recorded Difference', report.integrityCheck.recordedDifference],
+      ['Is Valid', report.integrityCheck.isValid ? 'Yes' : 'No'],
+    ];
+
+    return rows
+      .map((row) =>
+        row
+          .map((value) => {
+            // Prevent user-supplied labels from becoming spreadsheet formulas.
+            const cell =
+              typeof value === 'string' && /^[\s]*[=+@-]/.test(value)
+                ? `'${value}`
+                : String(value ?? '');
+            return /[",\n\r]/.test(cell)
+              ? `"${cell.replace(/"/g, '""')}"`
+              : cell;
+          })
+          .join(','),
+      )
+      .join('\n');
   }
 
   private emptyBalanceSheet() {

@@ -120,6 +120,103 @@ export class ReportsController {
     return this.balanceSheetService.calculateBalanceSheet(req.user.id);
   }
 
+  @Get('balance-sheet/export')
+  @ApiOperation({
+    summary: 'Export Balance Sheet to CSV',
+    description:
+      "Downloads the user's current business assets, liabilities, and owner equity as a CSV file.",
+  })
+  @ApiProduces('text/csv')
+  @ApiResponse({ status: 200, description: 'CSV file download' })
+  async exportBalanceSheet(@Req() req: any, @Res() res: Response) {
+    const csv = await this.balanceSheetService.generateBalanceSheetCsv(
+      req.user.id,
+    );
+    return this.sendCsv(res, csv, 'mytrackr-balance-sheet');
+  }
+
+  @Get('balance-sheet/export.pdf')
+  @ApiOperation({
+    summary: 'Export Balance Sheet to PDF',
+    description:
+      "Downloads the user's current business assets, liabilities, and owner equity as a PDF file.",
+  })
+  @ApiProduces('application/pdf')
+  @ApiResponse({ status: 200, description: 'PDF file download' })
+  async exportBalanceSheetPdf(@Req() req: any, @Res() res: Response) {
+    const business = await this.businessService.getBusinessForUser(req.user.id);
+    const report = await this.balanceSheetService.calculateBalanceSheet(
+      req.user.id,
+    );
+    const lines = [
+      `Period: As of ${this.formatDate(new Date())}`,
+      '',
+      'ASSETS',
+      ...report.assets.bankAccounts.map((account) =>
+        this.formatAmountLine(account.name, account.balance),
+      ),
+      this.formatAmountLine(
+        'Total Cash and Bank Balances',
+        report.assets.cashAndBankBalances,
+      ),
+      ...report.assets.businessAssets.map((asset) =>
+        this.formatAmountLine(`${asset.name} (${asset.category})`, asset.value),
+      ),
+      this.formatAmountLine(
+        'Total Business Assets',
+        report.assets.businessAssetsTotal,
+      ),
+      this.formatAmountLine('Total Assets', report.assets.totalAssets),
+      '',
+      'LIABILITIES',
+      ...report.liabilities.activeLiabilities.map((liability) =>
+        this.formatAmountLine(
+          `${liability.name} (${liability.category})`,
+          liability.amountOwed,
+        ),
+      ),
+      this.formatAmountLine(
+        'Total Liabilities',
+        report.liabilities.totalLiabilities,
+      ),
+      '',
+      'EQUITY',
+      this.formatAmountLine(
+        'Capital Contributed',
+        report.equity.capitalContributed,
+      ),
+      this.formatAmountLine('Retained Profit', report.equity.retainedProfit),
+      this.formatAmountLine(
+        'Owner Withdrawals',
+        report.equity.ownerWithdrawals,
+      ),
+      this.formatAmountLine('Recorded Equity', report.equity.recordedEquity),
+      this.formatAmountLine(
+        'Equity Reconciliation',
+        report.equity.equityReconciliation,
+      ),
+      this.formatAmountLine('Total Owner Equity', report.equity.ownersEquity),
+      '',
+      'INTEGRITY CHECK',
+      this.formatAmountLine('Difference', report.integrityCheck.difference),
+      this.formatAmountLine(
+        'Recorded Difference',
+        report.integrityCheck.recordedDifference,
+      ),
+      `Is Valid: ${report.integrityCheck.isValid ? 'Yes' : 'No'}`,
+    ];
+
+    return this.sendPdf(
+      res,
+      this.simplePdfReportService.generate({
+        title: 'Balance Sheet',
+        companyName: business.name,
+        lines,
+      }),
+      'mytrackr-balance-sheet',
+    );
+  }
+
   @Get('analytics')
   @ApiOperation({
     summary: 'Get time-series analytics for Sales and P&L',

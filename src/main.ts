@@ -14,9 +14,16 @@ async function bootstrap() {
   const httpAdapter = app.get(HttpAdapterHost);
   const expressApp = app.getHttpAdapter().getInstance();
 
-  app.use((req: any, _res: any, next: () => void) => {
+  app.use((req: any, res: any, next: () => void) => {
     const [path, query = ''] = req.url.split('?');
     const normalizedPath = path.replace(/\/{2,}/g, '/');
+
+    // Synology probes target a service this application does not expose.
+    // Reject before body parsing and avoid logging their credential query strings.
+    if (/^\/webapi(?:\/|$)/i.test(normalizedPath)) {
+      res.status(404).end();
+      return;
+    }
 
     if (normalizedPath !== path) {
       req.url = query ? `${normalizedPath}?${query}` : normalizedPath;

@@ -18,6 +18,7 @@ import { Transaction as FinanceTransaction } from '../finance/entities/transacti
 
 import { MonoFinanceController } from './mono-finance.controller';
 import { MonoAdminController } from './mono-admin.controller';
+import { AuditLog } from '../admin/entities/audit-log.entity';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { MonoAdminController } from './mono-admin.controller';
       FinanceTransaction,
       AccountCategory,
       AccountSubCategory,
+      AuditLog,
     ]),
     forwardRef(() => FinanceModule),
     PaymentsModule,

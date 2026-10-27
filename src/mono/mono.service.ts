@@ -37,6 +37,7 @@ import {
   Transaction as FinanceTransaction,
 } from '../finance/entities/transaction.entity';
 import { SubscriptionService } from '../payments/services/subscription.service';
+import { AuditLog } from '../admin/entities/audit-log.entity';
 
 export class TransactionSyncProcessing extends Error {
   constructor() {
@@ -45,7 +46,7 @@ export class TransactionSyncProcessing extends Error {
 }
 
 export interface TransactionSyncStatus {
-  status: 'completed' | 'processing' | 'reauthorization_required';
+  status: 'completed' | 'processing' | 'reauthorization_required' | 'failed';
   message?: string;
   requiresReauthorization?: boolean;
   accounts?: Array<{ accountId: string; reauthorizationUrl: string | null }>;
@@ -90,6 +91,8 @@ export class MonoService {
     private readonly transactionSyncService: TransactionSyncService,
     private readonly businessService: BusinessService,
     private readonly subscriptionService: SubscriptionService,
+    @InjectRepository(AuditLog)
+    private readonly auditLogRepository: Repository<AuditLog>,
   ) {}
 
   private getSecretKey(): string {
@@ -137,6 +140,14 @@ export class MonoService {
         data = JSON.parse(body);
       } else {
         data = await response.json();
+      }
+
+      if (!response.ok && /insufficient\s+wallet\s+balance/i.test(String(data?.message || ''))) {
+        throw new ServiceUnavailableException({
+          statusCode: 503,
+          code: 'MONO_WALLET_BALANCE_INSUFFICIENT',
+          message: 'Bank transaction refresh is temporarily unavailable because the application\'s Mono API wallet has insufficient funds. Contact support to restore bank synchronization.',
+        });
       }
 
       if (extraHeaders?.['x-realtime'] === 'true') {
@@ -546,10 +557,7 @@ export class MonoService {
             const reauth = await this.getTransactionReauthorization(userId, acc, true);
             if (reauth) return reauth;
             if (e instanceof TransactionSyncProcessing) return e;
-            this.logger.error(
-              `Sync failed for account ${acc.monoAccountId}: ${e.message}`,
-            );
-            throw e;
+            return this.recordTransactionSyncFailure(userId, acc, e);
           });
       }),
     );
@@ -581,10 +589,14 @@ export class MonoService {
           const reauth = await this.getTransactionReauthorization(userId, account, true);
           if (reauth) return reauth;
           if (error instanceof TransactionSyncProcessing) return error;
-          throw error;
+          return this.recordTransactionSyncFailure(userId, account, error);
         }
         // Retry projection even when Mono is fresh, in case an earlier projection failed.
-        await this.transactionSyncService.syncAccountTransactions(account.monoAccountId);
+        try {
+          await this.transactionSyncService.syncAccountTransactions(account.monoAccountId);
+        } catch (error) {
+          return this.recordTransactionSyncFailure(userId, account, error);
+        }
       }));
       return this.combineTransactionSyncResults(results, results.some((result) => result instanceof TransactionSyncProcessing));
     });
@@ -602,7 +614,31 @@ export class MonoService {
       : { status: 'completed' };
   }
 
+  private async recordTransactionSyncFailure(
+    userId: string, account: MonoAccount, error: unknown,
+  ): Promise<TransactionSyncStatus> {
+    const message = error instanceof Error ? error.message : 'Transaction refresh failed';
+    this.logger.error(`Transaction sync failed for account ${account.monoAccountId}: ${message}`);
+    try {
+      await this.auditLogRepository.save(this.auditLogRepository.create({
+        action: 'TRANSACTION_SYNC_FAILED',
+        resource: 'mono_account',
+        resourceId: account.monoAccountId,
+        userId,
+        details: { message, servingStoredTransactions: true },
+      }));
+    } catch (logError) {
+      this.logger.error('Could not persist transaction sync failure in admin audit logs',
+        logError instanceof Error ? logError.stack : undefined);
+    }
+    return {
+      status: 'failed',
+      message: 'Bank refresh is temporarily unavailable. Showing saved transactions.',
+    };
+  }
+
   private combineTransactionSyncResults(results: unknown[], processing: boolean): TransactionSyncStatus {
+    const failed = results.find((result) => (result as TransactionSyncStatus)?.status === 'failed');
     const accounts = results.flatMap((result) =>
       (result as TransactionSyncStatus)?.status === 'reauthorization_required'
         ? (result as TransactionSyncStatus).accounts || [] : [],
@@ -612,7 +648,7 @@ export class MonoService {
       requiresReauthorization: true,
       message: 'Reconnect your bank to refresh transactions. Showing saved transactions.',
       accounts,
-    } : this.getSyncStatus(processing);
+    } : failed ? failed as TransactionSyncStatus : this.getSyncStatus(processing);
   }
 
   private async getTransactionReauthorization(

@@ -811,7 +811,7 @@ export class FinanceController {
     summary:
       "List transactions for the user's business with pagination and filtering",
     description:
-      'Requests a real-time refresh of connected bank accounts, reusing successful syncs for five minutes, before applying response filters. Returns saved transactions with sync.status=processing while Mono refreshes. Older requested history is backfilled when needed. When Mono confirms REAUTHORISATION_REQUIRED, returns HTTP 200 with sync.status=reauthorization_required, sync.requiresReauthorization=true, and affected accounts in sync.accounts. The frontend should navigate to an account reauthorizationUrl. If the URL is null, retry to generate a link. If the webhook arrives later, the next history request reflects the status. Other sync failures remain errors.',
+      'Requests a real-time refresh of connected bank accounts, reusing successful syncs for five minutes, before applying response filters. Returns saved transactions with sync.status=processing while Mono refreshes. Older requested history is backfilled when needed. When Mono confirms REAUTHORISATION_REQUIRED, returns HTTP 200 with sync.status=reauthorization_required, sync.requiresReauthorization=true, and affected accounts in sync.accounts. The frontend should navigate to an account reauthorizationUrl. If the URL is null, retry to generate a link. If the webhook arrives later, the next history request reflects the status. Other sync failures return HTTP 200 with saved transactions and sync.status=failed; failure details are recorded in admin audit logs.',
   })
   @ApiResponse({
     status: 200,

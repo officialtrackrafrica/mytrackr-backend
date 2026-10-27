@@ -13,10 +13,10 @@ export class TransactionReauthorizationAccountDto {
 
 export class TransactionSyncResponseDto {
   @ApiProperty({
-    enum: ['completed', 'processing', 'reauthorization_required'],
+    enum: ['completed', 'processing', 'reauthorization_required', 'failed'],
     example: 'reauthorization_required',
   })
-  status: 'completed' | 'processing' | 'reauthorization_required';
+  status: 'completed' | 'processing' | 'reauthorization_required' | 'failed';
 
   @ApiPropertyOptional({ example: 'Reconnect your bank to refresh transactions. Showing saved transactions.' })
   message?: string;

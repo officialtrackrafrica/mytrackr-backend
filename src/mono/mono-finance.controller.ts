@@ -54,6 +54,7 @@ export class MonoFinanceController {
     description:
       'Requests a real-time bank refresh, then returns synced transactions from the database. ' +
       'Returns saved transactions with sync.status=processing while Mono refreshes. ' +
+      'Refresh failures return saved transactions with sync.status=failed and are recorded in admin audit logs. ' +
       'When Mono confirms reauthorization is required, returns sync.status=reauthorization_required and sync.requiresReauthorization=true. Navigate to a reauthorizationUrl in sync.accounts. If null, retry to generate a link. A webhook received later is reflected on the next history request. ' +
       'Supports date range queries. If the requested range extends beyond what is cached, ' +
       'it will backfill from Mono automatically.',

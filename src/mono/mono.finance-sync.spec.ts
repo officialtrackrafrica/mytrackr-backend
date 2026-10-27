@@ -24,6 +24,7 @@ describe('Finance transaction refresh', () => {
     service = Object.create(MonoService.prototype);
     Object.assign(service, {
       monoAccountRepository: repo,
+      auditLogRepository: { create: jest.fn(value => value), save: jest.fn().mockResolvedValue({}) },
       financeSyncs: new Map(),
       fetchAndStoreTransactions: fetch,
       transactionSyncService: { syncAccountTransactions: project },
@@ -127,13 +128,13 @@ describe('Finance transaction refresh', () => {
     fetch.mockRejectedValueOnce(new Error('Mono unavailable'));
     await expect(
       service.syncUserTransactionsForFinance('user'),
-    ).rejects.toThrow('Mono unavailable');
+    ).resolves.toMatchObject({ status: 'failed' });
     expect(repo.update).not.toHaveBeenCalled();
     await service.syncUserTransactionsForFinance('user');
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
-  it('propagates pagination failures without advancing sync boundaries', async () => {
+  it('reports pagination failures without advancing sync boundaries', async () => {
     delete (service as any).fetchAndStoreTransactions;
     Object.assign(service, {
       monoGet: jest
@@ -144,7 +145,7 @@ describe('Finance transaction refresh', () => {
     });
     await expect(
       service.syncUserTransactionsForFinance('user'),
-    ).rejects.toThrow('page two failed');
+    ).resolves.toMatchObject({ status: 'failed' });
     expect(repo.update).not.toHaveBeenCalled();
   });
 
@@ -239,7 +240,7 @@ describe('Finance transaction refresh', () => {
     });
     await expect(
       service.syncUserTransactionsForFinance('user'),
-    ).rejects.toThrow('invalid transaction response');
+    ).resolves.toMatchObject({ status: 'failed' });
     expect(repo.update).not.toHaveBeenCalled();
   });
 
@@ -290,15 +291,33 @@ describe('Finance transaction refresh', () => {
     },
   );
 
-  it('surfaces refresh errors instead of returning stale transactions as a successful sync', async () => {
-    fetch.mockRejectedValueOnce(new Error('Bank unavailable'));
-    const readCache = jest.fn();
-    Object.assign(service, { getTransactionsFromDb: readCache });
+  it.each(['Bank unavailable', 'Insufficient wallet balance to process api call'])(
+    'returns stored history and records the refresh failure: %s', async (message) => {
+      fetch.mockRejectedValueOnce(new Error(message));
+      const cached = { transactions: [{ id: 'saved-tx' }] };
+      Object.assign(service, { getTransactionsFromDb: jest.fn().mockResolvedValue(cached) });
+      await expect(service.getAllUserTransactions('user')).resolves.toMatchObject({
+        ...cached, sync: { status: 'failed' },
+      });
+      expect((service as any).auditLogRepository.save).toHaveBeenCalledWith(expect.objectContaining({
+        action: 'TRANSACTION_SYNC_FAILED', userId: 'user', resourceId: 'mono',
+        details: { message, servingStoredTransactions: true },
+      }));
+    },
+  );
 
-    await expect(service.getAllUserTransactions('user')).rejects.toThrow(
-      'Bank unavailable',
-    );
-    expect(readCache).not.toHaveBeenCalled();
+  it('keeps finance history available even when audit logging fails', async () => {
+    fetch.mockRejectedValueOnce(new Error('Mono unavailable'));
+    (service as any).auditLogRepository.save.mockRejectedValueOnce(new Error('Audit unavailable'));
+    await expect(service.syncUserTransactionsForFinance('user')).resolves.toMatchObject({ status: 'failed' });
+    expect(project).not.toHaveBeenCalled();
+    expect(repo.update).not.toHaveBeenCalled();
+  });
+
+  it('handles a projection failure without blocking stored finance history', async () => {
+    project.mockRejectedValueOnce(new Error('Projection unavailable'));
+    await expect(service.syncUserTransactionsForFinance('user')).resolves.toMatchObject({ status: 'failed' });
+    expect((service as any).auditLogRepository.save).toHaveBeenCalled();
   });
 
   it.each(['FAILED', 'REAUTHORISATION_REQUIRED'])(

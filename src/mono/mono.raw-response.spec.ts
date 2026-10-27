@@ -4,6 +4,26 @@ import { MonoService, TransactionSyncProcessing } from './mono.service';
 describe('Admin raw Mono responses', () => {
   afterEach(() => jest.restoreAllMocks());
 
+  it('reports an unfunded Mono wallet as unavailable even with a failed job header', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      message: 'Insufficient wallet balance to process this API call',
+    }), { status: 400, headers: { 'x-job-status': 'failed' } }));
+    const update = jest.fn();
+    const service = Object.assign(Object.create(MonoService.prototype), {
+      baseUrl: 'https://api.withmono.com/v2',
+      configService: { get: () => 'test-key' },
+      monoAccountRepository: { update },
+    }) as MonoService;
+
+    await expect((service as any).monoGet('/accounts/account-1/transactions', {
+      'x-realtime': 'true',
+    })).rejects.toMatchObject({
+      status: 503,
+      response: { code: 'MONO_WALLET_BALANCE_INSUFFICIENT' },
+    });
+    expect(update).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['mono.accounts.jobs.update', { account: 'account-1', id: 'job-1', status: 'finished' }],
     ['mono.events.account_updated', { account: { _id: 'account-1' }, meta: { sync_status: 'SUCCESSFUL' } }],

@@ -10,6 +10,7 @@ import {
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { TransactionSyncResponseDto } from '../../mono/dto/transaction-sync-response.dto';
 import {
   TransactionCategory,
   TransactionDirection,
@@ -652,10 +653,16 @@ export class TransactionCategorySuggestionsResponseDto {
 
 export class PaginatedTransactionResponseDto {
   @ApiProperty({
-    example: { status: 'processing', message: 'Bank transaction refresh is processing. Showing saved transactions.' },
-    description: 'Bank sync status. Saved transactions remain available during processing.',
+    type: TransactionSyncResponseDto,
+    example: {
+      status: 'reauthorization_required',
+      requiresReauthorization: true,
+      message: 'Reconnect your bank to refresh transactions. Showing saved transactions.',
+      accounts: [{ accountId: '65c4c03aa66a95b572cb5a86', reauthorizationUrl: 'https://link.mono.co/example' }],
+    },
+    description: 'Bank sync status. When reauthorization_required, redirect using the affected account reauthorizationUrl. Saved transactions remain available.',
   })
-  sync: { status: 'completed' | 'processing'; message?: string };
+  sync: TransactionSyncResponseDto;
 
   @ApiProperty({ type: [TransactionResponseDto] })
   data: TransactionResponseDto[];

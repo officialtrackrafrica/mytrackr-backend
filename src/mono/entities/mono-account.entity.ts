@@ -47,6 +47,9 @@ export class MonoAccount {
   @Column({ nullable: true })
   dataStatus: string;
 
+  @Column({ type: 'varchar', nullable: true })
+  syncStatus: string | null;
+
   @Column({ type: 'timestamptz', nullable: true })
   earliestSyncedAt: Date;
 

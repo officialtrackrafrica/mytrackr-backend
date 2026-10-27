@@ -45,8 +45,10 @@ export class TransactionSyncProcessing extends Error {
 }
 
 export interface TransactionSyncStatus {
-  status: 'completed' | 'processing';
+  status: 'completed' | 'processing' | 'reauthorization_required';
   message?: string;
+  requiresReauthorization?: boolean;
+  accounts?: Array<{ accountId: string; reauthorizationUrl: string | null }>;
 }
 
 @Injectable()
@@ -278,10 +280,14 @@ export class MonoService {
   }
 
   async reauthenticateAccount(userId: string, dto: ReauthAccountDto) {
+    const account = await this.monoAccountRepository.findOne({
+      where: { monoAccountId: dto.accountId, user: { id: userId } },
+    });
+    if (!account) throw new NotFoundException('Linked Mono account not found');
     const payload: any = {
       account: dto.accountId,
       scope: 'reauth',
-      ...dto,
+      ...(dto.redirect_url ? { redirect_url: dto.redirect_url } : {}),
     };
 
     if (!payload.account || payload.account === 'string') {
@@ -303,7 +309,21 @@ export class MonoService {
       where: { user: { id: userId } },
     });
 
-    return accounts.map((account) => this.toMonoAccountResponse(account));
+    return Promise.all(accounts.map(async (account) => {
+      const response = this.toMonoAccountResponse(account);
+      let reauthorizationUrl: string | null = null;
+      if (response.requiresReauthorization) {
+        try {
+          const session = await this.reauthenticateAccount(userId, {
+            accountId: account.monoAccountId,
+          });
+          reauthorizationUrl = session?.data?.mono_url || null;
+        } catch (error) {
+          this.logger.warn(`Unable to initiate Mono reauthorization for ${account.monoAccountId}: ${error.message}`);
+        }
+      }
+      return { ...response, reauthorizationUrl };
+    }));
   }
 
   async getAllPlatformAccounts() {
@@ -366,6 +386,7 @@ export class MonoService {
           accountId: account.monoAccountId,
           institutionName: account.institutionName,
           dataStatus: account.dataStatus,
+          ...this.getAccountReauthorizationStatus(account),
           lastSyncedAt: account.lastSyncedAt || null,
           transactionCount,
           latestTransactionDate: latest?.date || null,
@@ -506,8 +527,10 @@ export class MonoService {
     }
 
     const syncResults = await Promise.all(
-      userAccounts.map((acc) =>
-        this.syncTransactionsForAccount(
+      userAccounts.map(async (acc) => {
+        const reauth = await this.getTransactionReauthorization(userId, acc);
+        if (reauth) return reauth;
+        return this.syncTransactionsForAccount(
           acc,
           parsedStart,
           forceSync,
@@ -519,20 +542,22 @@ export class MonoService {
               { autoCategorize },
             ),
           )
-          .catch((e) => {
+          .catch(async (e) => {
+            const reauth = await this.getTransactionReauthorization(userId, acc, true);
+            if (reauth) return reauth;
             if (e instanceof TransactionSyncProcessing) return e;
             this.logger.error(
               `Sync failed for account ${acc.monoAccountId}: ${e.message}`,
             );
             throw e;
-          }),
-      ),
+          });
+      }),
     );
 
     const processing = syncResults.some((result) => result instanceof TransactionSyncProcessing);
     return {
       ...(await this.getTransactionsFromDb(userId, start, effectiveEnd)),
-      sync: this.getSyncStatus(processing),
+      sync: this.combineTransactionSyncResults(syncResults, processing),
     };
   }
 
@@ -548,16 +573,20 @@ export class MonoService {
         where: { user: { id: userId } },
       });
       const results = await Promise.all(accounts.map(async (account) => {
+        const reauth = await this.getTransactionReauthorization(userId, account);
+        if (reauth) return reauth;
         try {
           await this.syncTransactionsForAccount(account, requestedStart, false, false, true);
         } catch (error) {
+          const reauth = await this.getTransactionReauthorization(userId, account, true);
+          if (reauth) return reauth;
           if (error instanceof TransactionSyncProcessing) return error;
           throw error;
         }
         // Retry projection even when Mono is fresh, in case an earlier projection failed.
         await this.transactionSyncService.syncAccountTransactions(account.monoAccountId);
       }));
-      return this.getSyncStatus(results.some((result) => result instanceof TransactionSyncProcessing));
+      return this.combineTransactionSyncResults(results, results.some((result) => result instanceof TransactionSyncProcessing));
     });
     this.financeSyncs.set(userId, pending);
     try {
@@ -571,6 +600,41 @@ export class MonoService {
     return processing
       ? { status: 'processing', message: new TransactionSyncProcessing().message }
       : { status: 'completed' };
+  }
+
+  private combineTransactionSyncResults(results: unknown[], processing: boolean): TransactionSyncStatus {
+    const accounts = results.flatMap((result) =>
+      (result as TransactionSyncStatus)?.status === 'reauthorization_required'
+        ? (result as TransactionSyncStatus).accounts || [] : [],
+    );
+    return accounts.length ? {
+      status: 'reauthorization_required',
+      requiresReauthorization: true,
+      message: 'Reconnect your bank to refresh transactions. Showing saved transactions.',
+      accounts,
+    } : this.getSyncStatus(processing);
+  }
+
+  private async getTransactionReauthorization(
+    userId: string, account: MonoAccount, reload = false,
+  ): Promise<TransactionSyncStatus | null> {
+    if (reload) {
+      // A webhook may have arrived while the realtime request was running.
+      const accounts = await this.monoAccountRepository.find({ where: { user: { id: userId } } });
+      account = accounts.find(item => item.monoAccountId === account.monoAccountId) || account;
+    }
+    if (!this.getAccountReauthorizationStatus(account).requiresReauthorization) return null;
+    let reauthorizationUrl: string | null = null;
+    try {
+      const session = await this.reauthenticateAccount(userId, { accountId: account.monoAccountId });
+      reauthorizationUrl = session?.data?.mono_url || null;
+    } catch (error) {
+      this.logger.warn(`Unable to initiate Mono reauthorization for ${account.monoAccountId}: ${error.message}`);
+    }
+    return {
+      status: 'reauthorization_required', requiresReauthorization: true,
+      accounts: [{ accountId: account.monoAccountId, reauthorizationUrl }],
+    };
   }
 
   async syncTransactionsForAccount(
@@ -1459,6 +1523,9 @@ export class MonoService {
 
       const updateData: any = {
         dataStatus: data?.meta?.data_status,
+        ...(data?.meta?.sync_status ? {
+          syncStatus: String(data.meta.sync_status).toUpperCase(),
+        } : {}),
         name: data?.account?.name,
         accountNumber: data?.account?.accountNumber,
         currency: data?.account?.currency || 'NGN',
@@ -1674,12 +1741,31 @@ export class MonoService {
   private toMonoAccountResponse(account: MonoAccount) {
     return {
       ...account,
+      ...this.getAccountReauthorizationStatus(account),
       currency: account.currency || 'NGN',
       balance:
         account.balance === null || account.balance === undefined
           ? account.balance
           : this.toMajorCurrencyUnit(account.balance),
     };
+  }
+
+  private getAccountReauthorizationStatus(account: MonoAccount) {
+    let syncStatus = account.syncStatus || null;
+    // Existing accounts may only have the status in saved webhook deliveries.
+    if (!syncStatus) {
+      for (const webhook of [...(account.syncWebhooks || [])].reverse()) {
+        try {
+          const payload = JSON.parse(webhook.body);
+          if (['mono.events.account_updated', 'mono.accounts.account_updated'].includes(payload.event)
+            && payload.data?.meta?.sync_status) {
+            syncStatus = String(payload.data.meta.sync_status).toUpperCase();
+            break;
+          }
+        } catch { continue; }
+      }
+    }
+    return { syncStatus, requiresReauthorization: syncStatus === 'REAUTHORISATION_REQUIRED' };
   }
 
   private toMajorCurrencyUnit(amount: number | string): number {

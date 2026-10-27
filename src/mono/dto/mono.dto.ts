@@ -38,6 +38,10 @@ export class MonoLinkResponseDto {
 }
 
 export class MonoAccountResponseDto {
+  @ApiProperty({ nullable: true }) syncStatus: string | null;
+  @ApiProperty() requiresReauthorization: boolean;
+  @ApiPropertyOptional({ nullable: true, description: 'Navigate to this Mono URL when requiresReauthorization is true' })
+  reauthorizationUrl?: string | null;
   @ApiProperty() id: string;
   @ApiProperty() monoAccountId: string;
   @ApiProperty() name: string;

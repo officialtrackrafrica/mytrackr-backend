@@ -333,7 +333,21 @@ export class MonoService {
           this.logger.warn(`Unable to initiate Mono reauthorization for ${account.monoAccountId}: ${error.message}`);
         }
       }
-      return { ...response, reauthorizationUrl };
+      const dataStatus = String(account.dataStatus || '').toUpperCase();
+      const jobStatus = String(account.syncJobStatus || '').toLowerCase();
+      const blocked = response.requiresReauthorization ||
+        ['DISCONNECTED', 'UNAVAILABLE', 'FAILED'].includes(dataStatus) ||
+        ['failed', 'error', 'cancelled', 'canceled'].includes(jobStatus) ||
+        ['FAILED', 'ERROR'].includes(String(response.syncStatus || '').toUpperCase());
+      const isLoading = !blocked && (
+        !account.lastSyncedAt ||
+        dataStatus === 'PROCESSING' ||
+        ['pending', 'queued', 'processing', 'running', 'in_progress'].includes(jobStatus) ||
+        !(await this.transactionSyncService.isAccountProjectionReady({
+          ...account, user: { id: userId } as User,
+        }))
+      );
+      return { ...response, reauthorizationUrl, isLoading };
     }));
   }
 

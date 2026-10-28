@@ -16,6 +16,30 @@ export class TransactionSyncService {
   private readonly logger = new Logger(TransactionSyncService.name);
   private monoAccountFkColumnName: string | null = null;
 
+  async isAccountProjectionReady(account: MonoAccount): Promise<boolean> {
+    const fk = await this.getMonoAccountFkColumnName();
+    const [result] = await this.monoAccountRepository.query(
+      `SELECT EXISTS (
+        SELECT 1 FROM bank_accounts ba
+        JOIN businesses b ON b.id = ba."businessId"
+        WHERE ba."providerAccountId" = $1 AND b."userId" = $3
+          AND ba."userId" = $3
+          AND NOT EXISTS (
+            SELECT 1 FROM mono_transactions mt
+            WHERE mt.${this.quoteIdentifier(fk)} = $2
+              AND NOT EXISTS (
+                SELECT 1 FROM transactions t
+                WHERE t."bankAccountId" = ba.id
+                  AND t."businessId" = ba."businessId"
+                  AND t."externalId" = 'mono_' || mt."monoTransactionId"
+              )
+          )
+      ) AS ready`,
+      [account.monoAccountId, account.id, account.user?.id],
+    );
+    return result.ready === true;
+  }
+
   constructor(
     @InjectRepository(MonoTransaction)
     private readonly monoTransactionRepository: Repository<MonoTransaction>,

@@ -38,6 +38,10 @@ export class MonoLinkResponseDto {
 }
 
 export class MonoAccountResponseDto {
+  @ApiProperty({
+    description: 'True while bank data is loading or being copied into the dashboard. Poll GET /mono/accounts until false, then refresh dashboard and transaction history. False also for failed, disconnected, or reauthorization-required accounts; check their statuses.',
+  })
+  isLoading: boolean;
   @ApiProperty({ nullable: true }) syncStatus: string | null;
   @ApiProperty() requiresReauthorization: boolean;
   @ApiPropertyOptional({ nullable: true, description: 'Navigate to this Mono URL when requiresReauthorization is true' })

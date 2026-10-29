@@ -51,6 +51,19 @@ export class TransactionSyncService {
     private readonly businessService: BusinessService,
   ) {}
 
+  async syncAccountBalance(monoAccountId: string): Promise<void> {
+    // Read the persisted balance at write time, rather than copying an account
+    // snapshot that may predate a webhook received during transaction import.
+    await this.bankAccountRepository.query(
+      `UPDATE bank_accounts ba
+       SET "currentBalance" = ma.balance / 100.0, "updatedAt" = CURRENT_TIMESTAMP
+       FROM mono_accounts ma
+       WHERE ba."providerAccountId" = ma."monoAccountId"
+         AND ma."monoAccountId" = $1 AND ma.balance IS NOT NULL`,
+      [monoAccountId],
+    );
+  }
+
   async syncAccountTransactions(
     monoAccountId: string,
     options?: { autoCategorize?: boolean },
@@ -113,7 +126,7 @@ export class TransactionSyncService {
         providerAccountId: monoAccount.monoAccountId,
         accountNumber: monoAccount.accountNumber || '',
         bankName: monoAccount.institutionName || 'Unknown',
-        currentBalance: Number(monoAccount.balance) / 100,
+        currentBalance: 0,
         businessId: businessId || undefined,
         userId: userId || undefined,
         isPrimary: existingCount === 0,
@@ -130,15 +143,11 @@ export class TransactionSyncService {
         );
         bankAccount.businessId = businessId;
         bankAccount.userId = userId;
-        await this.bankAccountRepository.save(bankAccount);
-      }
-
-      // Always update balance if available from last sync
-      if (monoAccount.balance !== undefined) {
-        bankAccount.currentBalance = Number(monoAccount.balance) / 100;
-        await this.bankAccountRepository.save(bankAccount);
+        await this.bankAccountRepository.update(bankAccount.id, { businessId, userId });
       }
     }
+
+    await this.syncAccountBalance(monoAccountId);
 
     return this.syncWithBankAccount(
       monoAccount.id,

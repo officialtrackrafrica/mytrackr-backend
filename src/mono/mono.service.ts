@@ -848,6 +848,25 @@ export class MonoService {
     if (downloadedTransactions.length) {
       await this.upsertTransactions(account, downloadedTransactions, autoCategorize);
     }
+
+    // Details read before starting realtime contain the old balance. Re-read
+    // after the refresh completes; cached/webhook imports already have fresh details.
+    let balanceDetails = details;
+    if (realtime) {
+      try {
+        balanceDetails = await this.monoGet<any>(`/accounts/${account.monoAccountId}`);
+      } catch (error) {
+        // Do not overwrite a newer webhook balance with pre-refresh details.
+        balanceDetails = undefined;
+        this.logger.warn(`Unable to read refreshed balance for ${account.monoAccountId}: ${error.message}`);
+      }
+    }
+    const balance = this.normalizeAccountBalance(balanceDetails?.data?.account?.balance);
+    if (balance !== null) {
+      await this.monoAccountRepository.update({ id: account.id }, { balance });
+      account.balance = balance;
+      await this.transactionSyncService.syncAccountBalance(account.monoAccountId);
+    }
     this.logger.log(
       `Processed ${downloadedTransactions.length} downloaded transactions for account ${account.monoAccountId} (${start} → ${end})`,
     );
@@ -1599,7 +1618,8 @@ export class MonoService {
   }
 
   private async handleAccountUpdated(data: any) {
-    const monoAccountId = data?.account?._id || data?.id;
+    const monoAccountId = typeof data?.account === 'string'
+      ? data.account : data?.account?._id || data?.account?.id || data?.id;
     if (!monoAccountId) return;
 
     try {
@@ -1608,6 +1628,7 @@ export class MonoService {
         relations: ['user'],
       });
 
+      const balance = this.normalizeAccountBalance(data?.account?.balance);
       const updateData: any = {
         dataStatus: data?.meta?.data_status,
         ...(data?.meta?.sync_status ? {
@@ -1616,7 +1637,7 @@ export class MonoService {
         name: data?.account?.name,
         accountNumber: data?.account?.accountNumber,
         currency: data?.account?.currency || 'NGN',
-        balance: data?.account?.balance,
+        ...(balance !== null ? { balance } : {}),
         type: data?.account?.type,
         bvn: data?.account?.bvn,
         institutionName: data?.account?.institution?.name,
@@ -1642,6 +1663,12 @@ export class MonoService {
 
       await this.monoAccountRepository.update({ monoAccountId }, updateData);
       this.logger.log(`Updated MonoAccount: ${monoAccountId}`);
+
+      // Balance-only and processing account updates must reach the dashboard
+      // without requiring a successful transaction download.
+      if (balance !== null) {
+        await this.transactionSyncService.syncAccountBalance(monoAccountId);
+      }
 
       const account = await this.monoAccountRepository.findOne({
         where: { monoAccountId },
@@ -1866,6 +1893,13 @@ export class MonoService {
 
     const numericAmount = Number(amount);
     return Number.isFinite(numericAmount) ? numericAmount : null;
+  }
+
+  private normalizeAccountBalance(amount: unknown): number | null {
+    if ((typeof amount !== 'number' && typeof amount !== 'string') ||
+        (typeof amount === 'string' && !amount.trim())) return null;
+    const balance = Number(amount);
+    return Number.isFinite(balance) ? balance : null;
   }
 
   private async findFinanceTransactionId(

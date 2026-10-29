@@ -25,6 +25,7 @@ import {
 } from 'typeorm';
 import { MonoAccount } from './entities/mono-account.entity';
 import { MonoTransaction } from './entities/transaction.entity';
+import { reconcileMonoTransactions } from './transaction-identity';
 import { User } from '../auth/entities/user.entity';
 import { v4 as uuidv4 } from 'uuid';
 import { AiCategorizationService } from '../categorization/categorization.service';
@@ -560,6 +561,7 @@ export class MonoService {
           parsedStart,
           forceSync,
           autoCategorize,
+          true,
         )
           .then(() =>
             this.transactionSyncService.syncAccountTransactions(
@@ -696,13 +698,12 @@ export class MonoService {
     realtime = true,
   ) {
     const now = new Date();
-    // Mono permits a new realtime session every five minutes. A same-day
-    // cache hides transactions posted after the first successful daily import.
+    // Reuse successful history refreshes for ten minutes.
     const syncAge = account.lastSyncedAt
       ? now.getTime() - new Date(account.lastSyncedAt).getTime()
       : Infinity;
     const forwardIsFresh = reuseRecent && !forceSync &&
-      syncAge >= 0 && syncAge < 5 * 60 * 1000;
+      syncAge >= 0 && syncAge < 10 * 60 * 1000;
     const needsBackfill = requestedStart &&
       (!account.earliestSyncedAt || requestedStart < account.earliestSyncedAt);
     if (forwardIsFresh && !needsBackfill) return;
@@ -791,7 +792,7 @@ export class MonoService {
 
     let page = 1;
     let hasMore = true;
-    let totalInserted = 0;
+    const downloadedTransactions: any[] = [];
 
     while (hasMore) {
       const params = new URLSearchParams();
@@ -815,8 +816,7 @@ export class MonoService {
         const transactions = response.data;
 
         if (transactions.length > 0) {
-          await this.upsertTransactions(account, transactions, autoCategorize);
-          totalInserted += transactions.length;
+          downloadedTransactions.push(...transactions);
         }
 
         hasMore = !!response?.meta?.next;
@@ -830,8 +830,11 @@ export class MonoService {
       }
     }
 
+    if (downloadedTransactions.length) {
+      await this.upsertTransactions(account, downloadedTransactions, autoCategorize);
+    }
     this.logger.log(
-      `Stored ${totalInserted} transactions for account ${account.monoAccountId} (${start} → ${end})`,
+      `Processed ${downloadedTransactions.length} downloaded transactions for account ${account.monoAccountId} (${start} → ${end})`,
     );
   }
 
@@ -839,6 +842,24 @@ export class MonoService {
     account: MonoAccount,
     monoTransactions: any[],
     autoCategorize = false,
+  ) {
+    // A database row lock also serializes imports across server processes.
+    await this.transactionRepository.manager.transaction(async (manager) => {
+      await manager.getRepository(MonoAccount).findOneOrFail({
+        where: { id: account.id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      await this.upsertTransactionsWithRepository(
+        manager.getRepository(MonoTransaction), account, monoTransactions, autoCategorize,
+      );
+    });
+  }
+
+  private async upsertTransactionsWithRepository(
+    repository: Repository<MonoTransaction>,
+    account: MonoAccount,
+    monoTransactions: any[],
+    autoCategorize: boolean,
   ) {
     const validTransactions = monoTransactions.filter((tx) => {
       if (tx?.id || tx?._id) {
@@ -851,16 +872,14 @@ export class MonoService {
       return false;
     });
 
-    const monoTransactionIds = validTransactions.map((tx) => tx.id || tx._id);
-    const existingTransactions = monoTransactionIds.length
-      ? await this.transactionRepository.find({
-          where: {
-            monoAccountId: account.id,
-            monoTransactionId: In(monoTransactionIds),
-          },
-          withDeleted: true,
-        })
-      : [];
+    const existingTransactions = await repository.find({
+      where: { monoAccountId: account.id },
+      withDeleted: true,
+    });
+    const reconciled = reconcileMonoTransactions(validTransactions, existingTransactions);
+    for (const { id, providerIdAliases } of reconciled.aliases) {
+      await repository.update(id, { providerIdAliases });
+    }
 
     const suppressedTransactionIds = new Set(
       existingTransactions
@@ -874,7 +893,7 @@ export class MonoService {
       );
     }
 
-    const importableTransactions = validTransactions.filter((tx) => {
+    const importableTransactions = reconciled.transactions.filter((tx) => {
       const monoTransactionId = tx.id || tx._id;
       return !suppressedTransactionIds.has(monoTransactionId);
     });
@@ -923,7 +942,7 @@ export class MonoService {
           finalSubCategoryId = resolvedCategory.subCategoryId;
         }
 
-        return this.transactionRepository.create({
+        return repository.create({
           monoTransactionId,
           monoAccount: { id: account.id } as any,
           narration: tx.narration || '',
@@ -943,24 +962,27 @@ export class MonoService {
         });
       }),
     );
-    await this.transactionRepository
-      .createQueryBuilder()
-      .insert()
-      .into(MonoTransaction)
-      .values(entities)
-      .orUpdate(
-        [
-          'narration',
-          'amount',
-          'type',
-          'currency',
-          'balance',
-          'date',
-          'metadata',
-        ],
-        ['monoTransactionId', 'monoAccountId'],
-      )
-      .execute();
+    // Reconcile the full download, but keep SQL batches below parameter limits.
+    for (let offset = 0; offset < entities.length; offset += 500) {
+      await repository
+        .createQueryBuilder()
+        .insert()
+        .into(MonoTransaction)
+        .values(entities.slice(offset, offset + 500))
+        .orUpdate(
+          [
+            'narration',
+            'amount',
+            'type',
+            'currency',
+            'balance',
+            'date',
+            'metadata',
+          ],
+          ['monoTransactionId', 'monoAccountId'],
+        )
+        .execute();
+    }
   }
 
   async getTransactionsFromDb(userId: string, start?: string, end?: string) {

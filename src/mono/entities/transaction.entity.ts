@@ -23,6 +23,9 @@ export class MonoTransaction {
   @Column()
   monoTransactionId: string;
 
+  @Column({ type: 'jsonb', default: () => "'[]'::jsonb" })
+  providerIdAliases: string[];
+
   @ManyToOne(() => MonoAccount, (acc) => acc.transactions, {
     onDelete: 'CASCADE',
   })

@@ -62,10 +62,24 @@ describe('Finance transaction refresh', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it('refreshes again after five minutes on the same day', async () => {
+  it('reuses a sync within ten minutes and refreshes at the cooldown boundary', async () => {
     await service.syncUserTransactionsForFinance('user');
     jest.advanceTimersByTime(5 * 60 * 1000);
     await service.syncUserTransactionsForFinance('user');
+    expect(fetch).toHaveBeenCalledTimes(1);
+    jest.advanceTimersByTime(5 * 60 * 1000);
+    await service.syncUserTransactionsForFinance('user');
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('applies the ten-minute cooldown to linked-account history', async () => {
+    (service as any).getTransactionsFromDb = jest.fn().mockResolvedValue({ data: [] });
+    await service.getAllUserTransactions('user');
+    jest.advanceTimersByTime(9 * 60 * 1000);
+    await service.getAllUserTransactions('user');
+    expect(fetch).toHaveBeenCalledTimes(1);
+    jest.advanceTimersByTime(60 * 1000);
+    await service.getAllUserTransactions('user');
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
@@ -180,6 +194,36 @@ describe('Finance transaction refresh', () => {
       false,
     );
     expect(repo.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('reconciles all pages together so identical occurrences are not matched twice', async () => {
+    delete (service as any).fetchAndStoreTransactions;
+    const upsert = jest.fn().mockResolvedValue(undefined);
+    Object.assign(service, {
+      monoGet: jest.fn()
+        .mockResolvedValueOnce({ data: { meta: { data_status: 'AVAILABLE' } } })
+        .mockResolvedValueOnce({ data: [{ id: 'first' }], meta: { next: 'page2' } })
+        .mockResolvedValueOnce({ data: [{ id: 'second' }], meta: { next: null } }),
+      upsertTransactions: upsert,
+    });
+    await service.syncUserTransactionsForFinance('user');
+    expect(upsert).toHaveBeenCalledTimes(1);
+    expect(upsert).toHaveBeenCalledWith(expect.anything(), [{ id: 'first' }, { id: 'second' }], false);
+  });
+
+  it('does not persist a partial download when a later page fails', async () => {
+    delete (service as any).fetchAndStoreTransactions;
+    const upsert = jest.fn();
+    Object.assign(service, {
+      monoGet: jest.fn()
+        .mockResolvedValueOnce({ data: { meta: { data_status: 'AVAILABLE' } } })
+        .mockResolvedValueOnce({ data: [{ id: 'first' }], meta: { next: 'page2' } })
+        .mockRejectedValueOnce(new Error('page two failed')),
+      upsertTransactions: upsert,
+    });
+    await expect(service.syncUserTransactionsForFinance('user')).resolves.toMatchObject({ status: 'failed' });
+    expect(upsert).not.toHaveBeenCalled();
+    expect(repo.update).not.toHaveBeenCalled();
   });
 
   it.each([

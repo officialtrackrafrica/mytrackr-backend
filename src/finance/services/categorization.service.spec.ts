@@ -378,6 +378,26 @@ describe('CategorizationService', () => {
     );
   });
 
+  it('keeps a COGS rule under COGS when Expenses has a subcategory with the same name', async () => {
+    ruleRepo.find.mockResolvedValue([{
+      id: 'packaging-rule', matchValue: 'purchase', matchType: MatchType.CONTAINS,
+      category: TransactionCategory.COGS, subCategory: 'Packaging Cost',
+    }]);
+    txRepo.find.mockResolvedValue([]);
+    subCatRepo.findOne.mockImplementation(async ({ where }: any) =>
+      where.category?.type === TransactionCategory.COGS
+        ? { id: 'cogs-sub', name: 'Packaging Cost', category: { id: 'cogs-parent', type: TransactionCategory.COGS } }
+        : { id: 'expense-sub', name: 'Packaging Cost', category: { id: 'expense-parent', type: TransactionCategory.EXPENSE } },
+    );
+    await service.ingestTransactions('biz-1', 'user-1', [{
+      externalId: 'purchase-1', description: 'Purchase of packaging', amount: 500,
+      direction: TransactionDirection.DEBIT, date: new Date('2026-10-29'),
+    }], { autoCategorize: true });
+    expect(txRepo.save).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({ category: TransactionCategory.COGS, categoryId: 'cogs-parent', subCategoryId: 'cogs-sub' }),
+    ]), expect.any(Object));
+  });
+
   it('should use Gemini categorization during normal ingest when rules and gRPC AI do not match', async () => {
     const expenseCategory = {
       id: 'cat-expense',

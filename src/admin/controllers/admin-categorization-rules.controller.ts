@@ -53,6 +53,7 @@ export class AdminCategorizationRulesController {
   @ApiOperation({ summary: 'Create categorization rule keywords for a category' })
   @ApiBody({ type: CreateAdminCategorizationRuleDto })
   @ApiResponse({ status: 201, description: 'Categorization rule created' })
+  @ApiResponse({ status: 400, description: 'Unknown new categories require categoryType. Conflicting category types or subcategory labels are rejected.' })
   async createRule(
     @Body() dto: CreateAdminCategorizationRuleDto,
     @Req() req: any,
@@ -74,6 +75,7 @@ export class AdminCategorizationRulesController {
   @ApiOperation({ summary: 'Update a categorization rule group' })
   @ApiBody({ type: UpdateAdminCategorizationRuleDto })
   @ApiResponse({ status: 200, description: 'Categorization rule updated' })
+  @ApiResponse({ status: 400, description: 'Unknown new categories require categoryType. Conflicting category types or subcategory labels are rejected.' })
   @ApiResponse({ status: 404, description: 'Categorization rule not found' })
   async updateRule(
     @Param('id') id: string,

@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
@@ -73,7 +77,7 @@ export class AdminCategorizationRulesService {
     const keywords = this.normalizeKeywords(dto.keywords);
     const catalog = await this.resolveCatalogNames(
       dto.category,
-      dto.subCategory || dto.category,
+      dto.subCategory,
       dto.categoryType,
     );
     const category = catalog.category.type;
@@ -115,8 +119,9 @@ export class AdminCategorizationRulesService {
     const targetCategory = dto.category || anchor.category;
     const catalog = await this.resolveCatalogNames(
       targetCategory,
-      dto.subCategory || anchor.subCategory,
+      dto.subCategory,
       dto.categoryType,
+      anchor.subCategory,
     );
     const normalizedCategory = catalog.category.type;
     const targetSubCategory = catalog.subCategory.name;
@@ -125,7 +130,8 @@ export class AdminCategorizationRulesService {
     if (dto.keywords) {
       await this.rulesRepository.remove(related);
       return this.createRule({
-        category: normalizedCategory,
+        category: catalog.category.name,
+        categoryType: catalog.category.type,
         subCategory: targetSubCategory,
         keywords: dto.keywords,
         priority: dto.priority ?? anchor.priority,
@@ -171,33 +177,78 @@ export class AdminCategorizationRulesService {
 
   private async resolveCatalogNames(
     categoryValue: string,
-    subCategoryValue: string,
+    subCategoryValue: string | undefined,
     requestedType?: AccountCategoryType,
+    fallbackSubCategory?: string,
   ) {
     const categories = await this.categoriesRepository.find();
-    const normalizedCategoryValue = this.normalizeLabel(categoryValue);
+    const label = this.normalizeLabel(categoryValue);
+    if (!label) throw new BadRequestException('Category must not be empty');
+    const hasExplicitSubCategory = typeof subCategoryValue === 'string';
+    const path = this.parseCategoryPath(
+      label,
+      categories,
+      !hasExplicitSubCategory,
+    );
+    const normalizedCategoryValue = path?.category || label;
     const enumType = this.toCategoryType(normalizedCategoryValue);
-    const category =
+    if (enumType && requestedType && requestedType !== enumType) {
+      throw new BadRequestException(
+        'categoryType conflicts with the selected category',
+      );
+    }
+    const requestedSubCategory = normalizeCategorizationSubCategory(
+      this.normalizeLabel(
+        subCategoryValue ??
+          path?.subCategory ??
+          fallbackSubCategory ??
+          normalizedCategoryValue,
+      ),
+    );
+    if (!requestedSubCategory)
+      throw new BadRequestException('Subcategory must not be empty');
+    if (
+      path &&
+      hasExplicitSubCategory &&
+      this.comparisonKey(requestedSubCategory) !==
+        this.comparisonKey(normalizeCategorizationSubCategory(path.subCategory))
+    ) {
+      throw new BadRequestException(
+        'subCategory conflicts with the combined category label',
+      );
+    }
+    let category =
       this.findClosestLabel(
         normalizedCategoryValue,
-        categories,
+        enumType
+          ? categories.filter((item) => item.type === enumType)
+          : categories,
         (item) => item.name,
       ) ||
       (enumType
         ? categories.find((item) => item.isSystem && item.type === enumType) ||
           categories.find((item) => item.type === enumType)
-        : undefined) ||
-      (await this.categoriesRepository.save(
+        : undefined);
+    if (category && requestedType && requestedType !== category.type) {
+      throw new BadRequestException(
+        'categoryType conflicts with the selected category',
+      );
+    }
+    if (!category) {
+      const type = requestedType || enumType;
+      if (!type) {
+        throw new BadRequestException(
+          'categoryType is required when creating a new category',
+        );
+      }
+      category = await this.categoriesRepository.save(
         this.categoriesRepository.create({
           name: this.toDisplayLabel(normalizedCategoryValue),
-          type: requestedType || enumType || AccountCategoryType.EXPENSE,
+          type,
           isSystem: true,
         }),
-      ));
-
-    const requestedSubCategory = normalizeCategorizationSubCategory(
-      this.normalizeLabel(subCategoryValue),
-    );
+      );
+    }
     const existingSubCategories = await this.subCategoriesRepository.find({
       where: { categoryId: category.id },
     });
@@ -216,6 +267,48 @@ export class AdminCategorizationRulesService {
       ));
 
     return { category, subCategory };
+  }
+
+  private parseCategoryPath(
+    label: string,
+    categories: AccountCategory[],
+    allowUnknownParent: boolean,
+  ): { category: string; subCategory: string } | undefined {
+    // Prefer the longest recognized parent: catalog names such as
+    // Selling/Production Cost and subcategories such as Marketing/Advertising
+    // may themselves contain slashes. A recognized prefix also takes priority
+    // over a previously mis-created composite category with the wrong type.
+    const separators = [...label.matchAll(/\//g)].map((match) => match.index!);
+    for (const index of separators.reverse()) {
+      const category = label.slice(0, index).trim();
+      const subCategory = label.slice(index + 1).trim();
+      if (
+        category &&
+        subCategory &&
+        (this.toCategoryType(category) ||
+          this.findClosestLabel(category, categories, (item) => item.name))
+      ) {
+        return { category, subCategory };
+      }
+    }
+    // Do not split an exact catalog category whose own name contains a slash.
+    if (
+      categories.some(
+        (item) => this.comparisonKey(item.name) === this.comparisonKey(label),
+      )
+    )
+      return;
+    if (allowUnknownParent) {
+      const separator = /\s+\/\s+/.exec(label);
+      if (separator) {
+        return {
+          category: label.slice(0, separator.index).trim(),
+          subCategory: label
+            .slice(separator.index + separator[0].length)
+            .trim(),
+        };
+      }
+    }
   }
 
   private normalizeLabel(value: string) {

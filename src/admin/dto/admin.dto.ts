@@ -752,16 +752,15 @@ export class CategorizationRuleQueryDto {
 export class CreateAdminCategorizationRuleDto {
   @ApiProperty({
     description:
-      'Existing category name/type, or a new category name to create',
+      'Existing category name/type, a combined parent / subcategory label (for example COGS / Packaging Cost), or a new category name with categoryType',
   })
   @IsString()
   category: string;
 
   @ApiPropertyOptional({
     enum: AccountCategoryType,
-    default: AccountCategoryType.EXPENSE,
     description:
-      'Accounting type used when category is new. Defaults to EXPENSE.',
+      'Required for a new category unless its accounting type is identified by the category label. Must agree with an existing selected category.',
   })
   @IsOptional()
   @IsEnum(AccountCategoryType)
@@ -769,7 +768,7 @@ export class CreateAdminCategorizationRuleDto {
 
   @ApiPropertyOptional({
     description:
-      'Optional sub-category label. Defaults to category when omitted.',
+      'Optional sub-category label. Inferred from a combined parent / subcategory label, otherwise defaults to category when omitted.',
   })
   @IsOptional()
   @IsString()
@@ -797,14 +796,14 @@ export class CreateAdminCategorizationRuleDto {
 }
 
 export class UpdateAdminCategorizationRuleDto {
-  @ApiPropertyOptional({ description: 'Rule category label/type' })
+  @ApiPropertyOptional({ description: 'Rule category name/type or combined parent / subcategory label, for example COGS / Packaging Cost' })
   @IsOptional()
   @IsString()
   category?: string;
 
   @ApiPropertyOptional({
     enum: AccountCategoryType,
-    description: 'Accounting type used when changing to a new category',
+    description: 'Required when changing to a new category whose accounting type cannot be inferred. Must agree with an existing selected category.',
   })
   @IsOptional()
   @IsEnum(AccountCategoryType)

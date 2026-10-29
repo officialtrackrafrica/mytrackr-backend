@@ -14,7 +14,10 @@ import {
   MatchType,
 } from '../entities/categorization-rule.entity';
 import { AiCategorizationService } from '../../categorization/categorization.service';
-import { AccountCategory } from '../entities/account-category.entity';
+import {
+  AccountCategory,
+  AccountCategoryType,
+} from '../entities/account-category.entity';
 import { AccountSubCategory } from '../entities/account-subcategory.entity';
 
 export interface RawTransactionDto {
@@ -754,7 +757,10 @@ export class CategorizationService {
   ): Promise<void> {
     if (rule.subCategory) {
       const subCategory = await this.subCategoryRepo.findOne({
-        where: { name: rule.subCategory },
+        where: {
+          name: rule.subCategory,
+          category: { type: rule.category as AccountCategoryType },
+        },
         relations: ['category'],
       });
 

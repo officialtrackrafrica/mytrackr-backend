@@ -25,7 +25,7 @@ export class MonoAdminController {
   @ApiCookieAuth('accessToken')
   @ApiOperation({
     summary: 'Test real-time transaction sync for a selected user',
-    description: 'Triggers a live refresh for each linked account, bypassing the local ten-minute cache. Saves downloaded transactions and imports them into finance. Returns before/after counts, latest transaction dates, and per-account completed, processing, or failed results. Mono may charge for real-time requests and enforces its own five-minute interval. For processing results, check the status endpoint after webhook completion.',
+    description: 'Triggers a live refresh for each linked account, bypassing the local one-hour cache. Saves downloaded transactions and imports them into finance. Returns before/after counts, latest transaction dates, and per-account completed, processing, or failed results. Mono may charge for real-time requests and enforces its own five-minute interval. For processing results, check the status endpoint after webhook completion.',
   })
   @ApiResponse({ status: 200, description: 'Before/after snapshots and per-account refresh results. Completed does not imply new transactions were found.' })
   @ApiResponse({ status: 404, description: 'No linked Mono accounts found for this user' })

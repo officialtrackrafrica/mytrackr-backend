@@ -26,6 +26,7 @@ import {
 import { MonoAccount } from './entities/mono-account.entity';
 import { MonoTransaction } from './entities/transaction.entity';
 import { reconcileMonoTransactions } from './transaction-identity';
+import { buildTransactionSyncCooldown, TRANSACTION_SYNC_COOLDOWN_SECONDS, TransactionSyncCooldown } from './transaction-cooldown';
 import { User } from '../auth/entities/user.entity';
 import { v4 as uuidv4 } from 'uuid';
 import { AiCategorizationService } from '../categorization/categorization.service';
@@ -51,6 +52,7 @@ export interface TransactionSyncStatus {
   message?: string;
   requiresReauthorization?: boolean;
   accounts?: Array<{ accountId: string; reauthorizationUrl: string | null }>;
+  cooldown?: TransactionSyncCooldown;
 }
 
 @Injectable()
@@ -549,7 +551,10 @@ export class MonoService {
     });
 
     if (!userAccounts.length) {
-      return { message: 'No linked accounts found for this user', data: [] };
+      return {
+        message: 'No linked accounts found for this user', data: [],
+        sync: { status: 'completed', cooldown: buildTransactionSyncCooldown([]) },
+      };
     }
 
     const syncResults = await Promise.all(
@@ -581,7 +586,10 @@ export class MonoService {
     const processing = syncResults.some((result) => result instanceof TransactionSyncProcessing);
     return {
       ...(await this.getTransactionsFromDb(userId, start, effectiveEnd)),
-      sync: this.combineTransactionSyncResults(syncResults, processing),
+      sync: {
+        ...this.combineTransactionSyncResults(syncResults, processing),
+        cooldown: buildTransactionSyncCooldown(userAccounts),
+      },
     };
   }
 
@@ -614,7 +622,10 @@ export class MonoService {
           return this.recordTransactionSyncFailure(userId, account, error);
         }
       }));
-      return this.combineTransactionSyncResults(results, results.some((result) => result instanceof TransactionSyncProcessing));
+      return {
+        ...this.combineTransactionSyncResults(results, results.some((result) => result instanceof TransactionSyncProcessing)),
+        cooldown: buildTransactionSyncCooldown(accounts),
+      };
     });
     this.financeSyncs.set(userId, pending);
     try {
@@ -698,12 +709,12 @@ export class MonoService {
     realtime = true,
   ) {
     const now = new Date();
-    // Reuse successful history refreshes for ten minutes.
+    // Reuse successful history refreshes for one hour.
     const syncAge = account.lastSyncedAt
       ? now.getTime() - new Date(account.lastSyncedAt).getTime()
       : Infinity;
     const forwardIsFresh = reuseRecent && !forceSync &&
-      syncAge >= 0 && syncAge < 10 * 60 * 1000;
+      syncAge >= 0 && syncAge < TRANSACTION_SYNC_COOLDOWN_SECONDS * 1000;
     const needsBackfill = requestedStart &&
       (!account.earliestSyncedAt || requestedStart < account.earliestSyncedAt);
     if (forwardIsFresh && !needsBackfill) return;
@@ -762,6 +773,10 @@ export class MonoService {
         earliestSyncedAt: newEarliest,
       },
     );
+
+    // Keep response timing in step with the successfully persisted boundaries.
+    account.lastSyncedAt = forwardIsFresh ? account.lastSyncedAt : now;
+    account.earliestSyncedAt = newEarliest;
 
     this.logger.log(
       `Sync boundaries updated for ${account.monoAccountId}: earliest=${newEarliest.toISOString()}, latest=${now.toISOString()}`,

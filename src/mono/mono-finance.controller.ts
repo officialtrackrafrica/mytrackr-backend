@@ -52,7 +52,7 @@ export class MonoFinanceController {
   @ApiOperation({
     summary: 'Get transactions for all linked accounts (synced from cache)',
     description:
-      'Requests a real-time bank refresh, reusing successful syncs for ten minutes, then returns synced transactions from the database. ' +
+      'Requests a real-time bank refresh, reusing successful syncs for one hour, then returns synced transactions from the database. ' +
       'Returns saved transactions with sync.status=processing while Mono refreshes. ' +
       'Refresh failures return saved transactions with sync.status=failed and are recorded in admin audit logs. ' +
       'When Mono confirms reauthorization is required, returns sync.status=reauthorization_required and sync.requiresReauthorization=true. Navigate to a reauthorizationUrl in sync.accounts. If null, retry to generate a link. A webhook received later is reflected on the next history request. ' +

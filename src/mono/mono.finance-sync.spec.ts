@@ -62,25 +62,68 @@ describe('Finance transaction refresh', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it('reuses a sync within ten minutes and refreshes at the cooldown boundary', async () => {
+  it('reuses a sync within one hour and refreshes at the cooldown boundary', async () => {
     await service.syncUserTransactionsForFinance('user');
-    jest.advanceTimersByTime(5 * 60 * 1000);
+    jest.advanceTimersByTime(59 * 60 * 1000);
     await service.syncUserTransactionsForFinance('user');
     expect(fetch).toHaveBeenCalledTimes(1);
-    jest.advanceTimersByTime(5 * 60 * 1000);
+    jest.advanceTimersByTime(60 * 1000);
     await service.syncUserTransactionsForFinance('user');
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
-  it('applies the ten-minute cooldown to linked-account history', async () => {
+  it('applies the one-hour cooldown to linked-account history', async () => {
     (service as any).getTransactionsFromDb = jest.fn().mockResolvedValue({ data: [] });
     await service.getAllUserTransactions('user');
-    jest.advanceTimersByTime(9 * 60 * 1000);
+    jest.advanceTimersByTime(59 * 60 * 1000);
     await service.getAllUserTransactions('user');
     expect(fetch).toHaveBeenCalledTimes(1);
     jest.advanceTimersByTime(60 * 1000);
     await service.getAllUserTransactions('user');
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns frontend timing from the persisted sync and does not extend it on a cache hit', async () => {
+    const first = await service.syncUserTransactionsForFinance('user');
+    expect(first.cooldown).toMatchObject({
+      durationSeconds: 3600, serverTime: '2026-10-22T10:00:00.000Z',
+      nextRefreshAt: '2026-10-22T11:00:00.000Z', remainingSeconds: 3600, isActive: true,
+      accounts: [{ accountId: 'mono', lastSyncedAt: '2026-10-22T10:00:00.000Z', nextRefreshAt: '2026-10-22T11:00:00.000Z', remainingSeconds: 3600, isActive: true }],
+    });
+    jest.advanceTimersByTime(10 * 60 * 1000);
+    const cached = await service.syncUserTransactionsForFinance('user');
+    expect(cached.cooldown).toMatchObject({
+      nextRefreshAt: '2026-10-22T11:00:00.000Z', remainingSeconds: 3000, isActive: true,
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('includes cooldown metadata in linked-account history and still permits forced refresh', async () => {
+    (service as any).getTransactionsFromDb = jest.fn().mockResolvedValue({ data: [] });
+    const first = await service.getAllUserTransactions('user');
+    expect(first.sync.cooldown).toMatchObject({ durationSeconds: 3600, remainingSeconds: 3600 });
+    jest.advanceTimersByTime(60 * 1000);
+    const forced = await service.getAllUserTransactions('user', undefined, undefined, true);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(forced.sync.cooldown).toMatchObject({ nextRefreshAt: '2026-10-22T11:01:00.000Z', remainingSeconds: 3600 });
+  });
+
+  it.each([new Error('Bank unavailable'), new TransactionSyncProcessing()])('does not start a new cooldown for an unsuccessful refresh: %s', async error => {
+    account.lastSyncedAt = null;
+    fetch.mockRejectedValueOnce(error);
+    const result = await service.syncUserTransactionsForFinance('user');
+    expect(result.status).toBe(error instanceof TransactionSyncProcessing ? 'processing' : 'failed');
+    expect(result.cooldown).toMatchObject({ durationSeconds: 3600, remainingSeconds: 0, isActive: false, nextRefreshAt: null });
+    expect(repo.update).not.toHaveBeenCalled();
+  });
+
+  it('returns consistent cooldown metadata when no accounts are linked', async () => {
+    repo.find.mockResolvedValue([]);
+    const finance = await service.syncUserTransactionsForFinance('user');
+    const linked = await service.getAllUserTransactions('user');
+    expect(finance.cooldown).toMatchObject({ durationSeconds: 3600, remainingSeconds: 0, isActive: false, nextRefreshAt: null, accounts: [] });
+    expect(linked.sync.cooldown).toEqual(finance.cooldown);
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it.each(['jobs.accounts.sync_statement', 'RTSTMT'])('imports a finished %s job without launching another realtime job', async (name) => {
@@ -389,7 +432,7 @@ describe('Finance transaction refresh', () => {
 
     await expect(
       service.syncUserTransactionsForFinance('user'),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       status: 'processing',
       message: expect.stringContaining('Showing saved transactions'),
     });
@@ -398,7 +441,7 @@ describe('Finance transaction refresh', () => {
 
     await expect(
       service.syncUserTransactionsForFinance('user'),
-    ).resolves.toEqual({ status: 'completed' });
+    ).resolves.toMatchObject({ status: 'completed' });
     expect(project).toHaveBeenCalledTimes(1);
   });
 
@@ -414,7 +457,7 @@ describe('Finance transaction refresh', () => {
 
     await expect(service.getAllUserTransactions('user')).resolves.toEqual({
       ...cached,
-      sync: { status: 'processing', message: expect.any(String) },
+      sync: expect.objectContaining({ status: 'processing', message: expect.any(String) }),
     });
     expect(repo.update).not.toHaveBeenCalled();
   });
@@ -428,7 +471,7 @@ describe('Finance transaction refresh', () => {
 
     await expect(
       service.syncUserTransactionsForFinance('user'),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       status: 'processing',
       message: expect.any(String),
     });

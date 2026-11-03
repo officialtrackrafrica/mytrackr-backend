@@ -15,6 +15,25 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class InitializeSubscriptionDto {
   @ApiPropertyOptional({
+    description:
+      'Required for plans with bank connections. Select institutionId from GET /mono/institutions.',
+  })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  institutionId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Required for plans with bank connections. Use the accountType returned for the selected institution.',
+    example: 'PERSONAL_BANKING',
+  })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  accountType?: string;
+
+  @ApiPropertyOptional({
     description: 'The subscription plan to checkout',
     enum: ['starter', 'web', 'solo', 'duo', 'unlimited'],
     default: 'solo',

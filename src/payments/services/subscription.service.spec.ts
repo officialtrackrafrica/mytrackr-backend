@@ -21,6 +21,7 @@ describe('SubscriptionService.cancelSubscription', () => {
       {} as any,
       paystackService as any,
       {} as any,
+      {} as any,
     );
 
     return { service, subRepository, paystackService };

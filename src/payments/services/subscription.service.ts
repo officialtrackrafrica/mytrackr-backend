@@ -39,6 +39,7 @@ import {
   IntegrationBillingStatus,
 } from '../../integrations/entities/integration.entity';
 import { REDIS_CLIENT } from '../../common/redis';
+import { InstitutionService } from '../../mono/institution.service';
 
 const ADDITIONAL_BANK_ACCOUNT_FEE_KEY = 'billing.additional_bank_account_fee';
 const ADDITIONAL_BANK_ACCOUNT_FEE_TYPE = 'additional_bank_account_fee';
@@ -83,6 +84,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     private readonly paymentFactory: PaymentFactoryService,
     private readonly paystackService: PaystackService,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    private readonly institutions: InstitutionService,
   ) {}
 
   onModuleInit() {
@@ -484,6 +486,15 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
         'Free plans do not require payment initialization',
       );
 
+    // Check coverage before creating a payment or a gateway plan.
+    const selectedBank =
+      getPlanBankAccountLimit(plan) > 0
+        ? await this.institutions.assertSupported(
+            dto?.institutionId,
+            dto?.accountType,
+          )
+        : undefined;
+
     const gatewayName = 'paystack';
     const gateway = this.paymentFactory.getGateway(gatewayName);
 
@@ -526,6 +537,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       metadata: {
         planId: plan.id,
         type: 'subscription_initialization',
+        selectedBank,
         fullPlanPrice: pricing.fullPlanPrice,
         amountDue: pricing.amountDue,
         proratedCredit: pricing.proratedCredit,
@@ -547,6 +559,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       metadata: {
         userId: user.id,
         planId: plan.id,
+        selectedBank,
         fullPlanPrice: pricing.fullPlanPrice,
         amountDue: pricing.amountDue,
         proratedCredit: pricing.proratedCredit,

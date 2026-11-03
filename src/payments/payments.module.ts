@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
+import { InstitutionModule } from '../mono/institution.module';
 
 import { Plan } from './entities/plan.entity';
 import { Subscription } from './entities/subscription.entity';
@@ -32,6 +33,7 @@ import { PremiumFieldInterceptor } from '../common/access-control/interceptors/p
       IntegrationPlan,
     ]),
     ConfigModule,
+    InstitutionModule,
   ],
   controllers: [SubscriptionController, WebhookController],
   providers: [

@@ -11,6 +11,7 @@ logs
 !categorization-engine/requirements.txt
 !ocr-service/requirements.txt
 *.md
+!docs/bank-coverage-checkout.md
 npm-debug.log*
 pnpm-debug.log*
 yarn-debug.log*

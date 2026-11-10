@@ -849,27 +849,61 @@ export class MonoService {
       await this.upsertTransactions(account, downloadedTransactions, autoCategorize);
     }
 
-    // Details read before starting realtime contain the old balance. Re-read
-    // after the refresh completes; cached/webhook imports already have fresh details.
-    let balanceDetails = details;
     if (realtime) {
-      try {
-        balanceDetails = await this.monoGet<any>(`/accounts/${account.monoAccountId}`);
-      } catch (error) {
-        // Do not overwrite a newer webhook balance with pre-refresh details.
-        balanceDetails = undefined;
-        this.logger.warn(`Unable to read refreshed balance for ${account.monoAccountId}: ${error.message}`);
-      }
-    }
-    const balance = this.normalizeAccountBalance(balanceDetails?.data?.account?.balance);
-    if (balance !== null) {
-      await this.monoAccountRepository.update({ id: account.id }, { balance });
-      account.balance = balance;
-      await this.transactionSyncService.syncAccountBalance(account.monoAccountId);
+      // A realtime transactions request only refreshes the statement; Mono's
+      // account details keep the balance from the last full sync. Request the
+      // live balance from the dedicated balance endpoint instead.
+      await this.refreshAccountBalance(account);
+    } else if (
+      !Array.isArray(meta?.retrieved_data) || meta.retrieved_data.includes('balance')
+    ) {
+      // Cached/webhook imports: details were read after the job completed.
+      await this.persistAccountBalance(
+        account,
+        this.normalizeAccountBalance(details?.data?.account?.balance),
+      );
     }
     this.logger.log(
       `Processed ${downloadedTransactions.length} downloaded transactions for account ${account.monoAccountId} (${start} → ${end})`,
     );
+  }
+
+  /**
+   * Fetch the balance via GET /accounts/{id}/balance. Completed balance jobs
+   * read cached results so webhook delivery cannot start another bank refresh.
+   * (Mono docs: Account Balance + Real-time Data). If Mono queues the
+   * balance job, the result arrives later in the account_updated webhook.
+   */
+  async refreshAccountBalance(account: MonoAccount, realtime = true): Promise<void> {
+    let balance: number | null = null;
+    try {
+      const response = await this.monoGet<any>(
+        `/accounts/${account.monoAccountId}/balance`,
+        { 'x-realtime': String(realtime) },
+      );
+      balance = this.normalizeAccountBalance(response?.data?.balance);
+      if (response?.status === 'failed' || balance === null) {
+        throw new ServiceUnavailableException('Mono returned an invalid balance response');
+      }
+    } catch (error) {
+      if (error instanceof TransactionSyncProcessing) {
+        this.logger.log(`Realtime balance for ${account.monoAccountId} is processing; awaiting webhook`);
+        return;
+      }
+      // Account details may still contain the previous balance. Keep the saved
+      // value on failure instead of treating that cached snapshot as fresh.
+      if (!realtime) throw error; // Allow Mono to retry a completed job delivery.
+      this.logger.warn(`Realtime balance failed for ${account.monoAccountId}: ${error.message}`);
+      return;
+    }
+    await this.persistAccountBalance(account, balance);
+  }
+
+  private async persistAccountBalance(account: MonoAccount, balance: number | null) {
+    if (balance === null) return;
+    await this.monoAccountRepository.update({ id: account.id }, { balance });
+    account.balance = balance;
+    await this.transactionSyncService.syncAccountBalance(account.monoAccountId);
   }
 
   private async upsertTransactions(
@@ -1485,6 +1519,16 @@ export class MonoService {
 
       case 'mono.accounts.jobs.update':
         if (
+          data?.name === 'jobs.accounts.sync_balance' &&
+          String(data?.status).toLowerCase() === 'finished' &&
+          typeof data?.account === 'string'
+        ) {
+          const account = await this.monoAccountRepository.findOne({
+            where: { monoAccountId: data.account },
+          });
+          if (account) await this.refreshAccountBalance(account, false);
+        }
+        if (
           ['jobs.accounts.sync_statement', 'RTSTMT'].includes(data?.name) &&
           typeof data?.account === 'string' && typeof data?.id === 'string' &&
           ['processing', 'finished', 'failed'].includes(String(data?.status).toLowerCase())
@@ -1510,6 +1554,12 @@ export class MonoService {
               account, undefined, false, false, false, false,
             );
             await this.transactionSyncService.syncAccountTransactions(data.account);
+            // The statement job does not refresh Mono's stored balance, and the
+            // user request that started it returned "processing" before reading it.
+            // Balance jobs are not statement jobs, so this cannot loop.
+            await this.refreshAccountBalance(account).catch((e) =>
+              this.logger.warn(`Balance refresh after job failed for ${data.account}: ${e.message}`),
+            );
           }
         }
         break;
@@ -1628,7 +1678,10 @@ export class MonoService {
         relations: ['user'],
       });
 
-      const balance = this.normalizeAccountBalance(data?.account?.balance);
+      const retrievedData = data?.meta?.retrieved_data;
+      const balance = !Array.isArray(retrievedData) || retrievedData.includes('balance')
+        ? this.normalizeAccountBalance(data?.account?.balance)
+        : null;
       const updateData: any = {
         dataStatus: data?.meta?.data_status,
         ...(data?.meta?.sync_status ? {

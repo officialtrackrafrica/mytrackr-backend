@@ -91,6 +91,10 @@ export class GuidesController {
         'mytrackr-logo.png',
         'snapshot-create-integration.png',
         'snapshot-api-keys.png',
+        'main-dashboard-link-button.png',
+        'main-dashboard-link-website.png',
+        'main-dashboard-api-key.png',
+        'main-dashboard-paystack.png',
       ].includes(filename)
     ) {
       res.status(404).end();

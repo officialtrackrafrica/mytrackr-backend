@@ -29,6 +29,22 @@ const code = (id: string, filename: string, source: string) =>
   `<div class="code-block"><div class="code-heading"><span>${e(filename)}</span><button type="button" data-copy="${e(id)}">Copy code</button></div><pre><code id="${e(id)}">${e(source)}</code></pre></div>`;
 const snapshot = (file: string, caption: string, alt: string) =>
   `<figure class="snapshot"><a href="/developers/assets/${file}" target="_blank" rel="noopener"><img src="/developers/assets/${file}" alt="${e(alt)}" loading="lazy" width="1440" height="1080"></a><figcaption><b>${e(caption)}</b><span>MyTrackr preview with sample data. Select the image to open it at full size.</span></figcaption></figure>`;
+const mainDashboardSnapshot = (file: string, caption: string) =>
+  `<figure class="snapshot"><a href="/developers/assets/${file}" target="_blank" rel="noopener"><img src="/developers/assets/${file}" alt="${e(caption)}" loading="lazy"></a><figcaption><b>${e(caption)}</b><span>Main MyTrackr dashboard walkthrough. Values shown are examples, not credentials to use.</span></figcaption></figure>`;
+export const createIntegrationSample = `curl -X POST "https://api.mytrackrservices.com/integrations" \\
+  -H "Authorization: Bearer $MYTRACKR_ACCESS_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  --data '{
+    "name": "My Online Store",
+    "platform": "react",
+    "allowedOrigins": ["https://mystore.com"],
+    "redirectUrl": "https://mystore.com/integrations/mytrackr/callback",
+    "webhookUrl": "https://mystore.com/integrations/mytrackr/webhook"
+  }'`;
+export const connectPaystackSample = `curl -X POST "https://api.mytrackrservices.com/integrations/paystack/connect" \\
+  -H "Authorization: Bearer $MYTRACKR_ACCESS_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  --data "{\\"secretKey\\":\\"$PAYSTACK_SECRET_KEY\\"}"`;
 export const architectureDiagram = `<figure class="architecture"><div class="flow-node"><span class="flow-icon">01</span><strong>Your website or app</strong><small>React · Vue · Flutter</small><em>Customer session only</em></div><span class="flow-arrow" aria-hidden="true">→</span><div class="flow-node server"><span class="flow-icon">02</span><strong>Your backend</strong><small>Verify payment · load order</small><em>Secret API key stays here</em></div><span class="flow-arrow" aria-hidden="true">→</span><div class="flow-node"><span class="flow-icon">03</span><strong>MyTrackr</strong><small>Accept event · update records</small><em>Check Events in your dashboard</em></div><figcaption>A connection in three steps. Your backend is the trusted bridge.</figcaption></figure>`;
 const prerequisites = () =>
   p(
@@ -182,6 +198,61 @@ export const guides: PlatformGuide[] = [
       'Create your first integration, find the API keys screen, and save the right credentials—with snapshots.',
     related: ['server', 'react', 'paystack'],
     sections: [
+      {
+        id: 'choose-dashboard',
+        title: 'Choose either dashboard for website setup',
+        html:
+          p(
+            'You can create a website integration from <a href="https://dashboard.mytrackrservices.com/dashboard">the main MyTrackr dashboard</a> or <a href="/api/dashboard/integrations">the developer dashboard</a>. Both use the same integration service and create integrations for the signed-in account. You do not need to create the same website twice. Use the same account to manage its keys, settings, and events in the developer dashboard.',
+          ) +
+          p(
+            'For direct Paystack sync, use <strong>Payment Gateway → Connect Paystack</strong> in the main dashboard. The developer dashboard currently manages website integrations; it does not have a merchant Paystack connection form.',
+          ),
+      },
+      {
+        id: 'main-dashboard-website',
+        title: 'Create from the main MyTrackr dashboard',
+        html:
+          list(
+            'Sign in to the main dashboard, find the <strong>Secondary account</strong> card, and select <strong>Link Website</strong>.',
+            'In the modal, choose <strong>Link Website</strong>. Enter Website Name, Platform, and Allowed Origins. Separate multiple origins with commas.',
+            'For example: name <code>My Online Store</code>, platform <strong>React / Next.js</strong>, origin <code>https://mystore.com</code>. The API platform value is <code>react</code>.',
+            'Redirect URL and Webhook URL are optional. Use your own implemented callback and public HTTPS webhook endpoints, or leave them blank.',
+            'Select <strong>Generate API Key</strong>, copy the secret into your server secret settings, then select <strong>Done</strong>. You can manage this integration later in the developer dashboard.',
+          ) +
+          mainDashboardSnapshot(
+            'main-dashboard-link-button.png',
+            'Main dashboard: open Link Website from the Secondary account card',
+          ) +
+          mainDashboardSnapshot(
+            'main-dashboard-link-website.png',
+            'Link Website: example store name, platform, origins, and optional URLs',
+          ) +
+          mainDashboardSnapshot(
+            'main-dashboard-api-key.png',
+            'Integration Created: copy your own secret API key; the pictured value is only a placeholder',
+          ) +
+          note(
+            'After creation',
+            'Creating an integration does not install event sending on your website. Connect your backend using the server guide. If the main UI does not show the webhook signing secret, rotate it under Webhooks in the developer dashboard when configuring your receiver. The screenshot’s Send Test Event button can affect financial records; MyTrackr has no isolated sandbox.',
+          ),
+      },
+      {
+        id: 'website-api-sample',
+        title: 'Equivalent website API request',
+        html:
+          p(
+            'The main frontend sends <code>POST /integrations</code>. The developer dashboard submits its own form and calls the same creation service. This Bash/cURL example uses a signed-in account’s access token; the normal app session cookie is also supported. Do not use an integration API key to create an integration.',
+          ) +
+          code(
+            'create-website-sample',
+            'Bash / cURL — authenticated website creation',
+            createIntegrationSample,
+          ) +
+          p(
+            'Replace the example domain with yours. Omit optional URLs until their endpoints exist. Your actual active subscription must include website linking; the older <code>planSlug</code> field is accepted for compatibility but ignored. The response includes <code>publicKey</code>, <code>apiKey</code>, and <code>webhookSigningSecret</code>. Save both secrets immediately; they are shown once.',
+          ),
+      },
       {
         id: 'sign-in',
         title: '1. Open your developer dashboard',
@@ -683,6 +754,38 @@ function mytrackr_send_order($order_id, $attempt = 0) {
             'Sign in at <a href="https://dashboard.paystack.com/" target="_blank" rel="noopener noreferrer">Paystack Dashboard</a>. Look under <strong>Developers</strong> for the API configuration. On the classic dashboard, open <strong>Settings → API Keys &amp; Webhooks</strong>. Select the environment you need. Reveal or copy the required key using your account permissions and password when prompted.',
           ) +
           `<figure class="snapshot illustrated"><div class="snapshot-bar"><span></span><span></span><span></span><b>Paystack · Illustrated navigation snapshot</b></div><div class="paystack-illustration"><aside><b>Paystack</b><span>Overview</span><span>Transactions</span><strong>① Developers</strong><span>API configuration</span></aside><div><p class="eyebrow">② API configuration</p><h3>Your API keys</h3><div class="mode-choice"><b>Test mode</b><span>Live mode</span></div><label>③ Public key <code>pk_test_••••••••••••••••</code></label><label>④ Secret key <code>sk_test_••••••••••••••••</code></label><small>Secrets stay on your server</small></div></div><figcaption><b>Illustrated snapshot: where to find Paystack credentials</b><span>Navigation aid, not a screenshot of a signed-in Paystack account. Labels vary between dashboard versions; use the official links below if your screen differs.</span></figcaption></figure>`,
+      },
+      {
+        id: 'connect-in-mytrackr',
+        title: 'Connect Paystack in the main MyTrackr dashboard',
+        html:
+          p(
+            'For direct merchant sync, sign in to <a href="https://dashboard.mytrackrservices.com/dashboard">the main MyTrackr dashboard</a>, select <strong>Link Website</strong> on the Secondary account card, then choose the <strong>Payment Gateway</strong> tab. Paste your merchant <strong>Paystack Secret Key</strong> and select <strong>Connect Paystack</strong>. MyTrackr stores the key encrypted and does not return the full value.',
+          ) +
+          mainDashboardSnapshot(
+            'main-dashboard-paystack.png',
+            'Payment Gateway: connect your merchant Paystack secret key',
+          ) +
+          p(
+            'This form calls <code>POST /integrations/paystack/connect</code>. It requires a signed-in account with Paystack linking access. This is separate from creating a website integration. Website integration creation is available in either dashboard; the developer dashboard currently has no merchant Paystack connection form.',
+          ) +
+          code(
+            'connect-paystack-sample',
+            'Bash / cURL — direct merchant connection',
+            connectPaystackSample,
+          ) +
+          p(
+            'Set <code>MYTRACKR_ACCESS_TOKEN</code> to your account access token and <code>PAYSTACK_SECRET_KEY</code> to your merchant secret in your private shell environment. An app session cookie can also authenticate the request. Do not send a MyTrackr integration API key as the Paystack secret.',
+          ) +
+          code(
+            'sync-paystack-sample',
+            'Bash / cURL — request a direct sync after connecting',
+            'curl -X POST "https://api.mytrackrservices.com/integrations/paystack/sync" \\\n  -H "Authorization: Bearer $MYTRACKR_ACCESS_TOKEN" \\\n  -H "Content-Type: application/json" \\\n  --data \'{}\'',
+          ) +
+          note(
+            'Choose how each sale reaches MyTrackr',
+            'Connecting a key and requesting sync are separate operations. Avoid also sending the same sales through website events without reconciling the two paths. Do not assume creating a website integration starts Paystack imports.',
+          ),
       },
       {
         id: 'environments',

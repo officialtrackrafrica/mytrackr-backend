@@ -13,6 +13,16 @@ Open `/api/dashboard` on the backend domain. Unauthenticated requests redirect t
 - Current subscription and plan details, Web subscription checkout, and payment-reference verification. Already eligible subscribers cannot accidentally start another Web checkout.
 - Public, server-rendered platform guides at `/developers/guides` with snapshots and walkthroughs for React, Vue, Flutter, WordPress, server-side integrations, API keys, and Paystack. Events affect actual finance records; there is no isolated sandbox or synthetic request-log feature.
 
+## Main dashboard compatibility and setup guide
+
+Website integrations can be created in the main app at `https://dashboard.mytrackrservices.com/dashboard` (Secondary account → Link Website → Link Website) or in `/api/dashboard/integrations`. Both use `IntegrationsService.create()` and the same account-owned integrations. Creating the same website in both places is unnecessary.
+
+Direct merchant Paystack connection remains in the main app's Payment Gateway tab, backed by `POST /integrations/paystack/connect`; request imports through `POST /integrations/paystack/sync`. The developer dashboard does not currently include a merchant Paystack connection form. Account authentication and the appropriate subscription capabilities still apply. The legacy website `planSlug` field is accepted but ignored.
+
+The public guides at `/developers/guides/api-keys` and `/developers/guides/paystack` include the main-dashboard screenshots and authenticated Bash/cURL examples. The PDF includes these walkthroughs on pages 11–13. Only the API-key screenshot with a placeholder value is shipped.
+
+Regenerate the standalone HTML with `node scripts/generate-developer-pdf.cjs`. With a local headless Chromium/Edge debugging endpoint on port 9338, run `node scripts/render-developer-pdf.cjs` to validate page bounds and export the PDF. Generated files are in `artifacts/developer-guide`.
+
 ## Deployment
 
 1. Apply the additive database change before deploying application code if schema synchronization is disabled:

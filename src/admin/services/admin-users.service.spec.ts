@@ -92,48 +92,72 @@ describe('AdminUsersService', () => {
     ]);
   });
 
-  it('uses a non-reserved query alias for the admin user listing', async () => {
-    const queryBuilder = {
-      leftJoin: jest.fn().mockReturnThis(),
-      addSelect: jest.fn().mockReturnThis(),
-      skip: jest.fn().mockReturnThis(),
-      take: jest.fn().mockReturnThis(),
-      orderBy: jest.fn().mockReturnThis(),
-      getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
-      getRawMany: jest.fn().mockResolvedValue([]),
-    };
-    const usersRepository = {
-      createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
-    };
-    const service = new AdminUsersService(
-      usersRepository as any,
-      {} as any,
-      {} as any,
-      {} as any,
-      {} as any,
-      {} as any,
-      {} as any,
-      {} as any,
-      {} as any,
-      {} as any,
-      {} as any,
-    );
+  it.each([{}, { page: 1, limit: 20 }, { page: 3, limit: 5 }])(
+    'returns all users regardless of pagination parameters %j',
+    async (query) => {
+      const users = Array.from({ length: 25 }, (_, index) => ({
+        id: `user-${index}`,
+        firstName: 'Ada',
+        email: `ada${index}@example.com`,
+        isActive: true,
+        isVerified: true,
+      }));
+      const queryBuilder = {
+        leftJoin: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        getManyAndCount: jest.fn().mockResolvedValue([users, users.length]),
+        getRawMany: jest.fn().mockResolvedValue([]),
+      };
+      const usersRepository = {
+        createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+      };
+      const service = new AdminUsersService(
+        usersRepository as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        {} as any,
+      );
 
-    await service.findAllUsers({});
+      const result = await service.findAllUsers(query);
 
-    expect(usersRepository.createQueryBuilder).toHaveBeenCalledWith('app_user');
-    const rawSelections = queryBuilder.addSelect.mock.calls
-      .map(([selection]) => selection)
-      .filter((selection) => typeof selection === 'string')
-      .join('\n');
-    expect(rawSelections).toContain('app_user.id');
-    expect(rawSelections).not.toMatch(/\buser\.id\b/);
-    expect(rawSelections).not.toMatch(/\bappUser\./);
-    expect(queryBuilder.orderBy).toHaveBeenCalledWith(
-      'app_user.createdAt',
-      'DESC',
-    );
-  });
+      expect(result.users.map((user) => user.id)).toEqual(
+        users.map((user) => user.id),
+      );
+      expect(result.pagination).toEqual({
+        total: 25,
+        page: 1,
+        limit: 25,
+        totalPages: 1,
+      });
+      expect(queryBuilder.skip).not.toHaveBeenCalled();
+      expect(queryBuilder.take).not.toHaveBeenCalled();
+
+      expect(usersRepository.createQueryBuilder).toHaveBeenCalledWith(
+        'app_user',
+      );
+      const rawSelections = queryBuilder.addSelect.mock.calls
+        .map(([selection]) => selection)
+        .filter((selection) => typeof selection === 'string')
+        .join('\n');
+      expect(rawSelections).toContain('app_user.id');
+      expect(rawSelections).not.toMatch(/\buser\.id\b/);
+      expect(rawSelections).not.toMatch(/\bappUser\./);
+      expect(queryBuilder.orderBy).toHaveBeenCalledWith(
+        'app_user.createdAt',
+        'DESC',
+      );
+    },
+  );
 
   it.each(['Admin', 'Super Admin'])(
     'does not allow a %s account to be updated through user management',

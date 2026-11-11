@@ -282,10 +282,8 @@ export class AdminUsersService {
       accountStatus,
       sortBy = 'createdAt',
       sortOrder = 'DESC',
-      page = 1,
-      limit = 20,
     } = query;
-    const skip = (page - 1) * limit;
+    // Temporarily return all matches until the frontend supports pagination.
     const normalizedSortOrder =
       String(sortOrder).toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
@@ -346,9 +344,7 @@ export class AdminUsersService {
           ORDER BY sub."createdAt" DESC
           LIMIT 1)`,
         'planSlug',
-      )
-      .skip(skip)
-      .take(limit);
+      );
 
     if (search) {
       qb.andWhere(
@@ -470,9 +466,9 @@ export class AdminUsersService {
       }),
       pagination: {
         total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
+        page: 1,
+        limit: total,
+        totalPages: total > 0 ? 1 : 0,
       },
     };
   }

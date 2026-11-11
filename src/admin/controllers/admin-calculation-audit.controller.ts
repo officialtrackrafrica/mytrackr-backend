@@ -127,6 +127,11 @@ export class AdminCalculationAuditController {
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Calculation audit · MyTrackr Admin</title><style>${this.styles()}</style></head>
 <body><main><header><div><p class="eyebrow">MyTrackr Admin</p><h1>Calculation audit</h1><p>Trace every transaction used—or excluded—from P&amp;L, cash flow, and burn rate.</p></div></header>
+<section class="user-export" aria-labelledby="user-export-title">
+<h2 id="user-export-title">Export users</h2>
+<p>Download all users with their names, email addresses, and current subscription plans. Includes users without an active subscription.</p>
+<a href="/admin/users/export" download="users.csv" style="display:inline-block;padding:11px 16px;border-radius:8px;background:#216b42;color:white;font-weight:800;text-decoration:none">Export users as CSV</a>
+</section>
 <form method="get"><label>User with linked account<select name="userId" required><option value="">Select a user</option>${options}</select></label><label>Start date<input type="date" name="startDate" value="${e(input.startText)}" required></label><label>End date<input type="date" name="endDate" value="${e(input.endText)}" required></label><label>Transaction period<select name="transactionScope"><option value="period" ${input.transactionScope === 'period' ? 'selected' : ''}>Selected date range</option><option value="all-stored" ${input.transactionScope === 'all-stored' ? 'selected' : ''}>All stored transactions</option></select></label><label>Transactions to show<select name="view">${this.renderViewOptions(input.view)}</select></label><button type="submit">Run audit</button></form>
 ${this.renderSyncControls()}
 ${input.audit ? this.renderAudit(input.audit, input.startText, input.endText, input.view) : '<section class="empty">Select a user and date range to inspect the calculations.</section>'}

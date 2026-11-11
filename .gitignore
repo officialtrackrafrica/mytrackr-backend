@@ -12,6 +12,7 @@ logs
 !ocr-service/requirements.txt
 *.md
 !docs/bank-coverage-checkout.md
+!docs/api-dashboard.md
 npm-debug.log*
 pnpm-debug.log*
 yarn-debug.log*

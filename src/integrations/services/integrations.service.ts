@@ -90,6 +90,7 @@ export class IntegrationsService {
     const business = await this.businessService.getBusinessForUser(userId);
     const appSubscription = await this.getWebsiteIntegrationSubscription(userId);
     const apiKey = this.generateSecretKey();
+    const webhookSigningSecret = `mt_whsec_${randomBytes(32).toString('hex')}`;
     const { planSlug: _deprecatedPlanSlug, ...integrationDto } = dto;
     const integration = this.integrationRepository.create({
       ...integrationDto,
@@ -99,6 +100,7 @@ export class IntegrationsService {
       publicKey: this.generatePublicKey(),
       apiKeyPrefix: apiKey.slice(0, 16),
       apiKeyHash: this.hashApiKey(apiKey),
+      webhookSigningSecret: this.encryptionService.encrypt(webhookSigningSecret),
       allowedOrigins: dto.allowedOrigins || [],
       isActive: true,
       billingStatus: IntegrationBillingStatus.ACTIVE,
@@ -118,7 +120,16 @@ export class IntegrationsService {
     return {
       ...this.toResponse(saved),
       apiKey,
+      webhookSigningSecret,
     };
+  }
+
+  async rotateWebhookSigningSecret(userId: string, id: string) {
+    const integration = await this.findOwnedIntegration(userId, id);
+    const webhookSigningSecret = `mt_whsec_${randomBytes(32).toString('hex')}`;
+    integration.webhookSigningSecret = this.encryptionService.encrypt(webhookSigningSecret);
+    await this.integrationRepository.save(integration);
+    return { id: integration.id, webhookSigningSecret };
   }
 
   async list(userId: string) {
@@ -169,6 +180,8 @@ export class IntegrationsService {
   async revoke(userId: string, id: string) {
     const integration = await this.findOwnedIntegration(userId, id);
     integration.isActive = false;
+    // Re-enabling settings later must never restore a revoked credential.
+    integration.apiKeyHash = this.hashApiKey(this.generateSecretKey());
     const saved = await this.integrationRepository.save(integration);
     await this.integrationWebhookService.deliver(
       saved,
@@ -260,6 +273,10 @@ export class IntegrationsService {
 
     if (!integration || !this.apiKeyMatches(apiKey, integration.apiKeyHash)) {
       throw new ForbiddenException('Invalid integration API key');
+    }
+
+    if (!integration.user?.isActive || !integration.user.isVerified) {
+      throw new ForbiddenException('The integration owner account is inactive or unverified');
     }
 
     if (integration.billingStatus !== IntegrationBillingStatus.ACTIVE) {

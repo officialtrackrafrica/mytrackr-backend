@@ -71,7 +71,8 @@
         width: 38px;
         height: 38px;
         border-radius: 12px;
-        background: linear-gradient(135deg, #101828 0%, #0b4a6f 100%);
+        background: #fff;
+        overflow: hidden;
         color: #fff;
         display: inline-flex;
         align-items: center;
@@ -380,10 +381,12 @@
         <aside class="sidebar">
           <div class="sidebar-card">
             <div class="brand">
-              <span class="brand-mark">M</span>
+              <span class="brand-mark"><img src="/developers/assets/mytrackr-logo.png" alt="" width="38" height="38" /></span>
               <span>MyTrackr for Developers</span>
             </div>
             <div class="nav-links">
+              <a href="/developers/guides">Platform guides</a>
+              <a href="/api/dashboard">Developer dashboard</a>
               <a href="#flow">Flow</a>
               <a href="#setup-endpoints">Setup</a>
               <a href="#runtime-endpoints">Runtime</a>
@@ -560,8 +563,11 @@
         </div>
         <div class="callout">
           <strong>Signature verification:</strong> compute an HMAC-SHA256 of the raw request body using
-          <span class="inline-code">INTEGRATION_WEBHOOK_SECRET</span> and compare it with
-          <span class="inline-code">x-mytrackr-signature</span>.
+          your integration’s <span class="inline-code">webhookSigningSecret</span> and compare the
+          <span class="inline-code">sha256=</span>-prefixed result with
+          <span class="inline-code">x-mytrackr-signature</span> using a timing-safe comparison.
+          Save the secret when creating your integration or rotate it in the
+          <a href="/api/dashboard">developer dashboard</a>. Deduplicate delivery IDs before applying changes.
         </div>
       </section>
 

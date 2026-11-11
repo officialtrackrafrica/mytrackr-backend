@@ -11,6 +11,8 @@ import * as crypto from 'crypto';
 import { Repository } from 'typeorm';
 import { WebhookLog } from '../../admin/entities/webhook-log.entity';
 import { Integration } from '../entities/integration.entity';
+import { publicWebhookAgent } from './integration-url-security';
+import { EncryptionService } from '../../security/encryption.service';
 
 type IntegrationWebhookEvent =
   | 'integration.created'
@@ -51,6 +53,9 @@ export class IntegrationWebhookService {
     @InjectRepository(WebhookLog)
     private readonly webhookLogRepository: Repository<WebhookLog>,
     private readonly configService: ConfigService,
+    @InjectRepository(Integration)
+    private readonly integrationRepository: Repository<Integration>,
+    private readonly encryption: EncryptionService,
   ) {}
 
   async deliver(
@@ -137,19 +142,42 @@ export class IntegrationWebhookService {
     }
 
     try {
-      const headers = this.buildHeaders(payload.body);
-      await axios.post(payload.url, payload.body, {
-        headers,
-        timeout: this.configService.get<number>(
-          'INTEGRATION_WEBHOOK_TIMEOUT_MS',
-          10000,
-        ),
-        validateStatus: () => true,
-      }).then(async (response) => {
-        if (response.status < 200 || response.status >= 300) {
-          throw new Error(`Webhook endpoint responded with status ${response.status}`);
-        }
+      const integration = await this.integrationRepository.findOne({
+        where: { id: payload.body.integration.id },
       });
+      if (!integration) throw new Error('Integration no longer exists');
+      const signingSecret = integration.webhookSigningSecret
+        ? this.encryption.decrypt(integration.webhookSigningSecret)
+        : this.configService.get<string>('INTEGRATION_WEBHOOK_SECRET');
+      if (!signingSecret)
+        throw new Error('Configure a webhook signing secret before delivery');
+      const headers = this.buildHeaders(payload.body, signingSecret);
+      const agent = await publicWebhookAgent(payload.url);
+      try {
+        await axios
+          .post(payload.url, payload.body, {
+            headers,
+            httpsAgent: agent,
+            proxy: false,
+            maxRedirects: 0,
+            maxContentLength: 64 * 1024,
+            maxBodyLength: 1024 * 1024,
+            timeout: this.configService.get<number>(
+              'INTEGRATION_WEBHOOK_TIMEOUT_MS',
+              10000,
+            ),
+            validateStatus: () => true,
+          })
+          .then(async (response) => {
+            if (response.status < 200 || response.status >= 300) {
+              throw new Error(
+                `Webhook endpoint responded with status ${response.status}`,
+              );
+            }
+          });
+      } finally {
+        agent.destroy();
+      }
 
       log.status = 'delivered';
       log.error = null as any;
@@ -157,7 +185,9 @@ export class IntegrationWebhookService {
       await this.webhookLogRepository.save(log);
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : 'Unknown webhook delivery error';
+        error instanceof Error
+          ? error.message
+          : 'Unknown webhook delivery error';
       this.logger.warn(
         `Failed to deliver integration webhook ${log.id}: ${message}`,
       );
@@ -168,11 +198,8 @@ export class IntegrationWebhookService {
     }
   }
 
-  private buildHeaders(body: DeliveryEnvelope) {
+  private buildHeaders(body: DeliveryEnvelope, signatureSecret: string) {
     const jsonBody = JSON.stringify(body);
-    const signatureSecret = this.configService.get<string>(
-      'INTEGRATION_WEBHOOK_SECRET',
-    );
     const headers: Record<string, string> = {
       'content-type': 'application/json',
       'user-agent': 'MyTrackr-Webhook/1.0',

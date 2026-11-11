@@ -121,6 +121,7 @@ export class DeveloperDocsService {
         notes: [
           'Requires an active Web, Solo, Duo, or Unlimited subscription.',
           'The apiKey is shown once and should be stored securely.',
+          'The webhookSigningSecret is also shown once. Store it on your webhook receiver to verify signatures. Manage and rotate credentials at /api/dashboard.',
         ],
         requestExample: this.json({
           name: 'Main website',
@@ -135,6 +136,7 @@ export class DeveloperDocsService {
           platform: 'react',
           publicKey: 'mt_pk_7f7dfab2485e51dc15f94be5fb6681cb',
           apiKeyPrefix: 'mt_sk_2f22d4cf5',
+          webhookSigningSecret: 'mt_whsec_example_store_this_securely',
           apiKey:
             'mt_sk_2f22d4cf56c56e2f7d63179c4890c4ef6f775f7bfb1f7d3848bc21c84f31ab10',
           billingStatus: 'active',
@@ -456,7 +458,7 @@ console.log(data.business.name);`,
         code: `import crypto from "crypto";
 
 export function verifyMyTrackrWebhook(rawBody, signatureHeader) {
-  const secret = process.env.INTEGRATION_WEBHOOK_SECRET;
+  const secret = process.env.MYTRACKR_WEBHOOK_SIGNING_SECRET;
   if (!secret || !signatureHeader) {
     return false;
   }
@@ -495,7 +497,7 @@ export function verifyMyTrackrWebhook(rawBody, signatureHeader) {
       {
         name: 'x-mytrackr-signature',
         description:
-          'Present when INTEGRATION_WEBHOOK_SECRET is configured. Format: sha256=<hmac of raw JSON body>.',
+          'Format: sha256=<HMAC-SHA256 of the exact raw JSON body>. Verify with the individual webhookSigningSecret returned on integration creation or rotated at /api/dashboard. Legacy integrations may use a previously configured signing secret.',
       },
     ];
   }

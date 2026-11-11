@@ -68,6 +68,11 @@ export class Integration {
   @Column({ nullable: true })
   webhookUrl: string;
 
+  // Encrypted per-integration HMAC secret. Legacy integrations may use the
+  // configured platform secret until they rotate their signing secret.
+  @Column({ type: 'jsonb', nullable: true })
+  webhookSigningSecret: { encrypted: string; iv: string; tag: string; salt: string } | null;
+
   @Column({ default: true })
   isActive: boolean;
 

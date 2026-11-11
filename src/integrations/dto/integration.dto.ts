@@ -172,6 +172,9 @@ export class IntegrationPlanResponseDto {
 }
 
 export class CreatedIntegrationResponseDto extends IntegrationResponseDto {
+  @ApiPropertyOptional({ description: 'Per-integration webhook HMAC signing secret, shown once when the integration is created.' })
+  webhookSigningSecret?: string;
+
   @ApiProperty({
     description:
       'Shown once. Store this securely on your server or WordPress settings page.',

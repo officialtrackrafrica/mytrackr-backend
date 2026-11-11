@@ -37,6 +37,11 @@ export class ActivityLogInterceptor implements NestInterceptor {
     'otp',
     'code',
     'secret',
+    'csrf',
+    'apiKey',
+    'apiKeyHash',
+    'mfaSecret',
+    'webhookSigningSecret',
   ]);
 
   constructor(private readonly auditService: AdminAuditService) {}

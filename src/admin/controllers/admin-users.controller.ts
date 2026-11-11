@@ -9,12 +9,15 @@ import {
   Body,
   Req,
   UseGuards,
+  Res,
 } from '@nestjs/common';
+import type { Response as ExpressResponse } from 'express';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiCookieAuth,
+  ApiProduces,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards';
 import { PoliciesGuard } from '../../casl/guards/policies.guard';
@@ -96,6 +99,27 @@ export class AdminUsersController {
   @ApiResponse({ status: 200, description: 'Paginated matching users including acquisition source details', schema: ADMIN_USERS_LIST_SCHEMA })
   async searchUsers(@Query() query: AdminQueryDto) {
     return this.adminUsersService.findAllUsers(query);
+  }
+
+  @Get('export')
+  @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
+  @ApiOperation({
+    summary: 'Export all users with their emails and current subscription plans',
+    description:
+      'Downloads an unpaginated CSV with user ID, first name, last name, email, subscription plan name and slug. Users without an active, unexpired subscription are included with No active subscription.',
+  })
+  @ApiProduces('text/csv')
+  @ApiResponse({
+    status: 200,
+    description: 'CSV attachment containing all users',
+    schema: { type: 'string', format: 'binary' },
+  })
+  async exportUsers(@Res({ passthrough: true }) res: ExpressResponse) {
+    const csv = await this.adminUsersService.exportUsers();
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="users.csv"');
+    res.setHeader('Cache-Control', 'no-store');
+    return csv;
   }
 
   @Get(':id')

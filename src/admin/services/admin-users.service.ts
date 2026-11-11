@@ -201,6 +201,76 @@ export class AdminUsersService {
     return { message: 'User deactivated successfully', userId };
   }
 
+  async exportUsers(): Promise<string> {
+    // Select one current subscription per user without loading private user fields.
+    const users = await this.usersRepository
+      .createQueryBuilder('app_user')
+      .leftJoin(
+        Subscription,
+        'subscription',
+        `subscription.id = (
+          SELECT sub.id FROM subscriptions sub
+          WHERE sub."userId" = app_user.id
+            AND sub.status = :subscriptionStatus
+            AND (sub."currentPeriodStart" IS NULL OR sub."currentPeriodStart" <= :now)
+            AND (sub."currentPeriodEnd" IS NULL OR sub."currentPeriodEnd" >= :now)
+          ORDER BY sub."createdAt" DESC, sub.id DESC
+          LIMIT 1
+        )`,
+        { subscriptionStatus: 'active', now: new Date() },
+      )
+      .leftJoin('subscription.plan', 'plan')
+      .select('app_user.id', 'id')
+      .addSelect('app_user.firstName', 'firstName')
+      .addSelect('app_user.lastName', 'lastName')
+      .addSelect('app_user.email', 'email')
+      .addSelect('plan.name', 'planName')
+      .addSelect('plan.slug', 'planSlug')
+      .orderBy('app_user.createdAt', 'ASC')
+      .addOrderBy('app_user.id', 'ASC')
+      .getRawMany<{
+        id: string;
+        firstName: string | null;
+        lastName: string | null;
+        email: string | null;
+        planName: string | null;
+        planSlug: string | null;
+      }>();
+
+    const rows = [
+      [
+        'User ID',
+        'First Name',
+        'Last Name',
+        'Email',
+        'Subscription Plan',
+        'Plan Slug',
+      ],
+      ...users.map((user) => [
+        user.id,
+        user.firstName,
+        user.lastName,
+        user.email,
+        user.planName ?? 'No active subscription',
+        user.planSlug,
+      ]),
+    ];
+    return rows
+      .map((row) =>
+        row
+          .map((value) => {
+            const text = String(value ?? '');
+            // Prevent spreadsheet formulas in exported user-controlled fields.
+            const safe = /^[\s\uFEFF]*[=+@-]|^[\t\r\n]/.test(text)
+              ? `'${text}`
+              : text;
+            return `"${safe.replace(/"/g, '""')}"`;
+          })
+          .join(','),
+      )
+      .join('\r\n');
+  }
+
   async findAllUsers(query: AdminQueryDto) {
     const {
       search,

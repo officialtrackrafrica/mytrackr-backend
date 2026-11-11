@@ -1,7 +1,4 @@
-import {
-  BadRequestException,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { ServiceUnavailableException } from '@nestjs/common';
 import { SubscriptionService } from './subscription.service';
 import { InstitutionService } from '../../mono/institution.service';
 
@@ -79,28 +76,30 @@ describe('Subscription checkout bank coverage', () => {
     { institutionId: 'bank-1', accountType: 'BUSINESS_BANKING' },
     { institutionId: 'unknown', accountType: 'PERSONAL_BANKING' },
   ])(
-    'blocks missing and unsupported selections before payment side effects',
+    'temporarily allows checkout without validating bank selections',
     async (dto) => {
       await expect(
         service.initializeSubscription(user, dto),
-      ).rejects.toBeInstanceOf(BadRequestException);
-      expect(factory.getGateway).not.toHaveBeenCalled();
-      expect(transactions.save).not.toHaveBeenCalled();
+      ).resolves.toMatchObject({ authorizationUrl: 'https://checkout.example' });
+      expect(institutions.getSupportedInstitutions).not.toHaveBeenCalled();
+      expect(gateway.initializePayment).toHaveBeenCalled();
+      expect(transactions.save).toHaveBeenCalled();
     },
   );
 
-  it('blocks checkout when coverage is unavailable', async () => {
+  it('does not let a Mono outage block checkout while selection is disabled', async () => {
     jest
       .spyOn(institutions, 'getSupportedInstitutions')
       .mockRejectedValue(new ServiceUnavailableException());
     await expect(
       service.initializeSubscription(user, selectedBank),
-    ).rejects.toBeInstanceOf(ServiceUnavailableException);
-    expect(factory.getGateway).not.toHaveBeenCalled();
-    expect(transactions.save).not.toHaveBeenCalled();
+    ).resolves.toMatchObject({ authorizationUrl: 'https://checkout.example' });
+    expect(institutions.getSupportedInstitutions).not.toHaveBeenCalled();
+    expect(gateway.initializePayment).toHaveBeenCalled();
+    expect(transactions.save).toHaveBeenCalled();
   });
 
-  it('stores the validated selection and initializes payment for supported pairs', async () => {
+  it('does not mark an unchecked bank selection as validated in payment metadata', async () => {
     const result = await service.initializeSubscription(user, {
       institutionId: 'bank-1',
       accountType: 'PERSONAL_BANKING',
@@ -108,17 +107,17 @@ describe('Subscription checkout bank coverage', () => {
     expect(result.authorizationUrl).toBe('https://checkout.example');
     expect(transactions.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        metadata: expect.objectContaining({ selectedBank }),
+        metadata: expect.objectContaining({ selectedBank: undefined }),
       }),
     );
     expect(gateway.initializePayment).toHaveBeenCalledWith(
       expect.objectContaining({
-        metadata: expect.objectContaining({ selectedBank }),
+        metadata: expect.objectContaining({ selectedBank: undefined }),
       }),
     );
   });
 
-  it.each(['starter', 'web'])(
+  it.each(['starter', 'web', 'solo', 'duo', 'unlimited'])(
     'allows %s checkout without bank selection',
     async (slug) => {
       setup(slug);

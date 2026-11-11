@@ -48,6 +48,8 @@ const SCHEDULED_SUBSCRIPTION_LOCK_KEY = 'subscriptions:activation:lock';
 const SCHEDULED_SUBSCRIPTION_LOCK_TTL_SECONDS = 55;
 const SCHEDULED_SUBSCRIPTION_CHECK_INTERVAL_MS = 60_000;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+// Temporarily disabled until the frontend supports bank selection at checkout.
+const REQUIRE_SUBSCRIPTION_BANK_SELECTION = false;
 
 interface SubscriptionCheckoutPricing {
   amountDue: number;
@@ -486,9 +488,9 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
         'Free plans do not require payment initialization',
       );
 
-    // Check coverage before creating a payment or a gateway plan.
+    // Re-enable coverage checks once the frontend sends the bank selection.
     const selectedBank =
-      getPlanBankAccountLimit(plan) > 0
+      REQUIRE_SUBSCRIPTION_BANK_SELECTION && getPlanBankAccountLimit(plan) > 0
         ? await this.institutions.assertSupported(
             dto?.institutionId,
             dto?.accountType,

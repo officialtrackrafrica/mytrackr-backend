@@ -1,7 +1,97 @@
 import { AdminUsersService } from './admin-users.service';
 import { ForbiddenException } from '@nestjs/common';
+import { parse } from 'csv-parse/sync';
 
 describe('AdminUsersService', () => {
+  const setupExport = (rows: Record<string, unknown>[]) => {
+    const queryBuilder = {
+      leftJoin: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
+      getRawMany: jest.fn().mockResolvedValue(rows),
+    };
+    const service = new AdminUsersService(
+      { createQueryBuilder: jest.fn().mockReturnValue(queryBuilder) } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    return { service, queryBuilder };
+  };
+
+  it('exports users with and without subscriptions, escaping CSV and spreadsheet formulas', async () => {
+    const { service, queryBuilder } = setupExport([
+      {
+        id: 'user-1',
+        firstName: 'Ada, "Dee"\nSolomon',
+        lastName: 'Okafor',
+        email: 'ada@example.com',
+        planName: 'Solo',
+        planSlug: 'solo',
+      },
+      {
+        id: 'user-2',
+        firstName: '=1+1',
+        lastName: null,
+        email: null,
+        planName: null,
+        planSlug: null,
+      },
+    ]);
+
+    expect(parse(await service.exportUsers(), { columns: true })).toEqual([
+      {
+        'User ID': 'user-1',
+        'First Name': 'Ada, "Dee"\nSolomon',
+        'Last Name': 'Okafor',
+        Email: 'ada@example.com',
+        'Subscription Plan': 'Solo',
+        'Plan Slug': 'solo',
+      },
+      {
+        'User ID': 'user-2',
+        'First Name': "'=1+1",
+        'Last Name': '',
+        Email: '',
+        'Subscription Plan': 'No active subscription',
+        'Plan Slug': '',
+      },
+    ]);
+    const [, , condition, parameters] = queryBuilder.leftJoin.mock.calls[0];
+    expect(condition).toContain('sub.status = :subscriptionStatus');
+    expect(condition).toContain('sub."currentPeriodStart" <= :now');
+    expect(condition).toContain('sub."currentPeriodEnd" >= :now');
+    expect(condition).toContain('LIMIT 1');
+    expect(parameters).toEqual({
+      subscriptionStatus: 'active',
+      now: expect.any(Date),
+    });
+    expect(queryBuilder.select).toHaveBeenCalledWith('app_user.id', 'id');
+  });
+
+  it('exports a header-only CSV when there are no users', async () => {
+    const { service } = setupExport([]);
+    expect(parse(await service.exportUsers())).toEqual([
+      [
+        'User ID',
+        'First Name',
+        'Last Name',
+        'Email',
+        'Subscription Plan',
+        'Plan Slug',
+      ],
+    ]);
+  });
+
   it('uses a non-reserved query alias for the admin user listing', async () => {
     const queryBuilder = {
       leftJoin: jest.fn().mockReturnThis(),

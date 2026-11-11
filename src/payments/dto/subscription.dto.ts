@@ -16,7 +16,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 export class InitializeSubscriptionDto {
   @ApiPropertyOptional({
     description:
-      'Required for plans with bank connections. Select institutionId from GET /mono/institutions.',
+      'Bank selection is temporarily disabled for checkout. When re-enabled, select institutionId from GET /mono/institutions.',
   })
   @IsOptional()
   @IsString()
@@ -25,7 +25,7 @@ export class InitializeSubscriptionDto {
 
   @ApiPropertyOptional({
     description:
-      'Required for plans with bank connections. Use the accountType returned for the selected institution.',
+      'Bank selection is temporarily disabled for checkout. When re-enabled, use the accountType returned for the selected institution.',
     example: 'PERSONAL_BANKING',
   })
   @IsOptional()

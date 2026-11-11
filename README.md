@@ -96,8 +96,19 @@ Nest is an MIT-licensed open source project. It can grow thanks to the sponsors 
 ## Mono transaction refresh
 
 `GET /finance/transactions` requests updated bank transactions before applying
-display filters. Successful imports are reused for five minutes, matching Mono's
-real-time session interval. This is a refresh on request, not a scheduled background sync.
+display filters. Successful imports are reused for one hour according to the application's
+transaction cooldown; Mono itself permits real-time sessions at five-minute intervals.
+This is a refresh on request, not a scheduled background sync.
+
+An empty date range can return Mono's successful "No transactions found" response
+without a `data` array. Treat this as an empty page and continue refreshing the
+account balance. Other malformed transaction responses still fail the import.
+Balance refresh uses `/accounts/{id}/balance` and may finish asynchronously through
+Mono webhooks. The dashboard uses the persisted provider balance converted from
+minor to major currency units; it does not infer a bank balance by summing history.
+
+Mono references: [real-time data](https://docs.mono.co/docs/financial-data/realtime-data),
+[transactions](https://docs.mono.co/api/bank-data/transactions).
 
 When Mono returns `x-job-status: processing`, the API returns saved transactions
 with `sync.status: processing`. The client should keep the saved history visible

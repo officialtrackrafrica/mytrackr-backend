@@ -61,6 +61,56 @@ describe('Mono account balance refresh', () => {
       realtime,
     );
 
+  it.each([undefined, null])(
+    'refreshes the balance when Mono reports no transactions with data=%p',
+    async (data) => {
+      monoGet
+        .mockResolvedValueOnce(details(10000))
+        .mockResolvedValueOnce({
+          status: 'successful',
+          message: 'No transactions found for the provided date filter, please try again with different date',
+          data,
+          meta: null,
+        })
+        .mockResolvedValueOnce({ data: { balance: 250025 } });
+      await expect(download(service, { ...saved }, true)).resolves.toBeUndefined();
+      expect(saved.balance).toBe(250025);
+      expect(dashboardBalance).toBe(2500.25);
+      expect(service['upsertTransactions']).not.toHaveBeenCalled();
+      expect(monoGet).toHaveBeenCalledTimes(3);
+    },
+  );
+
+  it('accepts a successful empty date range while importing a completed statement job', async () => {
+    monoGet
+      .mockResolvedValueOnce(details(80000))
+      .mockResolvedValueOnce({
+        status: 'successful',
+        message: 'No transactions found for the provided date filter, please try again with different date',
+        meta: null,
+      })
+      .mockResolvedValueOnce({ data: { balance: 90000 } });
+    await expect(service.handleWebhookEvent({
+      event: 'mono.accounts.jobs.update',
+      data: { name: 'RTSTMT', account: 'mono', id: 'job', status: 'finished' },
+    })).resolves.toEqual({ received: true });
+    expect(saved.balance).toBe(90000);
+    expect(dashboardBalance).toBe(900);
+    expect(projectTransactions).toHaveBeenCalledWith('mono');
+  });
+
+  it.each([
+    { status: 'successful', message: 'Request was successfully completed' },
+    { status: 'failed', message: 'No transactions found' },
+    { status: 'successful', message: 'No transactions found', data: {} },
+  ])('still rejects malformed or unsuccessful transaction responses: %p', async (response) => {
+    monoGet.mockResolvedValueOnce(details(10000)).mockResolvedValueOnce(response);
+    await expect(download(service, { ...saved }, true)).rejects.toThrow('invalid transaction response');
+    expect(saved.balance).toBe(10000);
+    expect(projectBalance).not.toHaveBeenCalled();
+    expect(monoGet).toHaveBeenCalledTimes(2);
+  });
+
   it('reads the realtime balance endpoint after realtime finishes and updates linked and dashboard balances', async () => {
     monoGet
       .mockResolvedValueOnce(details(10000))

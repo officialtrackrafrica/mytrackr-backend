@@ -823,12 +823,18 @@ export class MonoService {
         const response = await this.monoGet<any>(url, {
           'x-realtime': String(realtime && page === 1),
         });
-        if (response?.status === 'failed' || !Array.isArray(response?.data)) {
+        // Mono returns a successful no-results message without a data array
+        // for empty date ranges. This must still reach the balance refresh.
+        const emptyDateRange = response?.status === 'successful' &&
+          response?.data == null &&
+          /^No transactions found\b/i.test(String(response?.message || ''));
+        if (response?.status === 'failed' ||
+          (!Array.isArray(response?.data) && !emptyDateRange)) {
           throw new ServiceUnavailableException(
             'Mono returned an invalid transaction response',
           );
         }
-        const transactions = response.data;
+        const transactions = emptyDateRange ? [] : response.data;
 
         if (transactions.length > 0) {
           downloadedTransactions.push(...transactions);

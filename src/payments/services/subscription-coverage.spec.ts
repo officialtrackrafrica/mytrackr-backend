@@ -1,4 +1,7 @@
-import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { SubscriptionService } from './subscription.service';
 import { InstitutionService } from '../../mono/institution.service';
 
@@ -9,9 +12,10 @@ describe('Subscription checkout bank coverage', () => {
   let transactions: any;
   let institutions: InstitutionService;
   let selectedBank: any;
+  let plans: any;
 
   const setup = (slug = 'solo') => {
-    const plans = {
+    plans = {
       findOne: jest.fn().mockResolvedValue({
         id: 'plan-1',
         slug,
@@ -143,9 +147,63 @@ describe('Subscription checkout bank coverage', () => {
       expect(gateway.initializePayment).not.toHaveBeenCalled();
 
       await expect(
-        service.initializeSubscription(user, { planSlug: slug, ...selectedBank }),
-      ).resolves.toMatchObject({ authorizationUrl: 'https://checkout.example' });
+        service.initializeSubscription(user, {
+          planSlug: slug,
+          ...selectedBank,
+        }),
+      ).resolves.toMatchObject({
+        authorizationUrl: 'https://checkout.example',
+      });
       expect(institutions.getSupportedInstitutions).toHaveBeenCalled();
     },
   );
+
+  it.each([undefined, true, false])(
+    'passes autoRenew=%s through checkout with bank declaration',
+    async (autoRenew) => {
+      const result = await service.initializeSubscription(user, {
+        ...selectedBank,
+        autoRenew,
+      });
+      const expected = autoRenew !== false;
+      expect(result.autoRenew).toBe(expected);
+      expect(transactions.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            autoRenew: expected,
+            selectedBank,
+          }),
+        }),
+      );
+      expect(gateway.initializePayment).toHaveBeenCalledWith(
+        expect.objectContaining({
+          plan: expected ? 'PLN_1' : undefined,
+          channels: expected ? undefined : [],
+          metadata: expect.objectContaining({
+            autoRenew: expected,
+            selectedBank,
+          }),
+        }),
+      );
+    },
+  );
+
+  it('does not require or create a gateway billing plan for a one-time payment', async () => {
+    plans.findOne.mockResolvedValue({
+      id: 'plan-1',
+      slug: 'solo',
+      price: 5000,
+      currency: 'NGN',
+      interval: 'monthly',
+      isActive: true,
+    });
+    gateway.createPlan = jest.fn();
+    await expect(
+      service.initializeSubscription(user, {
+        ...selectedBank,
+        autoRenew: false,
+      }),
+    ).resolves.toMatchObject({ autoRenew: false });
+    expect(gateway.createPlan).not.toHaveBeenCalled();
+  });
 });

@@ -192,6 +192,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       activePlan: sub.plan,
       expiresAt: sub.currentPeriodEnd,
       cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+      autoRenew: sub.autoRenew !== false && !sub.cancelAtPeriodEnd,
     };
   }
 
@@ -334,7 +335,6 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     tx.gatewayReference = verification.gatewayReference || tx.gatewayReference;
     tx.paymentMethod =
       verification.rawResponse?.data?.channel || tx.paymentMethod || 'unknown';
-    await this.txRepository.save(tx);
 
     await this.provisionSubscription(
       tx.user.id,
@@ -344,6 +344,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       verification.rawResponse?.data,
       tx.metadata,
     );
+    await this.txRepository.save(tx);
 
     return {
       status: verification.status,
@@ -355,6 +356,11 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
   private async ensurePaystackSubscriptionCode(
     subscription: Subscription,
   ): Promise<void> {
+    if (subscription.autoRenew === false) {
+      throw new BadRequestException(
+        'One-time subscriptions do not have automatic billing. Start a new auto-renew checkout to enable it.',
+      );
+    }
     if (subscription.gatewaySubscriptionId) {
       return;
     }
@@ -438,7 +444,10 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     subscription: Subscription,
     context: string,
   ): Promise<void> {
-    if (subscription.gatewaySubscriptionId) {
+    if (
+      subscription.autoRenew === false ||
+      subscription.gatewaySubscriptionId
+    ) {
       return;
     }
 
@@ -500,8 +509,10 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     const gatewayName = 'paystack';
     const gateway = this.paymentFactory.getGateway(gatewayName);
 
-    // Ensure plan exists on gateway for recurring billing
-    if (!plan.gatewayPlanId) {
+    const autoRenew = dto?.autoRenew !== false;
+
+    // One-time payments do not need a Paystack billing plan.
+    if (autoRenew && !plan.gatewayPlanId) {
       this.logger.log(`Creating missing ${gatewayName} plan for ${plan.name}`);
       const gatewayPlan = await gateway.createPlan({
         name: plan.name,
@@ -539,6 +550,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       metadata: {
         planId: plan.id,
         type: 'subscription_initialization',
+        autoRenew,
         selectedBank,
         fullPlanPrice: pricing.fullPlanPrice,
         amountDue: pricing.amountDue,
@@ -557,10 +569,16 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       amount: gatewayAmount,
       email: user.email,
       reference,
-      plan: pricing.isProratedUpgrade ? undefined : plan.gatewayPlanId,
+      plan:
+        autoRenew && !pricing.isProratedUpgrade
+          ? plan.gatewayPlanId
+          : undefined,
+      // Override any global recurring-only channel configuration for pay-once checkout.
+      channels: autoRenew ? undefined : [],
       metadata: {
         userId: user.id,
         planId: plan.id,
+        autoRenew,
         selectedBank,
         fullPlanPrice: pricing.fullPlanPrice,
         amountDue: pricing.amountDue,
@@ -582,6 +600,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       proratedCredit: pricing.proratedCredit,
       remainingDays: pricing.remainingDays,
       isProratedUpgrade: pricing.isProratedUpgrade,
+      autoRenew,
     };
   }
 
@@ -704,6 +723,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     }
 
     subscription.cancelAtPeriodEnd = true;
+    subscription.autoRenew = false;
     subscription.canceledAt = new Date();
     await this.subRepository.save(subscription);
 
@@ -750,7 +770,6 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
         tx.status = 'success';
         tx.gatewayReference = verification.gatewayReference || '';
         tx.paymentMethod = verification.rawResponse?.data?.channel || 'unknown';
-        await this.txRepository.save(tx);
 
         const planId = tx.metadata?.planId;
         if (planId) {
@@ -772,6 +791,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
             tx.metadata.integrationPlanId,
           );
         }
+        await this.txRepository.save(tx);
       } else {
         tx.status = 'failed';
         await this.txRepository.save(tx);
@@ -808,6 +828,27 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     );
     const isSamePlanRenewal = existingActiveSubscription?.plan?.id === plan.id;
     const isProratedUpgrade = paymentMetadata?.isProratedUpgrade === true;
+    const autoRenew = paymentMetadata?.autoRenew !== false;
+
+    if (!autoRenew) {
+      // Also stop queued automatic charges, even when renewing the current plan.
+      const billingSubscriptions = await this.subRepository.find({
+        where: [
+          { user: { id: userId }, status: 'active' },
+          { user: { id: userId }, status: 'scheduled' },
+        ],
+        relations: ['plan'],
+      });
+      for (const subscription of billingSubscriptions) {
+        await this.disableAutomaticRenewal(subscription);
+      }
+      // find() returns separate entity instances from the active-plan lookup.
+      if (existingActiveSubscription) {
+        existingActiveSubscription.autoRenew = false;
+        existingActiveSubscription.gatewaySubscriptionId = '';
+        existingActiveSubscription.gatewayEmailToken = '';
+      }
+    }
 
     if (!hasRemainingActiveTime && existingActiveSubscription) {
       existingActiveSubscription.status = 'canceled';
@@ -826,12 +867,13 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     const paymentSubscription =
       this.extractPaystackSubscriptionDetails(gatewayPaymentData);
 
-    if (paymentSubscription.subscriptionCode) {
+    if (autoRenew && paymentSubscription.subscriptionCode) {
       gatewaySubscriptionId = paymentSubscription.subscriptionCode;
       gatewayEmailToken = paymentSubscription.emailToken;
     }
 
     if (
+      autoRenew &&
       !gatewaySubscriptionId &&
       plan.gatewayPlanId &&
       customerCode &&
@@ -863,9 +905,11 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
         user,
         gatewaySubscriptionId,
         `renewing plan ${plan.name}`,
+        autoRenew,
       );
 
       existingActiveSubscription.plan = plan;
+      existingActiveSubscription.autoRenew = autoRenew;
       existingActiveSubscription.currentPeriodEnd = endDate;
       existingActiveSubscription.gatewaySubscriptionId = gatewaySubscriptionId;
       existingActiveSubscription.gatewayCustomerCode =
@@ -910,6 +954,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       await this.subRepository.save(existingActiveSubscription);
 
       if (
+        autoRenew &&
         !gatewaySubscriptionId &&
         plan.gatewayPlanId &&
         customerCode &&
@@ -930,11 +975,13 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
         user,
         gatewaySubscriptionId,
         `upgrading to ${plan.name}`,
+        autoRenew,
       );
 
       const upgradedSubscription = this.subRepository.create({
         user,
         plan,
+        autoRenew,
         status: 'active',
         currentPeriodStart: now,
         currentPeriodEnd: endDate,
@@ -967,6 +1014,11 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       });
 
       if (existingScheduledSubscription) {
+        if (!autoRenew) {
+          existingScheduledSubscription.autoRenew = false;
+          existingScheduledSubscription.gatewaySubscriptionId = '';
+          existingScheduledSubscription.gatewayEmailToken = '';
+        }
         gatewaySubscriptionId =
           gatewaySubscriptionId ||
           existingScheduledSubscription.gatewaySubscriptionId;
@@ -977,9 +1029,11 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
           user,
           gatewaySubscriptionId,
           `scheduling plan ${plan.name}`,
+          autoRenew,
         );
 
         existingScheduledSubscription.plan = plan;
+        existingScheduledSubscription.autoRenew = autoRenew;
         existingScheduledSubscription.currentPeriodStart = scheduledStartDate;
         existingScheduledSubscription.currentPeriodEnd = scheduledEndDate;
         existingScheduledSubscription.gatewaySubscriptionId =
@@ -999,11 +1053,13 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
           user,
           gatewaySubscriptionId,
           `scheduling plan ${plan.name}`,
+          autoRenew,
         );
 
         const scheduledSubscription = this.subRepository.create({
           user,
           plan,
+          autoRenew,
           status: 'scheduled',
           currentPeriodStart: scheduledStartDate,
           currentPeriodEnd: scheduledEndDate,
@@ -1028,11 +1084,13 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       user,
       gatewaySubscriptionId,
       `provisioning plan ${plan.name}`,
+      autoRenew,
     );
 
     const sub = this.subRepository.create({
       user,
       plan,
+      autoRenew,
       status: 'active',
       currentPeriodStart: startDate,
       currentPeriodEnd: endDate,
@@ -1047,13 +1105,56 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(`Provisioned plan ${plan.name} for user ${user.id}`);
   }
 
+  private async disableAutomaticRenewal(
+    subscription: Subscription,
+  ): Promise<void> {
+    if (subscription.autoRenew !== false && !subscription.cancelAtPeriodEnd) {
+      if (
+        !subscription.gatewaySubscriptionId &&
+        subscription.gatewayCustomerCode &&
+        subscription.plan?.gatewayPlanId
+      ) {
+        const remote =
+          await this.paystackService.findSubscriptionForCustomerPlan(
+            subscription.gatewayCustomerCode,
+            subscription.plan.gatewayPlanId,
+          );
+        subscription.gatewaySubscriptionId = remote?.subscription_code || '';
+        subscription.gatewayEmailToken = remote?.email_token || '';
+      }
+      if (subscription.gatewaySubscriptionId) {
+        let token = subscription.gatewayEmailToken;
+        if (!token) {
+          const remote = await this.paystackService.fetchSubscription(
+            subscription.gatewaySubscriptionId,
+          );
+          token = remote.email_token;
+        }
+        if (!token) {
+          throw new BadRequestException(
+            'Unable to disable existing automatic billing. Please retry payment verification.',
+          );
+        }
+        await this.paystackService.disableSubscription({
+          code: subscription.gatewaySubscriptionId,
+          token,
+        });
+      }
+    }
+    subscription.autoRenew = false;
+    subscription.gatewaySubscriptionId = '';
+    subscription.gatewayEmailToken = '';
+    await this.subRepository.save(subscription);
+  }
+
   private warnIfPaystackSubscriptionCodeMissing(
     plan: Plan,
     user: User,
     gatewaySubscriptionId: string,
     context: string,
+    autoRenew = true,
   ): void {
-    if (!plan.gatewayPlanId || gatewaySubscriptionId) {
+    if (!autoRenew || !plan.gatewayPlanId || gatewaySubscriptionId) {
       return;
     }
 

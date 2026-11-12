@@ -11,12 +11,17 @@ Bank selection and Mono coverage checks are enabled at subscription checkout for
 {
   "planSlug": "solo",
   "interval": "monthly",
+  "autoRenew": false,
   "institutionId": "<institutionId returned by the endpoint>",
   "accountType": "PERSONAL_BANKING"
 }
 ```
 
 Use the actual returned `accountType`; do not hardcode the example. Each response record also contains `authMethods`, plus `country`, `bankCode`, and `icon` when Mono provides them.
+
+`autoRenew` is an optional JSON boolean, defaulting to `true`. Set it to `false` for one-time checkout using the payment channels enabled in the Paystack dashboard, including bank transfer when available. The backend omits the Paystack plan and never creates a recurring subscription for that payment, even if paid by card. Access lasts for the purchased billing period and requires manual renewal. Bank declaration requirements apply in both modes. Checkout responses and active subscription status include `autoRenew`.
+
+After a successful one-time payment, existing automatic renewal is disabled before access is updated. Same-plan renewals extend from the current expiry; expired subscriptions restart from payment time. Existing upgrade pricing and scheduled plan changes still apply. A pending or failed checkout does not change the current renewal mode. Existing subscriptions remain automatic unless explicitly switched or canceled. Deployments without schema synchronization must first apply `sql/subscription-auto-renew.sql`.
 
 Checkout re-fetches coverage before creating a transaction or calling the payment gateway. Missing or unsupported combinations return HTTP 400. If coverage cannot be fetched, HTTP 503 prevents checkout; let users retry. The validated selection is saved as `metadata.selectedBank` on the payment transaction and sent in checkout metadata. Existing subscriptions and renewals are unaffected. Starter and Web have no bank connection allowance and do not require this selection.
 

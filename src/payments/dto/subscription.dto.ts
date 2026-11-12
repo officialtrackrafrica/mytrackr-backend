@@ -15,6 +15,15 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class InitializeSubscriptionDto {
   @ApiPropertyOptional({
+    default: true,
+    description:
+      'Automatically renew with Paystack. Set false for a one-time payment with manual renewal.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  autoRenew?: boolean = true;
+
+  @ApiPropertyOptional({
     description:
       'Required for plans with bank connections. Select institutionId from GET /mono/institutions.',
   })
@@ -111,6 +120,9 @@ export class SubscriptionStatusResponseDto {
 }
 
 export class SubscriptionInitResponseDto {
+  @ApiProperty({ default: true })
+  autoRenew: boolean;
+
   @ApiProperty() authorizationUrl: string;
   @ApiProperty() reference: string;
   @ApiPropertyOptional({ example: 6500 })

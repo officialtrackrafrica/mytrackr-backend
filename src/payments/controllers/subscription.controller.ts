@@ -158,7 +158,7 @@ export class SubscriptionController {
     summary:
       'Initialize a new Starter, Web, Solo, Duo, or Unlimited subscription payment',
     description:
-      'Starts the recurring billing flow. Use planSlug starter, web, solo, duo, or unlimited (default solo). Plans with bank connections require institutionId and accountType from GET /mono/institutions. Bank coverage is validated before payment begins. Starter and Web do not require bank selection.',
+      'Use planSlug starter, web, solo, duo, or unlimited (default solo). autoRenew defaults to true for recurring billing; false starts a one-time checkout using the payment channels enabled for your Paystack account. Successful one-time payment disables existing automatic renewal while preserving paid access. Plans with bank connections require institutionId and accountType from GET /mono/institutions. Starter and Web do not require bank selection.',
   })
   @ApiBody({ type: InitializeSubscriptionDto })
   @ApiResponse({

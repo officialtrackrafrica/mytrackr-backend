@@ -23,6 +23,10 @@ export class Subscription {
   // A subscription only becomes active after a successful payment webhook.
   @Column({ default: 'pending' })
   status: string;
+
+  @Column({ default: true })
+  autoRenew: boolean;
+
   @Column({ type: 'varchar', nullable: true })
   gatewaySubscriptionId: string;
 

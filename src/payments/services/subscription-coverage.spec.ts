@@ -1,4 +1,4 @@
-import { ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { SubscriptionService } from './subscription.service';
 import { InstitutionService } from '../../mono/institution.service';
 
@@ -73,33 +73,36 @@ describe('Subscription checkout bank coverage', () => {
   it.each([
     undefined,
     {},
+    { institutionId: 'bank-1' },
+    { accountType: 'PERSONAL_BANKING' },
     { institutionId: 'bank-1', accountType: 'BUSINESS_BANKING' },
     { institutionId: 'unknown', accountType: 'PERSONAL_BANKING' },
   ])(
-    'temporarily allows checkout without validating bank selections',
+    'rejects checkout with missing or unsupported bank selections %j',
     async (dto) => {
       await expect(
         service.initializeSubscription(user, dto),
-      ).resolves.toMatchObject({ authorizationUrl: 'https://checkout.example' });
-      expect(institutions.getSupportedInstitutions).not.toHaveBeenCalled();
-      expect(gateway.initializePayment).toHaveBeenCalled();
-      expect(transactions.save).toHaveBeenCalled();
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(gateway.initializePayment).not.toHaveBeenCalled();
+      expect(transactions.create).not.toHaveBeenCalled();
+      expect(transactions.save).not.toHaveBeenCalled();
     },
   );
 
-  it('does not let a Mono outage block checkout while selection is disabled', async () => {
+  it('blocks checkout when Mono coverage cannot be checked', async () => {
     jest
       .spyOn(institutions, 'getSupportedInstitutions')
       .mockRejectedValue(new ServiceUnavailableException());
     await expect(
       service.initializeSubscription(user, selectedBank),
-    ).resolves.toMatchObject({ authorizationUrl: 'https://checkout.example' });
-    expect(institutions.getSupportedInstitutions).not.toHaveBeenCalled();
-    expect(gateway.initializePayment).toHaveBeenCalled();
-    expect(transactions.save).toHaveBeenCalled();
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(institutions.getSupportedInstitutions).toHaveBeenCalled();
+    expect(gateway.initializePayment).not.toHaveBeenCalled();
+    expect(transactions.create).not.toHaveBeenCalled();
+    expect(transactions.save).not.toHaveBeenCalled();
   });
 
-  it('does not mark an unchecked bank selection as validated in payment metadata', async () => {
+  it('stores the validated bank selection in transaction and gateway metadata', async () => {
     const result = await service.initializeSubscription(user, {
       institutionId: 'bank-1',
       accountType: 'PERSONAL_BANKING',
@@ -107,17 +110,17 @@ describe('Subscription checkout bank coverage', () => {
     expect(result.authorizationUrl).toBe('https://checkout.example');
     expect(transactions.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        metadata: expect.objectContaining({ selectedBank: undefined }),
+        metadata: expect.objectContaining({ selectedBank }),
       }),
     );
     expect(gateway.initializePayment).toHaveBeenCalledWith(
       expect.objectContaining({
-        metadata: expect.objectContaining({ selectedBank: undefined }),
+        metadata: expect.objectContaining({ selectedBank }),
       }),
     );
   });
 
-  it.each(['starter', 'web', 'solo', 'duo', 'unlimited'])(
+  it.each(['starter', 'web'])(
     'allows %s checkout without bank selection',
     async (slug) => {
       setup(slug);
@@ -127,6 +130,22 @@ describe('Subscription checkout bank coverage', () => {
         authorizationUrl: 'https://checkout.example',
       });
       expect(institutions.getSupportedInstitutions).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['solo', 'duo', 'unlimited'])(
+    'requires a supported bank selection for %s checkout',
+    async (slug) => {
+      setup(slug);
+      await expect(
+        service.initializeSubscription(user, { planSlug: slug } as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(gateway.initializePayment).not.toHaveBeenCalled();
+
+      await expect(
+        service.initializeSubscription(user, { planSlug: slug, ...selectedBank }),
+      ).resolves.toMatchObject({ authorizationUrl: 'https://checkout.example' });
+      expect(institutions.getSupportedInstitutions).toHaveBeenCalled();
     },
   );
 });

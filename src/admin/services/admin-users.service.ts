@@ -273,6 +273,8 @@ export class AdminUsersService {
 
   async findAllUsers(query: AdminQueryDto) {
     const {
+      page = 1,
+      limit = 20,
       search,
       status,
       role,
@@ -283,7 +285,6 @@ export class AdminUsersService {
       sortBy = 'createdAt',
       sortOrder = 'DESC',
     } = query;
-    // Temporarily return all matches until the frontend supports pagination.
     const normalizedSortOrder =
       String(sortOrder).toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
@@ -418,6 +419,7 @@ export class AdminUsersService {
       accountStatus: 'app_user.isActive',
     };
     qb.orderBy(sortMap[sortBy] || 'app_user.createdAt', normalizedSortOrder);
+    qb.skip((page - 1) * limit).take(limit);
 
     const [users, total] = await qb.getManyAndCount();
     const rawRows = await qb.getRawMany();
@@ -466,9 +468,9 @@ export class AdminUsersService {
       }),
       pagination: {
         total,
-        page: 1,
-        limit: total,
-        totalPages: total > 0 ? 1 : 0,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
       },
     };
   }

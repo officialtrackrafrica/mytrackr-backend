@@ -1,6 +1,6 @@
 # Bank selection before subscription
 
-Bank selection and Mono coverage checks at subscription checkout are temporarily disabled until the frontend implements this flow. Checkout currently accepts requests without `institutionId` or `accountType` and does not store a validated bank selection. Set `REQUIRE_SUBSCRIPTION_BANK_SELECTION` back to `true` in `subscription.service.ts` once the frontend is ready, and restore the checkout coverage tests and API descriptions. The intended flow below applies when the check is enabled.
+Bank selection and Mono coverage checks are enabled at subscription checkout for plans with bank connections. Checkout requires `institutionId` and `accountType`, validates the combination against Mono, and stores the validated bank selection in payment metadata.
 
 1. Fetch `GET /mono/institutions` before displaying bank connection checkout. This public endpoint does not require a subscription or login. It returns a live array from Mono's financial-data institution directory.
 2. Display the returned `name` and `accountType` combinations, with the supported `authMethods`. Keep the `institutionId` associated with each combination; do not combine the account types of different institution records.

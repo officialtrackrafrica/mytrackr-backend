@@ -158,7 +158,7 @@ export class SubscriptionController {
     summary:
       'Initialize a new Starter, Web, Solo, Duo, or Unlimited subscription payment',
     description:
-      'Starts the recurring billing flow. Use planSlug starter, web, solo, duo, or unlimited (default solo). Bank selection and coverage checks before checkout are temporarily disabled while the frontend adds bank selection.',
+      'Starts the recurring billing flow. Use planSlug starter, web, solo, duo, or unlimited (default solo). Plans with bank connections require institutionId and accountType from GET /mono/institutions. Bank coverage is validated before payment begins. Starter and Web do not require bank selection.',
   })
   @ApiBody({ type: InitializeSubscriptionDto })
   @ApiResponse({
@@ -168,7 +168,12 @@ export class SubscriptionController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Invalid plan or initialization failed',
+    description: 'Invalid plan, missing or unsupported bank/account type, or initialization failed',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 503,
+    description: 'Bank coverage cannot be checked; retry before subscribing',
     type: ErrorResponseDto,
   })
   async subscribe(@Req() req: any, @Body() dto?: InitializeSubscriptionDto) {

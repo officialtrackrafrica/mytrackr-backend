@@ -92,23 +92,32 @@ describe('AdminUsersService', () => {
     ]);
   });
 
-  it.each([{}, { page: 1, limit: 20 }, { page: 3, limit: 5 }])(
-    'returns all users regardless of pagination parameters %j',
-    async (query) => {
-      const users = Array.from({ length: 25 }, (_, index) => ({
+  it.each([
+    { query: {}, total: 25 },
+    { query: { page: 1, limit: 20 }, total: 25 },
+    { query: { page: 3, limit: 5 }, total: 25 },
+    { query: { page: 6, limit: 5 }, total: 25 },
+    { query: {}, total: 0 },
+  ])(
+    'returns a page of users with accurate metadata %j',
+    async ({ query, total }) => {
+      const page = query.page ?? 1;
+      const limit = query.limit ?? 20;
+      const offset = (page - 1) * limit;
+      const users = Array.from({ length: total }, (_, index) => ({
         id: `user-${index}`,
         firstName: 'Ada',
         email: `ada${index}@example.com`,
         isActive: true,
         isVerified: true,
-      }));
+      })).slice(offset, offset + limit);
       const queryBuilder = {
         leftJoin: jest.fn().mockReturnThis(),
         addSelect: jest.fn().mockReturnThis(),
         skip: jest.fn().mockReturnThis(),
         take: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
-        getManyAndCount: jest.fn().mockResolvedValue([users, users.length]),
+        getManyAndCount: jest.fn().mockResolvedValue([users, total]),
         getRawMany: jest.fn().mockResolvedValue([]),
       };
       const usersRepository = {
@@ -134,13 +143,13 @@ describe('AdminUsersService', () => {
         users.map((user) => user.id),
       );
       expect(result.pagination).toEqual({
-        total: 25,
-        page: 1,
-        limit: 25,
-        totalPages: 1,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
       });
-      expect(queryBuilder.skip).not.toHaveBeenCalled();
-      expect(queryBuilder.take).not.toHaveBeenCalled();
+      expect(queryBuilder.skip).toHaveBeenCalledWith(offset);
+      expect(queryBuilder.take).toHaveBeenCalledWith(limit);
 
       expect(usersRepository.createQueryBuilder).toHaveBeenCalledWith(
         'app_user',

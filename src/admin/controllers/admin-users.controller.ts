@@ -86,11 +86,11 @@ export class AdminUsersController {
   @Get()
   @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
   @ApiOperation({
-    summary: 'List all users with search, filters, and sorting',
+    summary: 'List users with search, filters, sorting, and pagination',
     description:
-      'Temporarily returns all matching users regardless of page and limit. The pagination object describes the full result as a single page.',
+      'Returns matching users using page and limit (defaults: page 1, limit 20; maximum limit 100), with total and totalPages pagination metadata.',
   })
-  @ApiResponse({ status: 200, description: 'Full list of matching users including acquisition source details', schema: ADMIN_USERS_LIST_SCHEMA })
+  @ApiResponse({ status: 200, description: 'Paginated users including acquisition source details', schema: ADMIN_USERS_LIST_SCHEMA })
   async listUsers(@Query() query: AdminQueryDto) {
     return this.adminUsersService.findAllUsers(query);
   }
@@ -99,9 +99,9 @@ export class AdminUsersController {
   @CheckPolicies((ability: AppAbility) => ability.can(Action.Manage, 'all'))
   @ApiOperation({
     summary: 'Search users with the admin user list filters',
-    description: 'Temporarily returns all matching users regardless of page and limit.',
+    description: 'Returns matching users using page and limit (defaults: page 1, limit 20; maximum limit 100), with total and totalPages pagination metadata.',
   })
-  @ApiResponse({ status: 200, description: 'Full list of matching users including acquisition source details', schema: ADMIN_USERS_LIST_SCHEMA })
+  @ApiResponse({ status: 200, description: 'Paginated users including acquisition source details', schema: ADMIN_USERS_LIST_SCHEMA })
   async searchUsers(@Query() query: AdminQueryDto) {
     return this.adminUsersService.findAllUsers(query);
   }

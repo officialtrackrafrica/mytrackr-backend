@@ -64,6 +64,40 @@ describe('InstitutionService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('normalizes the live Mono id/institution format for listing and checkout', async () => {
+    request.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: 'successful',
+        data: [
+          {
+            id: 'live-bank',
+            institution: 'Live Bank',
+            type: 'PERSONAL_BANKING',
+            country: 'ng',
+            nip_code: '000015',
+            auth_methods: [{ type: 'mobile_banking', name: 'Mobile Banking' }],
+          },
+          bank,
+        ],
+      }),
+    } as Response);
+
+    const institutions = await service.getSupportedInstitutions();
+    expect(institutions).toHaveLength(2);
+    expect(institutions[1]).toEqual({
+      institutionId: 'live-bank',
+      name: 'Live Bank',
+      accountType: 'PERSONAL_BANKING',
+      country: 'ng',
+      bankCode: '000015',
+      authMethods: ['mobile_banking'],
+    });
+    await expect(
+      service.assertSupported('live-bank', 'PERSONAL_BANKING'),
+    ).resolves.toEqual(institutions[1]);
+  });
+
   it.each([
     [undefined, undefined],
     ['', 'PERSONAL_BANKING'],

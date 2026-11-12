@@ -33,6 +33,15 @@ export class InstitutionService {
       }
 
       return payload.data
+        .map((bank: any) =>
+          bank
+            ? {
+                ...bank,
+                _id: bank.id ?? bank._id,
+                name: bank.institution ?? bank.name,
+              }
+            : bank,
+        )
         .filter(
           (bank: any) =>
             bank &&
